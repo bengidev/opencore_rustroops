@@ -1,20 +1,14 @@
-//! Interactive onboarding UI state (animation, selection, orb hold).
+//! Interactive onboarding UI state (animation, orb hold).
 
 use std::time::Instant;
 
 use super::onboarding_dynamics::dynamics_for_progress;
-use super::onboarding_feature_card_dynamics::{approach, highlight_target};
 
-pub const FEATURE_COUNT: usize = 4;
-
-/// Local onboarding animation and selection state (GPU-free).
+/// Local onboarding animation state (GPU-free).
 #[derive(Debug, Clone)]
 pub struct OnboardingUiState {
     pub started_at: Instant,
     pub now: Instant,
-    pub selected_feature: usize,
-    pub hovered_feature: Option<usize>,
-    pub feature_glow: [f32; FEATURE_COUNT],
     pub is_holding: bool,
     pub hold_progress: f32,
     pub displayed_speed: f32,
@@ -28,9 +22,6 @@ impl OnboardingUiState {
         Self {
             started_at: now,
             now,
-            selected_feature: 0,
-            hovered_feature: None,
-            feature_glow: [0.0; FEATURE_COUNT],
             is_holding: false,
             hold_progress: 0.0,
             displayed_speed: initial_speed,
@@ -42,7 +33,6 @@ impl OnboardingUiState {
         let dt = now.saturating_duration_since(self.now).as_secs_f32();
         self.now = now;
         self.advance_orb_progress(dt);
-        self.advance_feature_glow(dt);
     }
 
     pub fn orb_pressed(&mut self) {
@@ -51,16 +41,6 @@ impl OnboardingUiState {
 
     pub fn orb_released(&mut self) {
         self.is_holding = false;
-    }
-
-    pub fn select_feature(&mut self, index: usize) {
-        if index < FEATURE_COUNT {
-            self.selected_feature = index;
-        }
-    }
-
-    pub fn hover_feature(&mut self, index: Option<usize>) {
-        self.hovered_feature = index.filter(|i| *i < FEATURE_COUNT);
     }
 
     fn advance_orb_progress(&mut self, dt: f32) {
@@ -79,29 +59,11 @@ impl OnboardingUiState {
         self.displayed_speed = speed;
         self.displayed_zoom = zoom;
     }
-
-    fn advance_feature_glow(&mut self, dt: f32) {
-        for index in 0..FEATURE_COUNT {
-            let hovered = self.hovered_feature == Some(index);
-            let selected = self.selected_feature == index;
-            let target = highlight_target(selected, hovered);
-            self.feature_glow[index] = approach(self.feature_glow[index], target, dt, 9.0);
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn feature_selection_clamps_to_valid_range() {
-        let mut state = OnboardingUiState::new();
-        state.select_feature(99);
-        assert_eq!(state.selected_feature, 0);
-        state.select_feature(2);
-        assert_eq!(state.selected_feature, 2);
-    }
 
     #[test]
     fn hold_progress_increases_while_holding() {
