@@ -1,6 +1,6 @@
 //! Native window placement helpers where GPUI does not expose reposition APIs.
 
-use gpui::{App, Bounds, Pixels, Size, Window};
+use gpui::{App, Pixels, Size, Window};
 
 /// Re-centers the window on the primary display after a programmatic resize.
 pub fn center_window(window: &Window, size: Size<Pixels>, cx: &App) {
@@ -12,6 +12,7 @@ pub fn center_window(window: &Window, size: Size<Pixels>, cx: &App) {
 
 #[cfg(target_os = "macos")]
 fn center_window_macos(window: &Window, size: Size<Pixels>, cx: &App) {
+    use gpui::Bounds;
     use objc::{class, msg_send, sel, sel_impl};
     use raw_window_handle::RawWindowHandle;
 
