@@ -1,3 +1,8 @@
+use opencore_rustroops::app;
+
 fn main() {
-    println!("Hello, world!");
+    if let Err(error) = app::run() {
+        eprintln!("opencore_rustroops failed to start: {error}");
+        std::process::exit(1);
+    }
 }
