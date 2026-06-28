@@ -13,20 +13,11 @@ use thiserror::Error;
 /// Single preferences document (theme + onboarding completion).
 ///
 /// Unknown JSON fields are ignored on load and dropped on the next save.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppPreferences {
     pub theme_mode: ThemeMode,
     pub onboarding_completed: bool,
-}
-
-impl Default for AppPreferences {
-    fn default() -> Self {
-        Self {
-            theme_mode: ThemeMode::default(),
-            onboarding_completed: false,
-        }
-    }
 }
 
 /// Errors from loading or saving preferences.
@@ -140,11 +131,7 @@ impl InMemoryPreferencesStore {
 
 impl PreferencesStore for InMemoryPreferencesStore {
     fn load(&self) -> Result<AppPreferences, PreferencesError> {
-        Ok(self
-            .preferences
-            .borrow()
-            .clone()
-            .unwrap_or_default())
+        Ok(self.preferences.borrow().clone().unwrap_or_default())
     }
 
     fn save(&self, preferences: &AppPreferences) -> Result<(), PreferencesError> {
