@@ -1,21 +1,16 @@
 //! Theme toggle chip using gpui-component Lucide icons (`IconName::Sun` / `IconName::Moon`).
 
-use std::rc::Rc;
-
 use gpui::{
-    div, px, App, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement, Styled,
-    Window,
+    FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement, Styled, div, px,
 };
 use gpui_component::{Icon, IconName, Sizable};
 
+use crate::app::gpui_callbacks::WindowAppHandler;
 use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, ThemeMode,
 };
 
-pub fn theme_toggle_button(
-    theme: OpenCoreTheme,
-    on_press: Rc<dyn Fn(&mut Window, &mut App)>,
-) -> impl IntoElement {
+pub fn theme_toggle_button(theme: OpenCoreTheme, on_press: WindowAppHandler) -> impl IntoElement {
     let (icon, label) = match theme.mode {
         ThemeMode::Dark => (IconName::Sun, "Light"),
         ThemeMode::Light => (IconName::Moon, "Dark"),

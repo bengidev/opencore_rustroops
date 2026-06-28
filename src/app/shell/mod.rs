@@ -1,21 +1,20 @@
 //! **Composite** shell chrome: three labeled workspace zones (Editor, Chat, Terminal)
 //! arranged as a flex split for future feature mounting.
 
-use std::rc::Rc;
-
 use gpui::{
-    div, px, relative, App, Div, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Styled, Window,
+    Div, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Styled, div, px,
+    relative,
 };
 
 use gpui_component::h_flex;
 
-use crate::shared::theme::{ColorToken, OpenCoreTheme};
+use crate::app::gpui_callbacks::WindowAppHandler;
+use crate::shared::theme::{BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme};
 
 /// Optional shell callbacks (dev reset is debug-only).
 pub struct ShellCallbacks {
     #[cfg(debug_assertions)]
-    pub on_reset_dev: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
+    pub on_reset_dev: Option<WindowAppHandler>,
 }
 
 impl ShellCallbacks {
@@ -36,9 +35,9 @@ impl Default for ShellCallbacks {
 /// Stub shell layout — Editor and Chat side-by-side, Terminal full-width below.
 pub fn shell_screen(theme: OpenCoreTheme, callbacks: ShellCallbacks) -> impl IntoElement {
     let spacing = theme.spacing;
-    let background = color_from_token(theme.background);
-    let foreground = color_from_token(theme.foreground);
-    let border = color_from_token(theme.border);
+    let background = theme.surface(BackgroundToken::Primary);
+    let foreground = theme.foreground(ForegroundToken::Primary);
+    let border = theme.border_token(BorderToken::Default);
     let label = theme.label;
 
     let mut root = div()
@@ -72,28 +71,20 @@ pub fn shell_screen(theme: OpenCoreTheme, callbacks: ShellCallbacks) -> impl Int
 }
 
 #[cfg(debug_assertions)]
-fn dev_reset_bar(
-    border: Hsla,
-    foreground: Hsla,
-    on_reset: Rc<dyn Fn(&mut Window, &mut App)>,
-) -> Div {
-    div()
-        .w_full()
-        .flex()
-        .justify_end()
-        .child(
-            div()
-                .px(px(12.))
-                .py(px(8.))
-                .rounded_md()
-                .border_1()
-                .border_color(border)
-                .text_size(px(11.))
-                .text_color(foreground.opacity(0.75))
-                .cursor_pointer()
-                .child("Reset dev data")
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| on_reset(window, cx)),
-        )
+fn dev_reset_bar(border: Hsla, foreground: Hsla, on_reset: WindowAppHandler) -> Div {
+    div().w_full().flex().justify_end().child(
+        div()
+            .px(px(12.))
+            .py(px(8.))
+            .rounded_md()
+            .border_1()
+            .border_color(border)
+            .text_size(px(11.))
+            .text_color(foreground.opacity(0.75))
+            .cursor_pointer()
+            .child("Reset dev data")
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| on_reset(window, cx)),
+    )
 }
 
 fn zone_panel(
@@ -114,10 +105,4 @@ fn zone_panel(
         .font_weight(gpui::FontWeight(type_role.weight as f32))
         .text_color(foreground.opacity(0.9))
         .child(label)
-}
-
-fn color_from_token(token: ColorToken) -> Hsla {
-    let hex = token.0.trim_start_matches('#');
-    let value = u32::from_str_radix(hex, 16).unwrap_or(0);
-    gpui::rgb(value).into()
 }
