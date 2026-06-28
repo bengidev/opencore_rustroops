@@ -1,16 +1,20 @@
 //! Persisted user settings as a single atomic blob.
 //!
-//! Uses the **Strategy** pattern: [`PreferencesStore`] abstracts file and in-memory backends.
+//! [`PreferencesStore`] abstracts file and in-memory backends.
 
 use crate::shared::theme::ThemeMode;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
 
 /// Single preferences document (theme + onboarding completion).
+///
+/// Unknown JSON fields are ignored on load and dropped on the next save.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppPreferences {
     pub theme_mode: ThemeMode,
     pub onboarding_completed: bool,
@@ -30,6 +34,8 @@ impl Default for AppPreferences {
 pub enum PreferencesError {
     #[error("failed to read preferences: {0}")]
     Read(#[from] io::Error),
+    #[error("failed to write preferences: {0}")]
+    Write(io::Error),
     #[error("failed to parse preferences: {0}")]
     Parse(#[from] serde_json::Error),
 }
@@ -40,7 +46,9 @@ pub trait PreferencesStore {
     fn save(&self, preferences: &AppPreferences) -> Result<(), PreferencesError>;
 }
 
-/// Writes preferences to `{data_dir}/opencore_rustroops/preferences.json`.
+/// Writes preferences to the platform application data directory.
+///
+/// On macOS: `~/Library/Application Support/com.opencore.opencore_rustroops/preferences.json`
 pub struct FilePreferencesStore {
     path: PathBuf,
 }
@@ -74,8 +82,18 @@ impl FilePreferencesStore {
 
     fn ensure_parent(&self) -> Result<(), PreferencesError> {
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).map_err(PreferencesError::Write)?;
         }
+        Ok(())
+    }
+
+    fn backup_corrupt_file(&self) -> Result<(), PreferencesError> {
+        if !self.path.exists() {
+            return Ok(());
+        }
+        let backup_path = self.path.with_extension("corrupt");
+        let _ = fs::remove_file(&backup_path);
+        fs::rename(&self.path, &backup_path).map_err(PreferencesError::Write)?;
         Ok(())
     }
 }
@@ -86,16 +104,24 @@ impl PreferencesStore for FilePreferencesStore {
             return Ok(AppPreferences::default());
         }
         let contents = fs::read_to_string(&self.path)?;
-        let preferences = serde_json::from_str(&contents)?;
-        Ok(preferences)
+        match serde_json::from_str(&contents) {
+            Ok(preferences) => Ok(preferences),
+            Err(parse_error) => {
+                eprintln!(
+                    "opencore_rustroops: corrupt preferences reset to defaults ({parse_error})"
+                );
+                self.backup_corrupt_file()?;
+                Ok(AppPreferences::default())
+            }
+        }
     }
 
     fn save(&self, preferences: &AppPreferences) -> Result<(), PreferencesError> {
         self.ensure_parent()?;
         let contents = serde_json::to_string_pretty(preferences)?;
         let temp_path = self.path.with_extension("tmp");
-        fs::write(&temp_path, &contents)?;
-        fs::rename(&temp_path, &self.path)?;
+        fs::write(&temp_path, &contents).map_err(PreferencesError::Write)?;
+        fs::rename(&temp_path, &self.path).map_err(PreferencesError::Write)?;
         Ok(())
     }
 }
@@ -103,7 +129,7 @@ impl PreferencesStore for FilePreferencesStore {
 /// In-memory store for unit tests (no filesystem).
 #[derive(Debug, Default)]
 pub struct InMemoryPreferencesStore {
-    preferences: std::sync::Mutex<Option<AppPreferences>>,
+    preferences: RefCell<Option<AppPreferences>>,
 }
 
 impl InMemoryPreferencesStore {
@@ -114,19 +140,15 @@ impl InMemoryPreferencesStore {
 
 impl PreferencesStore for InMemoryPreferencesStore {
     fn load(&self) -> Result<AppPreferences, PreferencesError> {
-        let guard = self
+        Ok(self
             .preferences
-            .lock()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "preferences lock poisoned"))?;
-        Ok(guard.clone().unwrap_or_default())
+            .borrow()
+            .clone()
+            .unwrap_or_default())
     }
 
     fn save(&self, preferences: &AppPreferences) -> Result<(), PreferencesError> {
-        let mut guard = self
-            .preferences
-            .lock()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "preferences lock poisoned"))?;
-        *guard = Some(preferences.clone());
+        *self.preferences.borrow_mut() = Some(preferences.clone());
         Ok(())
     }
 }
@@ -134,7 +156,9 @@ impl PreferencesStore for InMemoryPreferencesStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+    use std::fs;
+    use tempfile::TempDir;
+
     #[test]
     fn app_preferences_default_serializes_to_prd_schema() {
         let json = serde_json::to_string(&AppPreferences::default()).expect("serialize");
@@ -162,6 +186,14 @@ mod tests {
     }
 
     #[test]
+    fn app_preferences_deserializes_with_missing_fields() {
+        let restored: AppPreferences =
+            serde_json::from_str(r#"{"onboarding_completed":true}"#).expect("deserialize");
+        assert_eq!(restored.theme_mode, ThemeMode::Dark);
+        assert!(restored.onboarding_completed);
+    }
+
+    #[test]
     fn in_memory_store_round_trips_preferences() {
         let store = InMemoryPreferencesStore::new();
         let prefs = AppPreferences {
@@ -175,8 +207,8 @@ mod tests {
 
     #[test]
     fn file_store_round_trips_preferences_in_temp_dir() {
-        let dir = tempfile_dir();
-        let path = dir.join("preferences.json");
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("preferences.json");
         let store = FilePreferencesStore::at(&path);
         let prefs = AppPreferences {
             theme_mode: ThemeMode::Light,
@@ -185,32 +217,26 @@ mod tests {
         store.save(&prefs).expect("save");
         let loaded = store.load().expect("load");
         assert_eq!(loaded, prefs);
-        cleanup_dir(&dir);
     }
 
     #[test]
     fn file_store_returns_defaults_when_missing() {
-        let dir = tempfile_dir();
-        let path = dir.join("missing.json");
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("missing.json");
         let store = FilePreferencesStore::at(&path);
         let loaded = store.load().expect("load");
         assert_eq!(loaded, AppPreferences::default());
-        cleanup_dir(&dir);
     }
 
-    fn tempfile_dir() -> PathBuf {
-        let base = std::env::temp_dir();
-        let name = format!(
-            "opencore_rustroops_test_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos()
-        );
-        base.join(name)
-    }
-
-    fn cleanup_dir(path: &Path) {
-        let _ = fs::remove_dir_all(path);
+    #[test]
+    fn file_store_resets_to_defaults_on_corrupt_json() {
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("preferences.json");
+        fs::write(&path, "{not valid json").expect("write corrupt file");
+        let store = FilePreferencesStore::at(&path);
+        let loaded = store.load().expect("load");
+        assert_eq!(loaded, AppPreferences::default());
+        assert!(!path.exists());
+        assert!(path.with_extension("corrupt").exists());
     }
 }

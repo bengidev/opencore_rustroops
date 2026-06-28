@@ -1,15 +1,14 @@
-//! Application composition root.
-//!
-//! Owns global [`ThemeMode`], boot routing, and onboarding completion. Uses **Facade**
-//! to coordinate [`crate::shared`] modules without exposing persistence details to callers.
+//! Application composition root: boot routing, onboarding completion, and preferences I/O.
 
 mod boot;
 mod onboarding;
 mod state;
 
 pub use boot::boot_screen;
-pub use onboarding::{OnboardingCommand, OnboardingOutcome, OnboardingState};
-pub use state::{ActiveScreen, AppState, WindowResizeIntent};
+pub use onboarding::{reduce_onboarding, OnboardingCommand, OnboardingOutcome};
+pub use state::{
+    ActiveScreen, AppState, WindowResizeIntent, SHELL_WINDOW_HEIGHT, SHELL_WINDOW_WIDTH,
+};
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use thiserror::Error;
@@ -21,14 +20,20 @@ pub enum AppError {
     Preferences(#[from] PreferencesError),
 }
 
+/// Booted application: composed state and the preferences store that loaded it.
+pub struct RunningApp {
+    pub state: AppState,
+    pub store: FilePreferencesStore,
+}
+
 /// Boots the application: load preferences, restore theme, select initial screen.
 ///
-/// GPU window wiring is deferred to a later PRD; this entry only initializes state.
-pub fn run() -> Result<(), AppError> {
+/// GPU window wiring is deferred to a later PRD; this entry initializes state for callers.
+pub fn run() -> Result<RunningApp, AppError> {
     let store = FilePreferencesStore::open()?;
     let preferences = store.load()?;
-    let _state = AppState::from_preferences(preferences);
-    Ok(())
+    let state = AppState::from_preferences(preferences);
+    Ok(RunningApp { state, store })
 }
 
 #[cfg(test)]
@@ -76,7 +81,7 @@ mod tests {
             onboarding_completed: false,
         };
         let state = AppState::from_preferences(prefs);
-        assert_eq!(state.theme_mode, ThemeMode::Light);
+        assert_eq!(state.theme_mode(), ThemeMode::Light);
         assert_eq!(state.active_screen, ActiveScreen::Onboarding);
     }
 
@@ -105,14 +110,14 @@ mod tests {
         let intent = state
             .pending_window_resize
             .expect("resize intent recorded");
-        assert_eq!(intent.width, 1280);
-        assert_eq!(intent.height, 800);
+        assert_eq!(intent.width, SHELL_WINDOW_WIDTH);
+        assert_eq!(intent.height, SHELL_WINDOW_HEIGHT);
     }
 
     #[test]
     fn onboarding_enter_yields_completed_outcome() {
         assert_eq!(
-            OnboardingState::reduce(OnboardingCommand::EnterPressed),
+            reduce_onboarding(OnboardingCommand::EnterPressed),
             OnboardingOutcome::Completed
         );
     }
@@ -121,7 +126,7 @@ mod tests {
     fn app_handles_onboarding_completion_via_store() {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
-        let outcome = OnboardingState::reduce(OnboardingCommand::EnterPressed);
+        let outcome = reduce_onboarding(OnboardingCommand::EnterPressed);
         assert_eq!(outcome, OnboardingOutcome::Completed);
         state
             .apply_onboarding_outcome(outcome, &store)
