@@ -1,13 +1,18 @@
-//! Application composition root: boot routing, onboarding completion, and preferences I/O.
+//! Application composition root (**Facade**): boot routing, onboarding completion,
+//! preferences I/O, and desktop window lifecycle.
 
-mod boot;
+mod app_boot;
+mod app_desktop;
+mod app_state;
 mod onboarding;
-mod state;
+mod shell;
+mod window_placement;
 
-pub use boot::boot_screen;
+pub use app_boot::boot_screen;
 pub use onboarding::{reduce_onboarding, OnboardingCommand, OnboardingOutcome};
-pub use state::{
-    ActiveScreen, AppState, WindowResizeIntent, SHELL_WINDOW_HEIGHT, SHELL_WINDOW_WIDTH,
+pub use app_state::{
+    ActiveScreen, AppState, WindowResizeIntent, ONBOARDING_WINDOW_HEIGHT, ONBOARDING_WINDOW_WIDTH,
+    SHELL_WINDOW_HEIGHT, SHELL_WINDOW_WIDTH,
 };
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
@@ -26,14 +31,17 @@ pub struct RunningApp {
     pub store: FilePreferencesStore,
 }
 
-/// Boots the application: load preferences, restore theme, select initial screen.
-///
-/// GPU window wiring is deferred to a later PRD; this entry initializes state for callers.
-pub fn run() -> Result<RunningApp, AppError> {
+/// Boots state from preferences without opening a window (for tests and embedders).
+pub fn boot() -> Result<RunningApp, AppError> {
     let store = FilePreferencesStore::open()?;
     let preferences = store.load()?;
     let state = AppState::from_preferences(preferences);
     Ok(RunningApp { state, store })
+}
+
+/// Boots the application and runs the desktop window until it closes.
+pub fn run() -> Result<(), AppError> {
+    app_desktop::run_desktop()
 }
 
 #[cfg(test)]
@@ -115,11 +123,62 @@ mod tests {
     }
 
     #[test]
+    fn initial_window_size_matches_active_screen() {
+        let incomplete = AppState::from_preferences(AppPreferences::default());
+        assert_eq!(
+            incomplete.initial_window_size(),
+            (ONBOARDING_WINDOW_WIDTH, ONBOARDING_WINDOW_HEIGHT)
+        );
+
+        let complete = AppState::from_preferences(AppPreferences {
+            theme_mode: ThemeMode::Dark,
+            onboarding_completed: true,
+        });
+        assert_eq!(
+            complete.initial_window_size(),
+            (SHELL_WINDOW_WIDTH, SHELL_WINDOW_HEIGHT)
+        );
+    }
+
+    #[test]
     fn onboarding_enter_yields_completed_outcome() {
         assert_eq!(
             reduce_onboarding(OnboardingCommand::EnterPressed),
             OnboardingOutcome::Completed
         );
+    }
+
+    #[test]
+    fn skip_onboarding_routes_to_shell() {
+        let store = InMemoryPreferencesStore::new();
+        let mut state = AppState::from_preferences(AppPreferences::default());
+        let outcome = reduce_onboarding(OnboardingCommand::Skipped);
+        state
+            .apply_onboarding_outcome(outcome, &store)
+            .expect("apply outcome");
+        assert_eq!(state.active_screen, ActiveScreen::Shell);
+    }
+
+    #[test]
+    fn reset_persistent_data_routes_to_onboarding() {
+        let store = InMemoryPreferencesStore::new();
+        let mut state = AppState::from_preferences(AppPreferences {
+            theme_mode: ThemeMode::Light,
+            onboarding_completed: true,
+        });
+        state
+            .reset_persistent_data(&store)
+            .expect("reset persistent data");
+
+        assert_eq!(state.active_screen, ActiveScreen::Onboarding);
+        assert!(!state.preferences.onboarding_completed);
+        let loaded = store.load().expect("load");
+        assert_eq!(loaded, AppPreferences::default());
+        let intent = state
+            .pending_window_resize
+            .expect("onboarding resize intent");
+        assert_eq!(intent.width, ONBOARDING_WINDOW_WIDTH);
+        assert_eq!(intent.height, ONBOARDING_WINDOW_HEIGHT);
     }
 
     #[test]
