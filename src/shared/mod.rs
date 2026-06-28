@@ -1,7 +1,4 @@
-//! Cross-cutting modules shared across the application.
-//!
-//! Uses the **Facade** pattern: a small public surface (`preferences`, `theme`) hides
-//! serialization, storage strategy, and token resolution details.
+//! Cross-cutting modules: persisted preferences and design tokens.
 
 pub mod preferences;
 pub mod theme;

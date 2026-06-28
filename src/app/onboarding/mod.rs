@@ -1,4 +1,7 @@
-//! Onboarding state machine (logic only — no view).
+//! Onboarding command reducer (logic only — no view).
+//!
+//! Commands map to outcomes; [`crate::app::AppState::apply_onboarding_outcome`] handles
+//! persistence and routing when an outcome is [`OnboardingOutcome::Completed`].
 
 /// Commands the onboarding UI can send to the reducer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,13 +18,9 @@ pub enum OnboardingOutcome {
     Completed,
 }
 
-/// Onboarding reducer using **Command** messages and **State** outcomes.
-pub struct OnboardingState;
-
-impl OnboardingState {
-    pub fn reduce(command: OnboardingCommand) -> OnboardingOutcome {
-        match command {
-            OnboardingCommand::EnterPressed => OnboardingOutcome::Completed,
-        }
+/// Reduces an onboarding command to an outcome.
+pub fn reduce_onboarding(command: OnboardingCommand) -> OnboardingOutcome {
+    match command {
+        OnboardingCommand::EnterPressed => OnboardingOutcome::Completed,
     }
 }

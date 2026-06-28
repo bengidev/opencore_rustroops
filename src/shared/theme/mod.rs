@@ -73,57 +73,50 @@ impl OpenCoreTheme {
     }
 }
 
-const LIGHT_THEME: OpenCoreTheme = OpenCoreTheme {
-    background: ColorToken("#F5F5F7"),
-    foreground: ColorToken("#1D1D1F"),
-    border: ColorToken("#D2D2D7"),
-    accent: ColorToken("#0071E3"),
-    spacing: SpacingScale {
-        xs: 4,
-        sm: 8,
-        md: 16,
-        lg: 24,
-        xl: 32,
-    },
-    display_title: TypeRole {
-        size_px: 32,
-        weight: 700,
-    },
-    tagline: TypeRole {
-        size_px: 18,
-        weight: 400,
-    },
-    label: TypeRole {
-        size_px: 14,
-        weight: 500,
-    },
+const SPACING: SpacingScale = SpacingScale {
+    xs: 4,
+    sm: 8,
+    md: 16,
+    lg: 24,
+    xl: 32,
 };
 
-const DARK_THEME: OpenCoreTheme = OpenCoreTheme {
-    background: ColorToken("#1C1C1E"),
-    foreground: ColorToken("#F5F5F7"),
-    border: ColorToken("#3A3A3C"),
-    accent: ColorToken("#0A84FF"),
-    spacing: SpacingScale {
-        xs: 4,
-        sm: 8,
-        md: 16,
-        lg: 24,
-        xl: 32,
-    },
-    display_title: TypeRole {
-        size_px: 32,
-        weight: 700,
-    },
-    tagline: TypeRole {
-        size_px: 18,
-        weight: 400,
-    },
-    label: TypeRole {
-        size_px: 14,
-        weight: 500,
-    },
+const DISPLAY_TITLE: TypeRole = TypeRole {
+    size_px: 32,
+    weight: 700,
 };
+
+const TAGLINE: TypeRole = TypeRole {
+    size_px: 18,
+    weight: 400,
+};
+
+const LABEL: TypeRole = TypeRole {
+    size_px: 14,
+    weight: 500,
+};
+
+const fn theme_with_colors(
+    background: &'static str,
+    foreground: &'static str,
+    border: &'static str,
+    accent: &'static str,
+) -> OpenCoreTheme {
+    OpenCoreTheme {
+        background: ColorToken(background),
+        foreground: ColorToken(foreground),
+        border: ColorToken(border),
+        accent: ColorToken(accent),
+        spacing: SPACING,
+        display_title: DISPLAY_TITLE,
+        tagline: TAGLINE,
+        label: LABEL,
+    }
+}
+
+const LIGHT_THEME: OpenCoreTheme = theme_with_colors("#F5F5F7", "#1D1D1F", "#D2D2D7", "#0071E3");
+
+const DARK_THEME: OpenCoreTheme = theme_with_colors("#1C1C1E", "#F5F5F7", "#3A3A3C", "#0A84FF");
 
 #[cfg(test)]
 mod tests {
@@ -152,5 +145,13 @@ mod tests {
     #[test]
     fn default_theme_mode_is_dark() {
         assert_eq!(ThemeMode::default(), ThemeMode::Dark);
+    }
+
+    #[test]
+    fn light_and_dark_share_layout_tokens() {
+        let light = OpenCoreTheme::resolve(ThemeMode::Light);
+        let dark = OpenCoreTheme::resolve(ThemeMode::Dark);
+        assert_eq!(light.spacing, dark.spacing);
+        assert_eq!(light.display_title, dark.display_title);
     }
 }
