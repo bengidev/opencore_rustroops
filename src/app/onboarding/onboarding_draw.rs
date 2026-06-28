@@ -1,6 +1,8 @@
 //! GPUI canvas drawing helpers ported from the iced onboarding renderer.
 
-use gpui::{point, px, rgb, Bounds, Hsla, Window};
+#![allow(dead_code)]
+
+use gpui::{Bounds, Hsla, Window, point, px, rgb};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rgba {
@@ -88,8 +90,18 @@ impl<'a> Painter<'a> {
         let w = size.width;
         let h = size.height;
         self.stroke_line(Point2 { x, y }, Point2 { x: x + w, y }, width, color);
-        self.stroke_line(Point2 { x: x + w, y }, Point2 { x: x + w, y: y + h }, width, color);
-        self.stroke_line(Point2 { x: x + w, y: y + h }, Point2 { x, y: y + h }, width, color);
+        self.stroke_line(
+            Point2 { x: x + w, y },
+            Point2 { x: x + w, y: y + h },
+            width,
+            color,
+        );
+        self.stroke_line(
+            Point2 { x: x + w, y: y + h },
+            Point2 { x, y: y + h },
+            width,
+            color,
+        );
         self.stroke_line(Point2 { x, y: y + h }, Point2 { x, y }, width, color);
     }
 
@@ -175,5 +187,28 @@ pub fn blend(a: Rgba, b: Rgba, t: f32) -> Rgba {
         g: a.g + (b.g - a.g) * t,
         b: a.b + (b.b - a.b) * t,
         a: a.a + (b.a - a.a) * t,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blend_endpoints() {
+        let a = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let b = Rgba {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        };
+        assert_eq!(blend(a, b, 0.0), a);
+        assert_eq!(blend(a, b, 1.0), b);
     }
 }
