@@ -8,9 +8,9 @@ use std::time::Instant;
 
 use gpui::{Bounds, Pixels};
 
-use crate::shared::theme::{OpenCoreTheme, ThemeMode};
+use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme, ThemeRgba};
 
-use super::onboarding_draw::{Painter, Point2, Rgba, Size2};
+use super::onboarding_draw::{Painter, Point2, Rgba, Size2, blend, with_alpha};
 
 use super::onboarding_dynamics::{MAX_ZOOM, SPEED_CLAMP};
 
@@ -53,33 +53,27 @@ struct GalaxyPalette {
 
 impl GalaxyPalette {
     fn from_theme(theme: &OpenCoreTheme) -> Self {
-        match theme.mode {
-            ThemeMode::Dark => Self {
-                arm_young: Rgba::rgb(0.94, 0.94, 0.94),
-                arm_old: Rgba::rgb(0.68, 0.68, 0.68),
-                bulge: Rgba::rgb(0.88, 0.88, 0.88),
-                nucleus: Rgba::rgb(1.0, 1.0, 1.0),
-                hii_region: Rgba::rgb(0.78, 0.78, 0.78),
-                dust: Rgba::rgb(0.22, 0.22, 0.22),
-                halo: Rgba::rgb(0.52, 0.52, 0.52),
-                jet: Rgba::rgb(0.82, 0.82, 0.82),
-                starfield: Rgba::rgb(0.90, 0.90, 0.90),
-                core: Rgba::rgb(1.0, 1.0, 1.0),
-                rim: Rgba::rgb(0.42, 0.42, 0.42),
-            },
-            ThemeMode::Light => Self {
-                arm_young: Rgba::rgb(0.12, 0.12, 0.12),
-                arm_old: Rgba::rgb(0.38, 0.38, 0.38),
-                bulge: Rgba::rgb(0.18, 0.18, 0.18),
-                nucleus: Rgba::rgb(0.04, 0.04, 0.04),
-                hii_region: Rgba::rgb(0.28, 0.28, 0.28),
-                dust: Rgba::rgb(0.78, 0.78, 0.78),
-                halo: Rgba::rgb(0.48, 0.48, 0.48),
-                jet: Rgba::rgb(0.22, 0.22, 0.22),
-                starfield: Rgba::rgb(0.10, 0.10, 0.10),
-                core: Rgba::rgb(0.02, 0.02, 0.02),
-                rim: Rgba::rgb(0.58, 0.58, 0.58),
-            },
+        let fg = |token: ForegroundToken| rgba_from_theme(theme.rgba_foreground(token));
+        let surface = |token: BackgroundToken| rgba_from_theme(theme.rgba_surface(token));
+
+        let primary = fg(ForegroundToken::Primary);
+        let secondary = fg(ForegroundToken::Secondary);
+        let muted = fg(ForegroundToken::Muted);
+        let accent = fg(ForegroundToken::Accent);
+        let tertiary = surface(BackgroundToken::Tertiary);
+
+        Self {
+            arm_young: primary,
+            arm_old: secondary,
+            bulge: accent,
+            nucleus: primary,
+            hii_region: blend(secondary, accent, 0.35),
+            dust: tertiary,
+            halo: muted,
+            jet: accent,
+            starfield: primary,
+            core: primary,
+            rim: muted,
         }
     }
 
@@ -621,11 +615,7 @@ fn draw_bulge(
         let r_norm = r / 0.38; // Normalize to 0-1 range
         let tinted = pal.radial_tint(warm, r_norm, 0.7);
 
-        let hot = blend(
-            tinted,
-            Rgba::WHITE,
-            (1.0 - r * 1.3).clamp(0.0, 0.6),
-        );
+        let hot = blend(tinted, Rgba::WHITE, (1.0 - r * 1.3).clamp(0.0, 0.6));
 
         let shimmer_phase = noise(seed, 71.0) * std::f32::consts::TAU;
         let shimmer = (t * 1.6 + shimmer_phase).sin() * 0.5 + 0.5;
@@ -811,23 +801,14 @@ fn snap(value: f32) -> f32 {
     (value / SNAP_GRID).round() * SNAP_GRID
 }
 
-fn with_alpha(color: Rgba, alpha: f32) -> Rgba {
+fn rgba_from_theme(color: ThemeRgba) -> Rgba {
     Rgba {
-        a: alpha.clamp(0.0, 1.0),
-        ..color
+        r: color.r,
+        g: color.g,
+        b: color.b,
+        a: color.a,
     }
 }
-
-fn blend(a: Rgba, b: Rgba, t: f32) -> Rgba {
-    let t = t.clamp(0.0, 1.0);
-    Rgba {
-        r: a.r + (b.r - a.r) * t,
-        g: a.g + (b.g - a.g) * t,
-        b: a.b + (b.b - a.b) * t,
-        a: a.a + (b.a - a.a) * t,
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
@@ -846,23 +827,5 @@ mod tests {
         let a = noise(7.0, 13.0);
         let b = noise(7.0, 13.0);
         assert_eq!(a, b);
-    }
-
-    #[test]
-    fn blend_endpoints() {
-        let a = Rgba {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        };
-        let b = Rgba {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 1.0,
-        };
-        assert_eq!(blend(a, b, 0.0), a);
-        assert_eq!(blend(a, b, 1.0), b);
     }
 }

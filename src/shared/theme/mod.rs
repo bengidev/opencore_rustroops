@@ -6,10 +6,11 @@ use gpui::Hsla;
 use serde::{Deserialize, Serialize};
 
 /// User-facing theme selection persisted in [`crate::shared::preferences::AppPreferences`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeMode {
     Light,
+    #[default]
     Dark,
 }
 
@@ -19,12 +20,6 @@ impl ThemeMode {
             Self::Light => Self::Dark,
             Self::Dark => Self::Light,
         }
-    }
-}
-
-impl Default for ThemeMode {
-    fn default() -> Self {
-        Self::Dark
     }
 }
 
@@ -97,9 +92,26 @@ impl TypeRole {
     }
 }
 
-/// A single color token (hex string) for shell compatibility.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ColorToken(pub &'static str);
+/// Linear RGBA components in `[0.0, 1.0]` for canvas drawing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThemeRgba {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
+impl ThemeRgba {
+    pub fn from_hsla(h: Hsla) -> Self {
+        let c = h.to_rgb();
+        Self {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
+    }
+}
 
 /// Typography role used across shell zones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,13 +134,7 @@ pub struct SpacingScale {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenCoreTheme {
     pub mode: ThemeMode,
-    pub background: ColorToken,
-    pub foreground: ColorToken,
-    pub border: ColorToken,
-    pub accent: ColorToken,
     pub spacing: SpacingScale,
-    pub display_title: LegacyTypeRole,
-    pub tagline: LegacyTypeRole,
     pub label: LegacyTypeRole,
 }
 
@@ -201,6 +207,22 @@ impl OpenCoreTheme {
     pub fn control_radius(&self) -> f32 {
         8.0
     }
+
+    pub fn rgba_foreground(&self, token: ForegroundToken) -> ThemeRgba {
+        ThemeRgba::from_hsla(self.foreground(token))
+    }
+
+    pub fn rgba_surface(&self, token: BackgroundToken) -> ThemeRgba {
+        ThemeRgba::from_hsla(self.surface(token))
+    }
+
+    pub fn rgba_border(&self, token: BorderToken) -> ThemeRgba {
+        ThemeRgba::from_hsla(self.border_token(token))
+    }
+
+    pub fn rgba_action(&self, token: ActionToken) -> ThemeRgba {
+        ThemeRgba::from_hsla(self.action(token))
+    }
 }
 
 const SPACING: SpacingScale = SpacingScale {
@@ -211,35 +233,15 @@ const SPACING: SpacingScale = SpacingScale {
     xl: 32,
 };
 
-const DISPLAY_TITLE: LegacyTypeRole = LegacyTypeRole {
-    size_px: 32,
-    weight: 700,
-};
-
-const TAGLINE: LegacyTypeRole = LegacyTypeRole {
-    size_px: 12,
-    weight: 400,
-};
-
 const LABEL: LegacyTypeRole = LegacyTypeRole {
     size_px: 14,
     weight: 500,
 };
 
 const fn theme_with_mode(mode: ThemeMode) -> OpenCoreTheme {
-    let (background, foreground, border, accent) = match mode {
-        ThemeMode::Light => ("#FAFAFA", "#0A0A0A", "#E6E6E6", "#171717"),
-        ThemeMode::Dark => ("#000000", "#FAFAFA", "#262626", "#E6E6E6"),
-    };
     OpenCoreTheme {
         mode,
-        background: ColorToken(background),
-        foreground: ColorToken(foreground),
-        border: ColorToken(border),
-        accent: ColorToken(accent),
         spacing: SPACING,
-        display_title: DISPLAY_TITLE,
-        tagline: TAGLINE,
         label: LABEL,
     }
 }
@@ -265,15 +267,15 @@ mod tests {
     #[test]
     fn dark_theme_uses_dark_background() {
         let theme = OpenCoreTheme::resolve(ThemeMode::Dark);
-        assert_eq!(theme.background.0, "#000000");
-        assert_eq!(theme.foreground.0, "#FAFAFA");
+        let bg = theme.surface(BackgroundToken::Primary);
+        assert_eq!(bg, rgba_to_hsla(rgbf(0.0, 0.0, 0.0)));
     }
 
     #[test]
     fn light_theme_uses_light_background() {
         let theme = OpenCoreTheme::resolve(ThemeMode::Light);
-        assert_eq!(theme.background.0, "#FAFAFA");
-        assert_eq!(theme.foreground.0, "#0A0A0A");
+        let bg = theme.surface(BackgroundToken::Primary);
+        assert_eq!(bg, rgba_to_hsla(rgbf(0.98, 0.98, 0.98)));
     }
 
     #[test]
@@ -292,6 +294,6 @@ mod tests {
         let light = OpenCoreTheme::resolve(ThemeMode::Light);
         let dark = OpenCoreTheme::resolve(ThemeMode::Dark);
         assert_eq!(light.spacing, dark.spacing);
-        assert_eq!(light.display_title, dark.display_title);
+        assert_eq!(light.label, dark.label);
     }
 }
