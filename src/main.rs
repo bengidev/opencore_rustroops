@@ -5,5 +5,4 @@ fn main() {
         eprintln!("opencore_rustroops failed to start: {error}");
         std::process::exit(1);
     }
-    // GPU window wiring deferred to PRD #2; `RunningApp` is constructed and dropped here.
 }

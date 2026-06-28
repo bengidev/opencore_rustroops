@@ -1,5 +1,7 @@
 # opencore_rustroops
 
+[![CI](https://github.com/bengidev/opencore_rustroops/actions/workflows/ci.yml/badge.svg)](https://github.com/bengidev/opencore_rustroops/actions/workflows/ci.yml)
+
 A desktop application that integrates frontier AI capabilities to help users complete tasks on their machine. The app combines three workspaces—editor, chat, and terminal—so you can edit content, converse with AI, and run commands in one environment.
 
 ## Background
@@ -21,9 +23,10 @@ Together, these modes let you move between writing, asking, and doing without le
 ## Tech Stack
 
 - **Language:** Rust (edition 2024)
+- **Desktop UI:** [GPUI](https://github.com/zed-industries/zed) with [gpui-component](https://github.com/longbridge/gpui-component)
 - **Build:** Cargo
 
-The project is in early development. The core application shell and the three-mode UI are planned; the current codebase is a minimal Rust scaffold.
+The project boots a native GPUI desktop window: an onboarding flow (galaxy orb, theme toggle) routes into a three-zone shell (Editor, Chat, Terminal). On macOS, the window is centered on screen at launch and after onboarding completes.
 
 ## Prerequisites
 
@@ -53,13 +56,25 @@ Run tests:
 cargo test
 ```
 
+## CI
+
+GitHub Actions runs on every push to `master`/`main` and on pull requests:
+
+- `cargo fmt --check`
+- `cargo clippy --all-targets -- -D warnings`
+- `cargo test --all-targets`
+
+Jobs run on **Ubuntu**, **macOS**, and **Windows** (Linux installs GPUI system dependencies via `apt`).
+
 ## Project Structure
 
 ```
 opencore_rustroops/
-├── Cargo.toml      # Package manifest and dependencies
+├── Cargo.toml
 ├── src/
-│   └── main.rs     # Application entry point
+│   ├── main.rs           # Entry point
+│   ├── app/              # GPUI desktop app (onboarding, shell, state)
+│   └── shared/           # Preferences, theme tokens
 └── README.md
 ```
 
