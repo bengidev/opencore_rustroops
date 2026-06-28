@@ -1,9 +1,9 @@
 //! Application state held at the composition root.
 
-use crate::shared::preferences::{AppPreferences, PreferencesError, PreferencesStore};
-use crate::shared::theme::ThemeMode;
 use super::app_boot::boot_screen;
 use super::onboarding::OnboardingOutcome;
+use crate::shared::preferences::{AppPreferences, PreferencesError, PreferencesStore};
+use crate::shared::theme::ThemeMode;
 
 /// Onboarding window width (reference layout proportions).
 pub const ONBOARDING_WINDOW_WIDTH: u32 = 960;
@@ -11,7 +11,7 @@ pub const ONBOARDING_WINDOW_WIDTH: u32 = 960;
 /// Onboarding window height.
 pub const ONBOARDING_WINDOW_HEIGHT: u32 = 680;
 
-/// Shell window width after onboarding (480×720 → 1280×800).
+/// Shell window width after onboarding (960×680 → 1280×800).
 pub const SHELL_WINDOW_WIDTH: u32 = 1280;
 
 /// Shell window height after onboarding.

@@ -1,11 +1,11 @@
 //! Onboarding view — immersive monochrome landing ported to GPUI.
 
-use std::rc::Rc;
-
 use gpui::{
-    canvas, div, px, relative, App, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, Styled, Window,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
+    SharedString, Styled, canvas, div, px, relative,
 };
+
+use crate::app::gpui_callbacks::{AppHandler, WindowAppHandler};
 
 use crate::shared::theme::{
     ActionToken, BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
@@ -24,11 +24,11 @@ const EDGE_INSET_V: f32 = 20.0;
 
 #[derive(Clone)]
 pub struct OnboardingCallbacks {
-    pub on_enter: Rc<dyn Fn(&mut Window, &mut App)>,
-    pub on_skip: Rc<dyn Fn(&mut Window, &mut App)>,
-    pub on_toggle_theme: Rc<dyn Fn(&mut Window, &mut App)>,
-    pub on_orb_pressed: Rc<dyn Fn(&mut App)>,
-    pub on_orb_released: Rc<dyn Fn(&mut App)>,
+    pub on_enter: WindowAppHandler,
+    pub on_skip: WindowAppHandler,
+    pub on_toggle_theme: WindowAppHandler,
+    pub on_orb_pressed: AppHandler,
+    pub on_orb_released: AppHandler,
 }
 
 /// Full-screen onboarding scene matching the reference layout.
@@ -36,14 +36,21 @@ pub fn onboarding_screen(
     theme: OpenCoreTheme,
     ui: &OnboardingUiState,
     callbacks: OnboardingCallbacks,
+    persistence_error: Option<&str>,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
     let backdrop = SceneBackdrop::new(theme, ui.started_at, ui.now);
+    let on_enter_key = callbacks.on_enter.clone();
 
-    // GPUI stacks siblings in flex — backdrop and content must overlay (iced `Stack::push_under`).
     div()
         .size_full()
+        .tab_index(0)
         .bg(background)
+        .on_key_down(move |event: &KeyDownEvent, window, cx| {
+            if is_enter_keystroke(event) {
+                on_enter_key(window, cx);
+            }
+        })
         .child(
             div()
                 .absolute()
@@ -58,8 +65,13 @@ pub fn onboarding_screen(
                 .top_0()
                 .left_0()
                 .size_full()
-                .child(main_column(theme, ui, callbacks)),
+                .child(main_column(theme, ui, callbacks, persistence_error)),
         )
+}
+
+fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
+    let key = event.keystroke.key.as_str();
+    matches!(key, "enter" | "return") && !event.keystroke.modifiers.modified()
 }
 
 fn backdrop_canvas(backdrop: SceneBackdrop) -> impl IntoElement {
@@ -76,8 +88,9 @@ fn main_column(
     theme: OpenCoreTheme,
     ui: &OnboardingUiState,
     callbacks: OnboardingCallbacks,
+    persistence_error: Option<&str>,
 ) -> impl IntoElement {
-    div()
+    let mut column = div()
         .size_full()
         .flex()
         .flex_col()
@@ -86,8 +99,23 @@ fn main_column(
         .child(header_row(theme, callbacks.clone()))
         .child(div().h(px(SpacingToken::S4.value())))
         .child(hero_block(theme, ui, callbacks.clone()))
-        .child(div().flex_grow(1.))
-        .child(action_row(theme, callbacks))
+        .child(div().flex_grow(1.));
+
+    if let Some(message) = persistence_error {
+        let muted = theme.foreground(ForegroundToken::Muted);
+        let message = SharedString::from(message);
+        column = column.child(
+            div()
+                .w_full()
+                .text_center()
+                .text_size(px(11.))
+                .text_color(muted)
+                .pb(px(4.))
+                .child(message),
+        );
+    }
+
+    column.child(action_row(theme, callbacks))
 }
 
 fn header_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
@@ -197,6 +225,9 @@ fn orb_canvas(orb: GalaxyOrb) -> impl IntoElement {
 }
 
 fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
+    let skip_color = theme.foreground(ForegroundToken::Muted);
+    let on_skip = callbacks.on_skip.clone();
+
     div()
         .w_full()
         .flex()
@@ -204,17 +235,21 @@ fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl Into
         .justify_center()
         .gap(px(12.))
         .pb(px(8.))
-        .child(primary_button(
-            theme,
-            "Enter OpenCore",
-            callbacks.on_enter,
-        ))
+        .child(primary_button(theme, "Enter OpenCore", callbacks.on_enter))
+        .child(
+            div()
+                .text_size(px(12.))
+                .text_color(skip_color)
+                .cursor_pointer()
+                .child("Skip")
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| on_skip(window, cx)),
+        )
 }
 
 fn primary_button(
     theme: OpenCoreTheme,
     label: &'static str,
-    on_press: Rc<dyn Fn(&mut Window, &mut App)>,
+    on_press: WindowAppHandler,
 ) -> impl IntoElement {
     let bg = theme.action(ActionToken::Strong);
     let text = theme.action(ActionToken::StrongText);

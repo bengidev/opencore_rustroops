@@ -6,23 +6,23 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::{
-    div, px, size, App, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window,
-    WindowBounds, WindowOptions,
+    App, AppContext, Context, IntoElement, ParentElement, Render, Styled, WeakEntity, Window,
+    WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_component::Root;
 use gpui_component::Theme;
 
-use crate::shared::preferences::{FilePreferencesStore, PreferencesStore};
+use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use crate::shared::theme::{OpenCoreTheme, ThemeMode};
 
-use super::onboarding::{
-    onboarding_screen, reduce_onboarding, OnboardingCallbacks, OnboardingCommand,
-    OnboardingUiState,
-};
-use super::shell::{shell_screen, ShellCallbacks};
-use super::app_state::{ActiveScreen, AppState};
-use super::window_placement::center_window;
 use super::AppError;
+use super::app_state::{ActiveScreen, AppState};
+use super::onboarding::{
+    OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
+    onboarding_screen, reduce_onboarding,
+};
+use super::shell::{ShellCallbacks, shell_screen};
+use super::window_placement::center_window;
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
 pub struct OpenCoreApp {
@@ -30,6 +30,7 @@ pub struct OpenCoreApp {
     store: Arc<FilePreferencesStore>,
     onboarding_ui: Option<OnboardingUiState>,
     animation_scheduled: bool,
+    persistence_error: Option<String>,
 }
 
 impl OpenCoreApp {
@@ -44,6 +45,7 @@ impl OpenCoreApp {
             store,
             onboarding_ui,
             animation_scheduled: false,
+            persistence_error: None,
         }
     }
 
@@ -63,28 +65,72 @@ impl OpenCoreApp {
         }
     }
 
-    fn complete_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self
+    fn finish_screen_transition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_resize_intent(window, cx);
+        cx.notify();
+    }
+
+    fn record_persistence_error(&mut self, context: &str, error: PreferencesError) {
+        eprintln!("opencore: {context}: {error}");
+        self.persistence_error = Some(format!("Could not save settings ({error})"));
+    }
+
+    fn apply_onboarding_command(
+        &mut self,
+        command: OnboardingCommand,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let outcome = reduce_onboarding(command);
+        match self
             .state
-            .complete_onboarding(self.store.as_ref())
-            .is_ok()
+            .apply_onboarding_outcome(outcome, self.store.as_ref())
         {
-            self.onboarding_ui = None;
-            self.apply_resize_intent(window, cx);
-            cx.notify();
+            Ok(()) => {
+                self.persistence_error = None;
+                if outcome != OnboardingOutcome::Pending {
+                    self.onboarding_ui = None;
+                    self.finish_screen_transition(window, cx);
+                }
+            }
+            Err(error) => {
+                let context = match command {
+                    OnboardingCommand::EnterPressed => "complete onboarding",
+                    OnboardingCommand::Skipped => "skip onboarding",
+                };
+                self.record_persistence_error(context, error);
+                cx.notify();
+            }
+        }
+    }
+
+    fn toggle_theme(&mut self, cx: &mut Context<Self>) {
+        let next = self.state.theme_mode().toggle();
+        match self.state.set_theme_mode(self.store.as_ref(), next) {
+            Ok(()) => {
+                self.persistence_error = None;
+                self.sync_component_theme(cx);
+                cx.notify();
+            }
+            Err(error) => {
+                self.record_persistence_error("save theme", error);
+                cx.notify();
+            }
         }
     }
 
     fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self
-            .state
-            .reset_persistent_data(self.store.as_ref())
-            .is_ok()
-        {
-            self.onboarding_ui = Some(OnboardingUiState::new());
-            self.animation_scheduled = false;
-            self.apply_resize_intent(window, cx);
-            cx.notify();
+        match self.state.reset_persistent_data(self.store.as_ref()) {
+            Ok(()) => {
+                self.onboarding_ui = Some(OnboardingUiState::new());
+                self.animation_scheduled = false;
+                self.persistence_error = None;
+                self.finish_screen_transition(window, cx);
+            }
+            Err(error) => {
+                self.record_persistence_error("reset dev data", error);
+                cx.notify();
+            }
         }
     }
 
@@ -120,6 +166,65 @@ impl OpenCoreApp {
     }
 }
 
+impl OnboardingCallbacks {
+    pub fn from_app(view: WeakEntity<OpenCoreApp>) -> Self {
+        let on_enter = {
+            let view = view.clone();
+            Rc::new(move |window: &mut Window, cx: &mut App| {
+                let _ = view.update(cx, |app, cx| {
+                    app.apply_onboarding_command(OnboardingCommand::EnterPressed, window, cx);
+                });
+            })
+        };
+        let on_skip = {
+            let view = view.clone();
+            Rc::new(move |window: &mut Window, cx: &mut App| {
+                let _ = view.update(cx, |app, cx| {
+                    app.apply_onboarding_command(OnboardingCommand::Skipped, window, cx);
+                });
+            })
+        };
+        let on_toggle_theme = {
+            let view = view.clone();
+            Rc::new(move |_: &mut Window, cx: &mut App| {
+                let _ = view.update(cx, |app, cx| {
+                    app.toggle_theme(cx);
+                });
+            })
+        };
+        let on_orb_pressed = {
+            let view = view.clone();
+            Rc::new(move |cx: &mut App| {
+                let _ = view.update(cx, |app, cx| {
+                    if let Some(ui) = app.onboarding_ui.as_mut() {
+                        ui.orb_pressed();
+                        cx.notify();
+                    }
+                });
+            })
+        };
+        let on_orb_released = {
+            let view = view.clone();
+            Rc::new(move |cx: &mut App| {
+                let _ = view.update(cx, |app, cx| {
+                    if let Some(ui) = app.onboarding_ui.as_mut() {
+                        ui.orb_released();
+                        cx.notify();
+                    }
+                });
+            })
+        };
+
+        Self {
+            on_enter,
+            on_skip,
+            on_toggle_theme,
+            on_orb_pressed,
+            on_orb_released,
+        }
+    }
+}
+
 impl Render for OpenCoreApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_resize_intent(window, cx);
@@ -130,85 +235,13 @@ impl Render for OpenCoreApp {
                 let theme = self.theme();
                 let ui = self
                     .onboarding_ui
-                    .get_or_insert_with(OnboardingUiState::new)
-                    .clone();
-                let view = cx.entity().downgrade();
+                    .get_or_insert_with(OnboardingUiState::new);
+                let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
+                let persistence_error = self.persistence_error.as_deref();
 
-                let on_enter = Rc::new({
-                    let view = view.clone();
-                    move |window: &mut Window, cx: &mut App| {
-                        let _ = view.update(cx, |app, cx| {
-                            app.complete_onboarding(window, cx);
-                        });
-                    }
-                });
-                let on_skip = {
-                    let view = view.clone();
-                    Rc::new(move |window: &mut Window, cx: &mut App| {
-                        let _ = view.update(cx, |app, cx| {
-                            let outcome = reduce_onboarding(OnboardingCommand::Skipped);
-                            if app
-                                .state
-                                .apply_onboarding_outcome(outcome, app.store.as_ref())
-                                .is_ok()
-                            {
-                                app.onboarding_ui = None;
-                                app.apply_resize_intent(window, cx);
-                                cx.notify();
-                            }
-                        });
-                    })
-                };
-                let on_toggle_theme = {
-                    let view = view.clone();
-                    Rc::new(move |_: &mut Window, cx: &mut App| {
-                        let _ = view.update(cx, |app, cx| {
-                            let next = app.state.theme_mode().toggle();
-                            if app
-                                .state
-                                .set_theme_mode(app.store.as_ref(), next)
-                                .is_ok()
-                            {
-                                app.sync_component_theme(cx);
-                                cx.notify();
-                            }
-                        });
-                    })
-                };
-                let on_orb_pressed = {
-                    let view = view.clone();
-                    Rc::new(move |cx: &mut App| {
-                        let _ = view.update(cx, |app, cx| {
-                            if let Some(ui) = app.onboarding_ui.as_mut() {
-                                ui.orb_pressed();
-                                cx.notify();
-                            }
-                        });
-                    })
-                };
-                let on_orb_released = {
-                    let view = view.clone();
-                    Rc::new(move |cx: &mut App| {
-                        let _ = view.update(cx, |app, cx| {
-                            if let Some(ui) = app.onboarding_ui.as_mut() {
-                                ui.orb_released();
-                                cx.notify();
-                            }
-                        });
-                    })
-                };
-
-                div().size_full().child(onboarding_screen(
-                    theme,
-                    &ui,
-                    OnboardingCallbacks {
-                        on_enter,
-                        on_skip,
-                        on_toggle_theme,
-                        on_orb_pressed,
-                        on_orb_released,
-                    },
-                ))
+                div()
+                    .size_full()
+                    .child(onboarding_screen(theme, ui, callbacks, persistence_error))
             }
             ActiveScreen::Shell => {
                 let view = cx.entity().downgrade();
@@ -224,7 +257,9 @@ impl Render for OpenCoreApp {
                         }
                     }));
                 }
-                div().size_full().child(shell_screen(self.theme(), callbacks))
+                div()
+                    .size_full()
+                    .child(shell_screen(self.theme(), callbacks))
             }
         }
     }
@@ -232,10 +267,7 @@ impl Render for OpenCoreApp {
 
 fn window_bounds_for_state(state: &AppState, cx: &App) -> WindowBounds {
     let (width, height) = state.initial_window_size();
-    WindowBounds::centered(
-        size(px(width as f32), px(height as f32)),
-        cx,
-    )
+    WindowBounds::centered(size(px(width as f32), px(height as f32)), cx)
 }
 
 fn sync_gpui_component_theme(mode: ThemeMode, cx: &mut App) {
