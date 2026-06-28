@@ -4,16 +4,17 @@
 mod app_boot;
 mod app_desktop;
 mod app_state;
+mod gpui_callbacks;
 mod onboarding;
 mod shell;
 mod window_placement;
 
 pub use app_boot::boot_screen;
-pub use onboarding::{reduce_onboarding, OnboardingCommand, OnboardingOutcome};
 pub use app_state::{
-    ActiveScreen, AppState, WindowResizeIntent, ONBOARDING_WINDOW_HEIGHT, ONBOARDING_WINDOW_WIDTH,
-    SHELL_WINDOW_HEIGHT, SHELL_WINDOW_WIDTH,
+    ActiveScreen, AppState, ONBOARDING_WINDOW_HEIGHT, ONBOARDING_WINDOW_WIDTH, SHELL_WINDOW_HEIGHT,
+    SHELL_WINDOW_WIDTH, WindowResizeIntent,
 };
+pub use onboarding::{OnboardingCommand, OnboardingOutcome, reduce_onboarding};
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use thiserror::Error;
@@ -115,9 +116,7 @@ mod tests {
             .complete_onboarding(&store)
             .expect("complete onboarding");
 
-        let intent = state
-            .pending_window_resize
-            .expect("resize intent recorded");
+        let intent = state.pending_window_resize.expect("resize intent recorded");
         assert_eq!(intent.width, SHELL_WINDOW_WIDTH);
         assert_eq!(intent.height, SHELL_WINDOW_HEIGHT);
     }
