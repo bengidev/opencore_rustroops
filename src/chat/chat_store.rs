@@ -76,9 +76,8 @@ impl SqliteChatStore {
         if path.exists() {
             let backup = path.with_extension("corrupt");
             let _ = std::fs::remove_file(&backup);
-            std::fs::rename(&path, &backup).map_err(|error| {
-                rusqlite::Error::ToSqlConversionFailure(Box::new(error))
-            })?;
+            std::fs::rename(&path, &backup)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         }
         Self::at(path)
     }
@@ -148,9 +147,8 @@ impl ChatStore for SqliteChatStore {
         )?;
         let rows = statement.query_map(params![thread_id], |row| {
             let role: String = row.get(1)?;
-            let role = parse_role(&role).map_err(|error| {
-                rusqlite::Error::ToSqlConversionFailure(Box::new(error))
-            })?;
+            let role = parse_role(&role)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
             Ok(StoredMessage {
                 id: row.get(0)?,
                 role,
