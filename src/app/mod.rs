@@ -148,17 +148,6 @@ mod tests {
     }
 
     #[test]
-    fn skip_onboarding_routes_to_shell() {
-        let store = InMemoryPreferencesStore::new();
-        let mut state = AppState::from_preferences(AppPreferences::default());
-        let outcome = reduce_onboarding(OnboardingCommand::Skipped);
-        state
-            .apply_onboarding_outcome(outcome, &store)
-            .expect("apply outcome");
-        assert_eq!(state.active_screen, ActiveScreen::Shell);
-    }
-
-    #[test]
     fn reset_persistent_data_routes_to_onboarding() {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences {

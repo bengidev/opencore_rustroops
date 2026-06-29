@@ -104,11 +104,7 @@ impl OpenCoreApp {
                 }
             }
             Err(error) => {
-                let context = match command {
-                    OnboardingCommand::EnterPressed => "complete onboarding",
-                    OnboardingCommand::Skipped => "skip onboarding",
-                };
-                self.record_persistence_error(context, error);
+                self.record_persistence_error("complete onboarding", error);
                 cx.notify();
             }
         }
@@ -187,14 +183,6 @@ impl OnboardingCallbacks {
                 });
             })
         };
-        let on_skip = {
-            let view = view.clone();
-            Rc::new(move |window: &mut Window, cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    app.apply_onboarding_command(OnboardingCommand::Skipped, window, cx);
-                });
-            })
-        };
         let on_toggle_theme = {
             let view = view.clone();
             Rc::new(move |_: &mut Window, cx: &mut App| {
@@ -228,7 +216,6 @@ impl OnboardingCallbacks {
 
         Self {
             on_enter,
-            on_skip,
             on_toggle_theme,
             on_orb_pressed,
             on_orb_released,
