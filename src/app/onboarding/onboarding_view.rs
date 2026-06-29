@@ -72,29 +72,7 @@ pub fn onboarding_screen(
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
     let key = event.keystroke.key.as_str();
-    matches!(key, "enter" | "return")
-        && !event.is_held
-        && !event.keystroke.modifiers.modified()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use gpui::Keystroke;
-
-    fn enter_key_event(is_held: bool) -> KeyDownEvent {
-        KeyDownEvent {
-            keystroke: Keystroke::parse("enter").expect("enter keystroke"),
-            is_held,
-            prefer_character_input: false,
-        }
-    }
-
-    #[test]
-    fn enter_keystroke_ignores_key_autorepeat() {
-        assert!(is_enter_keystroke(&enter_key_event(false)));
-        assert!(!is_enter_keystroke(&enter_key_event(true)));
-    }
+    matches!(key, "enter" | "return") && !event.is_held && !event.keystroke.modifiers.modified()
 }
 
 fn backdrop_canvas(backdrop: SceneBackdrop) -> impl IntoElement {
@@ -277,4 +255,24 @@ fn primary_button(
         .cursor_pointer()
         .child(label)
         .on_mouse_down(MouseButton::Left, move |_, window, cx| on_press(window, cx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::Keystroke;
+
+    fn enter_key_event(is_held: bool) -> KeyDownEvent {
+        KeyDownEvent {
+            keystroke: Keystroke::parse("enter").expect("enter keystroke"),
+            is_held,
+            prefer_character_input: false,
+        }
+    }
+
+    #[test]
+    fn enter_keystroke_ignores_key_autorepeat() {
+        assert!(is_enter_keystroke(&enter_key_event(false)));
+        assert!(!is_enter_keystroke(&enter_key_event(true)));
+    }
 }
