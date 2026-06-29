@@ -9,9 +9,7 @@ mod onboarding_ui_state;
 mod onboarding_view;
 
 pub use onboarding_ui_state::OnboardingUiState;
-pub use onboarding_view::{
-    OnboardingCallbacks, onboarding_interactive_root, onboarding_screen,
-};
+pub use onboarding_view::{OnboardingCallbacks, onboarding_interactive_root, onboarding_screen};
 
 /// Commands the onboarding UI can send to the reducer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
