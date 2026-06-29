@@ -1,6 +1,9 @@
 //! opencore_rustroops library surface.
 //!
-//! Public modules: [`app`] (composition root) and [`shared`] (cross-cutting theme and preferences).
+//! Public modules: [`app`] (composition root), [`api`] (provider boundary),
+//! [`chat`] (chat UI and persistence), and [`shared`] (theme and preferences).
 
+pub mod api;
 pub mod app;
+pub mod chat;
 pub mod shared;
