@@ -1,11 +1,13 @@
 //! Onboarding view — immersive monochrome landing ported to GPUI.
 
 use gpui::{
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
-    SharedString, Styled, canvas, div, px, relative,
+    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, SharedString, Styled, canvas, div, px, relative,
 };
 
-use crate::app::gpui_callbacks::{AppHandler, WindowAppHandler};
+use crate::app::gpui_callbacks::WindowAppHandler;
+
+use crate::app::gpui_callbacks::AppHandler;
 
 use crate::shared::theme::{
     ActionToken, BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
@@ -25,10 +27,27 @@ const EDGE_INSET_V: f32 = 20.0;
 #[derive(Clone)]
 pub struct OnboardingCallbacks {
     pub on_enter: WindowAppHandler,
-    pub on_skip: WindowAppHandler,
     pub on_toggle_theme: WindowAppHandler,
     pub on_orb_pressed: AppHandler,
     pub on_orb_released: AppHandler,
+}
+
+/// Focusable shell for onboarding keyboard input (Enter to complete).
+pub fn onboarding_interactive_root(
+    focus_handle: &FocusHandle,
+    on_enter: WindowAppHandler,
+    content: impl IntoElement,
+) -> impl IntoElement {
+    div()
+        .size_full()
+        .tab_index(0)
+        .track_focus(focus_handle)
+        .on_key_down(move |event: &KeyDownEvent, window, cx| {
+            if is_enter_keystroke(event) {
+                on_enter(window, cx);
+            }
+        })
+        .child(content)
 }
 
 /// Full-screen onboarding scene matching the reference layout.
@@ -40,17 +59,10 @@ pub fn onboarding_screen(
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
     let backdrop = SceneBackdrop::new(theme, ui.started_at, ui.now);
-    let on_enter_key = callbacks.on_enter.clone();
 
     div()
         .size_full()
-        .tab_index(0)
         .bg(background)
-        .on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if is_enter_keystroke(event) {
-                on_enter_key(window, cx);
-            }
-        })
         .child(
             div()
                 .absolute()
@@ -71,7 +83,7 @@ pub fn onboarding_screen(
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
     let key = event.keystroke.key.as_str();
-    matches!(key, "enter" | "return") && !event.keystroke.modifiers.modified()
+    matches!(key, "enter" | "return") && !event.is_held && !event.keystroke.modifiers.modified()
 }
 
 fn backdrop_canvas(backdrop: SceneBackdrop) -> impl IntoElement {
@@ -225,25 +237,13 @@ fn orb_canvas(orb: GalaxyOrb) -> impl IntoElement {
 }
 
 fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
-    let skip_color = theme.foreground(ForegroundToken::Muted);
-    let on_skip = callbacks.on_skip.clone();
-
     div()
         .w_full()
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(12.))
         .pb(px(8.))
         .child(primary_button(theme, "Enter OpenCore", callbacks.on_enter))
-        .child(
-            div()
-                .text_size(px(12.))
-                .text_color(skip_color)
-                .cursor_pointer()
-                .child("Skip")
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| on_skip(window, cx)),
-        )
 }
 
 fn primary_button(
@@ -266,4 +266,24 @@ fn primary_button(
         .cursor_pointer()
         .child(label)
         .on_mouse_down(MouseButton::Left, move |_, window, cx| on_press(window, cx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::Keystroke;
+
+    fn enter_key_event(is_held: bool) -> KeyDownEvent {
+        KeyDownEvent {
+            keystroke: Keystroke::parse("enter").expect("enter keystroke"),
+            is_held,
+            prefer_character_input: false,
+        }
+    }
+
+    #[test]
+    fn enter_keystroke_ignores_key_autorepeat() {
+        assert!(is_enter_keystroke(&enter_key_event(false)));
+        assert!(!is_enter_keystroke(&enter_key_event(true)));
+    }
 }

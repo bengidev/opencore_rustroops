@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::{
-    App, AppContext, Context, IntoElement, ParentElement, Render, Styled, WeakEntity, Window,
-    WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
+    Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_component::Root;
 use gpui_component::Theme;
@@ -19,7 +19,7 @@ use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
 use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
-    onboarding_screen, reduce_onboarding,
+    onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
 use super::shell::{ShellCallbacks, shell_screen};
 use super::window_placement::center_window;
@@ -28,13 +28,14 @@ use super::window_placement::center_window;
 pub struct OpenCoreApp {
     state: AppState,
     store: Arc<FilePreferencesStore>,
+    focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
     animation_scheduled: bool,
     persistence_error: Option<String>,
 }
 
 impl OpenCoreApp {
-    fn new(state: AppState, store: Arc<FilePreferencesStore>) -> Self {
+    fn new(state: AppState, store: Arc<FilePreferencesStore>, cx: &mut Context<Self>) -> Self {
         let onboarding_ui = if state.active_screen == ActiveScreen::Onboarding {
             Some(OnboardingUiState::new())
         } else {
@@ -43,6 +44,7 @@ impl OpenCoreApp {
         Self {
             state,
             store,
+            focus_handle: cx.focus_handle(),
             onboarding_ui,
             animation_scheduled: false,
             persistence_error: None,
@@ -70,6 +72,12 @@ impl OpenCoreApp {
         cx.notify();
     }
 
+    fn ensure_onboarding_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(ui) = self.onboarding_ui.as_mut() {
+            ui.ensure_initial_focus(window, &self.focus_handle, cx);
+        }
+    }
+
     fn record_persistence_error(&mut self, context: &str, error: PreferencesError) {
         eprintln!("opencore: {context}: {error}");
         self.persistence_error = Some(format!("Could not save settings ({error})"));
@@ -94,11 +102,7 @@ impl OpenCoreApp {
                 }
             }
             Err(error) => {
-                let context = match command {
-                    OnboardingCommand::EnterPressed => "complete onboarding",
-                    OnboardingCommand::Skipped => "skip onboarding",
-                };
-                self.record_persistence_error(context, error);
+                self.record_persistence_error("complete onboarding", error);
                 cx.notify();
             }
         }
@@ -125,6 +129,7 @@ impl OpenCoreApp {
                 self.onboarding_ui = Some(OnboardingUiState::new());
                 self.animation_scheduled = false;
                 self.persistence_error = None;
+                self.ensure_onboarding_focus(window, cx);
                 self.finish_screen_transition(window, cx);
             }
             Err(error) => {
@@ -176,14 +181,6 @@ impl OnboardingCallbacks {
                 });
             })
         };
-        let on_skip = {
-            let view = view.clone();
-            Rc::new(move |window: &mut Window, cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    app.apply_onboarding_command(OnboardingCommand::Skipped, window, cx);
-                });
-            })
-        };
         let on_toggle_theme = {
             let view = view.clone();
             Rc::new(move |_: &mut Window, cx: &mut App| {
@@ -217,7 +214,6 @@ impl OnboardingCallbacks {
 
         Self {
             on_enter,
-            on_skip,
             on_toggle_theme,
             on_orb_pressed,
             on_orb_released,
@@ -238,10 +234,13 @@ impl Render for OpenCoreApp {
                     .get_or_insert_with(OnboardingUiState::new);
                 let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
+                let on_enter = callbacks.on_enter.clone();
 
-                div()
-                    .size_full()
-                    .child(onboarding_screen(theme, ui, callbacks, persistence_error))
+                div().size_full().child(onboarding_interactive_root(
+                    &self.focus_handle,
+                    on_enter,
+                    onboarding_screen(theme, ui, callbacks, persistence_error),
+                ))
             }
             ActiveScreen::Shell => {
                 let view = cx.entity().downgrade();
@@ -301,8 +300,14 @@ pub fn run_desktop() -> Result<(), AppError> {
                     ..Default::default()
                 };
 
+                let starts_onboarding = state.active_screen == ActiveScreen::Onboarding;
                 cx.open_window(options, |window, cx| {
-                    let view = cx.new(|_| OpenCoreApp::new(state, store));
+                    let view = cx.new(|cx| OpenCoreApp::new(state, store, cx));
+                    if starts_onboarding {
+                        view.update(cx, |app, cx| {
+                            app.ensure_onboarding_focus(window, cx);
+                        });
+                    }
                     cx.new(|cx| Root::new(view, window, cx))
                 })
                 .expect("failed to open window");

@@ -96,7 +96,7 @@ impl AppState {
     ) -> Result<(), PreferencesError> {
         match outcome {
             OnboardingOutcome::Pending => {}
-            OnboardingOutcome::Completed | OnboardingOutcome::Skipped => {
+            OnboardingOutcome::Completed => {
                 let mut updated = self.preferences.clone();
                 updated.onboarding_completed = true;
                 store.save(&updated)?;
