@@ -11,20 +11,20 @@ use gpui::{
     IntoElement, ParentElement, Render, ScrollAnchor, ScrollHandle, StatefulInteractiveElement,
     Styled, WeakEntity, Window, div, prelude::FluentBuilder, px, relative,
 };
+use gpui_component::Disableable;
+use gpui_component::IconName;
+use gpui_component::Sizable;
+use gpui_component::WindowExt;
 use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::v_flex;
-use gpui_component::Disableable;
-use gpui_component::IconName;
-use gpui_component::Sizable;
-use gpui_component::WindowExt;
 
 use crate::api::{
-    ApiError, CancelToken, ChatMessage, ChatProvider, ChatRequest, CredentialStatus, CredentialStore,
-    MessageRole, StreamEvent, DEFAULT_MODEL,
+    ApiError, CancelToken, ChatMessage, ChatProvider, ChatRequest, CredentialStatus,
+    CredentialStore, DEFAULT_MODEL, MessageRole, StreamEvent,
 };
 use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, LegacyTypeRole, OpenCoreTheme,
@@ -87,13 +87,16 @@ impl ChatView {
         });
 
         let view = cx.entity().downgrade();
-        cx.subscribe(&input, move |this: &mut Self, input, event: &InputEvent, cx| {
-            if let InputEvent::PressEnter { shift, .. } = event {
-                if !shift {
-                    this.try_send_message(input, view.clone(), cx);
+        cx.subscribe(
+            &input,
+            move |this: &mut Self, input, event: &InputEvent, cx| {
+                if let InputEvent::PressEnter { shift, .. } = event {
+                    if !shift {
+                        this.try_send_message(input, view.clone(), cx);
+                    }
                 }
-            }
-        })
+            },
+        )
         .detach();
 
         let message_scroll = ScrollHandle::default();
@@ -132,16 +135,10 @@ impl ChatView {
         });
     }
 
-    fn open_api_key_dialog(
-        &mut self,
-        _: &ClickEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_api_key_dialog(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.api_key_input.is_none() {
-            self.api_key_input = Some(cx.new(|cx| {
-                InputState::new(window, cx).placeholder("sk-or-v1-…")
-            }));
+            self.api_key_input =
+                Some(cx.new(|cx| InputState::new(window, cx).placeholder("sk-or-v1-…")));
         }
 
         let api_key_input = self
@@ -175,11 +172,7 @@ impl ChatView {
                     let view_for_save = view_for_save.clone();
                     let view_for_success = view_for_success.clone();
                     move |_, _window, cx| {
-                        let key = api_key_input_for_save
-                            .read(cx)
-                            .value()
-                            .trim()
-                            .to_string();
+                        let key = api_key_input_for_save.read(cx).value().trim().to_string();
                         if key.is_empty() {
                             return false;
                         }
@@ -445,18 +438,12 @@ impl Render for ChatView {
         let mut content = v_flex().size_full().min_h_0().bg(background);
 
         if let Some(text) = error {
-            content = content.child(
-                div()
-                    .flex_shrink_0()
-                    .px(inset)
-                    .pt(inset)
-                    .child(error_panel(
-                        &text,
-                        border,
-                        theme.foreground(ForegroundToken::Accent),
-                        label,
-                    )),
-            );
+            content = content.child(div().flex_shrink_0().px(inset).pt(inset).child(error_panel(
+                &text,
+                border,
+                theme.foreground(ForegroundToken::Accent),
+                label,
+            )));
         }
 
         let scroll_anchor = self.scroll_anchor.clone();
@@ -473,15 +460,13 @@ impl Render for ChatView {
             ));
         }
 
-        thread = thread
-            .child(div().h(thread_bottom_pad).w_full())
-            .child(
-                div()
-                    .id("chat-scroll-bottom")
-                    .h(px(1.))
-                    .w_full()
-                    .anchor_scroll(Some(scroll_anchor)),
-            );
+        thread = thread.child(div().h(thread_bottom_pad).w_full()).child(
+            div()
+                .id("chat-scroll-bottom")
+                .h(px(1.))
+                .w_full()
+                .anchor_scroll(Some(scroll_anchor)),
+        );
 
         let message_list = v_flex()
             .w_full()
@@ -507,64 +492,59 @@ impl Render for ChatView {
             .appearance(false)
             .disabled(!can_send);
 
-        let composer = div()
-            .flex_shrink_0()
-            .w_full()
-            .px(inset)
-            .pb(inset)
-            .child(
-                v_flex()
-                    .w_full()
-                    .rounded_lg()
-                    .border_1()
-                    .border_color(border)
-                    .bg(card_bg)
-                    .child(
-                        div()
-                            .px(px(12.))
-                            .pt(px(12.))
-                            .when(!can_send, |this| this.opacity(0.6))
-                            .child(input),
-                    )
-                    .child(
-                        h_flex()
-                            .px(px(12.))
-                            .pb(px(12.))
-                            .pt(px(4.))
-                            .gap(px(8.))
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                h_flex()
-                                    .gap(px(8.))
-                                    .items_center()
-                                    .min_w_0()
-                                    .flex_1()
-                                    .child(
-                                        Button::new("configure-api-key")
-                                            .label(api_key_label)
-                                            .xsmall()
-                                            .ghost()
-                                            .on_click(cx.listener(Self::open_api_key_dialog)),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(11.))
-                                            .text_color(muted)
-                                            .child(DEFAULT_MODEL),
-                                    ),
-                            )
-                            .child(
-                                Button::new("send-message")
-                                    .icon(IconName::ArrowUp)
-                                    .primary()
-                                    .small()
-                                    .rounded(ButtonRounded::Size(px(12.)))
-                                    .disabled(!can_send)
-                                    .on_click(cx.listener(Self::on_send_clicked)),
-                            ),
-                    ),
-            );
+        let composer = div().flex_shrink_0().w_full().px(inset).pb(inset).child(
+            v_flex()
+                .w_full()
+                .rounded_lg()
+                .border_1()
+                .border_color(border)
+                .bg(card_bg)
+                .child(
+                    div()
+                        .px(px(12.))
+                        .pt(px(12.))
+                        .when(!can_send, |this| this.opacity(0.6))
+                        .child(input),
+                )
+                .child(
+                    h_flex()
+                        .px(px(12.))
+                        .pb(px(12.))
+                        .pt(px(4.))
+                        .gap(px(8.))
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            h_flex()
+                                .gap(px(8.))
+                                .items_center()
+                                .min_w_0()
+                                .flex_1()
+                                .child(
+                                    Button::new("configure-api-key")
+                                        .label(api_key_label)
+                                        .xsmall()
+                                        .ghost()
+                                        .on_click(cx.listener(Self::open_api_key_dialog)),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(muted)
+                                        .child(DEFAULT_MODEL),
+                                ),
+                        )
+                        .child(
+                            Button::new("send-message")
+                                .icon(IconName::ArrowUp)
+                                .primary()
+                                .small()
+                                .rounded(ButtonRounded::Size(px(12.)))
+                                .disabled(!can_send)
+                                .on_click(cx.listener(Self::on_send_clicked)),
+                        ),
+                ),
+        );
 
         content.child(composer)
     }
@@ -602,34 +582,21 @@ fn message_row(
         .child(message.content.clone());
 
     match message.role {
-        MessageRole::User => div()
-            .w_full()
-            .flex()
-            .justify_end()
-            .child(
-                div()
-                    .max_w(relative(0.82))
-                    .px(px(14.))
-                    .py(px(10.))
-                    .rounded_lg()
-                    .bg(user_bubble_bg)
-                    .child(body),
-            ),
-        MessageRole::Assistant => div()
-            .w_full()
-            .max_w(relative(0.92))
-            .py(px(4.))
-            .child(body),
-        MessageRole::System => div()
-            .w_full()
-            .flex()
-            .justify_center()
-            .py(px(8.))
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(muted)
-                    .child(message.content.clone()),
-            ),
+        MessageRole::User => div().w_full().flex().justify_end().child(
+            div()
+                .max_w(relative(0.82))
+                .px(px(14.))
+                .py(px(10.))
+                .rounded_lg()
+                .bg(user_bubble_bg)
+                .child(body),
+        ),
+        MessageRole::Assistant => div().w_full().max_w(relative(0.92)).py(px(4.)).child(body),
+        MessageRole::System => div().w_full().flex().justify_center().py(px(8.)).child(
+            div()
+                .text_size(px(11.))
+                .text_color(muted)
+                .child(message.content.clone()),
+        ),
     }
 }
