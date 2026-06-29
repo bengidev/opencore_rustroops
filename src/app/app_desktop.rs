@@ -6,12 +6,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::{
-    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
-    Window, WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Context, Entity, FocusHandle, IntoElement, ParentElement, Render, Styled,
+    WeakEntity, Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_component::Root;
 use gpui_component::Theme;
 
+use crate::api::{ChatProvider, CredentialStore, FileCredentialStore, OpenRouterProvider};
+use crate::chat::{ChatStore, ChatView, SqliteChatStore};
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use crate::shared::theme::{OpenCoreTheme, ThemeMode};
 
@@ -21,13 +23,17 @@ use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
-use super::shell::{ShellCallbacks, shell_screen};
+use super::shell::shell_screen;
 use super::window_placement::center_window;
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
 pub struct OpenCoreApp {
     state: AppState,
     store: Arc<FilePreferencesStore>,
+    chat_provider: Arc<dyn ChatProvider>,
+    chat_store: Arc<dyn ChatStore>,
+    credential_store: Arc<dyn CredentialStore>,
+    chat_view: Option<Entity<ChatView>>,
     focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
     animation_scheduled: bool,
@@ -35,7 +41,14 @@ pub struct OpenCoreApp {
 }
 
 impl OpenCoreApp {
-    fn new(state: AppState, store: Arc<FilePreferencesStore>, cx: &mut Context<Self>) -> Self {
+    fn new(
+        state: AppState,
+        store: Arc<FilePreferencesStore>,
+        chat_provider: Arc<dyn ChatProvider>,
+        chat_store: Arc<dyn ChatStore>,
+        credential_store: Arc<dyn CredentialStore>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let onboarding_ui = if state.active_screen == ActiveScreen::Onboarding {
             Some(OnboardingUiState::new())
         } else {
@@ -44,11 +57,35 @@ impl OpenCoreApp {
         Self {
             state,
             store,
+            chat_provider,
+            chat_store,
+            credential_store,
+            chat_view: None,
             focus_handle: cx.focus_handle(),
             onboarding_ui,
             animation_scheduled: false,
             persistence_error: None,
         }
+    }
+
+    fn ensure_chat_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<ChatView> {
+        if let Some(view) = &self.chat_view {
+            view.update(cx, |chat, _| chat.set_theme(self.theme()));
+            return view.clone();
+        }
+
+        let chat_view = cx.new(|cx| {
+            ChatView::new(
+                window,
+                cx,
+                self.chat_provider.clone(),
+                self.chat_store.clone(),
+                self.credential_store.clone(),
+                self.theme(),
+            )
+        });
+        self.chat_view = Some(chat_view.clone());
+        chat_view
     }
 
     fn theme(&self) -> OpenCoreTheme {
@@ -114,26 +151,14 @@ impl OpenCoreApp {
             Ok(()) => {
                 self.persistence_error = None;
                 self.sync_component_theme(cx);
+                if let Some(chat_view) = &self.chat_view {
+                    let theme = self.theme();
+                    chat_view.update(cx, |chat, _| chat.set_theme(theme));
+                }
                 cx.notify();
             }
             Err(error) => {
                 self.record_persistence_error("save theme", error);
-                cx.notify();
-            }
-        }
-    }
-
-    fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.state.reset_persistent_data(self.store.as_ref()) {
-            Ok(()) => {
-                self.onboarding_ui = Some(OnboardingUiState::new());
-                self.animation_scheduled = false;
-                self.persistence_error = None;
-                self.ensure_onboarding_focus(window, cx);
-                self.finish_screen_transition(window, cx);
-            }
-            Err(error) => {
-                self.record_persistence_error("reset dev data", error);
                 cx.notify();
             }
         }
@@ -225,7 +250,7 @@ impl Render for OpenCoreApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_resize_intent(window, cx);
 
-        match self.state.active_screen {
+        let screen = match self.state.active_screen {
             ActiveScreen::Onboarding => {
                 self.schedule_animation(cx);
                 let theme = self.theme();
@@ -241,26 +266,22 @@ impl Render for OpenCoreApp {
                     on_enter,
                     onboarding_screen(theme, ui, callbacks, persistence_error),
                 ))
+                .into_any_element()
             }
             ActiveScreen::Shell => {
-                let view = cx.entity().downgrade();
-                let mut callbacks = ShellCallbacks::new();
-                #[cfg(debug_assertions)]
-                {
-                    callbacks.on_reset_dev = Some(Rc::new({
-                        let view = view.clone();
-                        move |window: &mut Window, cx: &mut App| {
-                            let _ = view.update(cx, |app, cx| {
-                                app.reset_dev_data(window, cx);
-                            });
-                        }
-                    }));
-                }
+                let chat_view = self.ensure_chat_view(window, cx);
                 div()
                     .size_full()
-                    .child(shell_screen(self.theme(), callbacks))
+                    .child(shell_screen(self.theme(), chat_view))
+                    .into_any_element()
             }
-        }
+        };
+
+        div()
+            .relative()
+            .size_full()
+            .child(screen)
+            .children(Root::render_dialog_layer(window, cx))
     }
 }
 
@@ -285,6 +306,10 @@ pub fn run_desktop() -> Result<(), AppError> {
     let preferences = store.load()?;
     let state = AppState::from_preferences(preferences);
     let initial_theme_mode = state.theme_mode();
+    let credential_store: Arc<dyn CredentialStore> = Arc::new(FileCredentialStore::open()?);
+    let chat_provider: Arc<dyn ChatProvider> =
+        Arc::new(OpenRouterProvider::new(credential_store.clone()));
+    let chat_store: Arc<dyn ChatStore> = Arc::new(SqliteChatStore::open()?);
 
     gpui_platform::application()
         .with_assets(gpui_component_assets::Assets)
@@ -293,6 +318,9 @@ pub fn run_desktop() -> Result<(), AppError> {
             sync_gpui_component_theme(initial_theme_mode, cx);
 
             let store = store.clone();
+            let chat_provider = chat_provider.clone();
+            let chat_store = chat_store.clone();
+            let credential_store = credential_store.clone();
             cx.spawn(async move |cx| {
                 let bounds = cx.update(|app| window_bounds_for_state(&state, app));
                 let options = WindowOptions {
@@ -302,7 +330,16 @@ pub fn run_desktop() -> Result<(), AppError> {
 
                 let starts_onboarding = state.active_screen == ActiveScreen::Onboarding;
                 cx.open_window(options, |window, cx| {
-                    let view = cx.new(|cx| OpenCoreApp::new(state, store, cx));
+                    let view = cx.new(|cx| {
+                        OpenCoreApp::new(
+                            state,
+                            store,
+                            chat_provider,
+                            chat_store,
+                            credential_store,
+                            cx,
+                        )
+                    });
                     if starts_onboarding {
                         view.update(cx, |app, cx| {
                             app.ensure_onboarding_focus(window, cx);
