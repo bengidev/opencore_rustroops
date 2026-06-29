@@ -241,15 +241,13 @@ impl Render for OpenCoreApp {
                 let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
 
-                div()
-                    .size_full()
-                    .child(onboarding_screen(
-                        theme,
-                        ui,
-                        callbacks,
-                        persistence_error,
-                        &self.focus_handle,
-                    ))
+                div().size_full().child(onboarding_screen(
+                    theme,
+                    ui,
+                    callbacks,
+                    persistence_error,
+                    &self.focus_handle,
+                ))
             }
             ActiveScreen::Shell => {
                 let view = cx.entity().downgrade();
