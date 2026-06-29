@@ -33,6 +33,9 @@ use crate::shared::theme::{
 use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
 
+/// In-memory assistant row before the first streamed token is persisted.
+const PENDING_ASSISTANT_ID: i64 = -1;
+
 /// GPUI entity for the single-thread chat experience.
 pub struct ChatView {
     provider: Arc<dyn ChatProvider>,
@@ -48,6 +51,9 @@ pub struct ChatView {
     scroll_anchor: ScrollAnchor,
     pending_scroll_to_bottom: bool,
     scroll_settle_frames: u8,
+    credentials_missing: bool,
+    active_stream_cancel: Option<CancelToken>,
+    streaming_assistant_id: Option<i64>,
 }
 
 impl ChatView {
@@ -102,6 +108,8 @@ impl ChatView {
         let message_scroll = ScrollHandle::default();
         let scroll_anchor = ScrollAnchor::for_handle(message_scroll.clone());
         let pending_scroll_to_bottom = !state.messages.is_empty();
+        let credentials_missing =
+            matches!(provider.credential_status(), CredentialStatus::Missing);
 
         Self {
             provider,
@@ -117,6 +125,62 @@ impl ChatView {
             scroll_anchor,
             pending_scroll_to_bottom,
             scroll_settle_frames: if pending_scroll_to_bottom { 4 } else { 0 },
+            credentials_missing,
+            active_stream_cancel: None,
+            streaming_assistant_id: None,
+        }
+    }
+
+    fn refresh_credential_cache(&mut self) {
+        self.credentials_missing =
+            matches!(self.provider.credential_status(), CredentialStatus::Missing);
+    }
+
+    fn cancel_active_stream(&mut self) {
+        if let Some(token) = self.active_stream_cancel.take() {
+            token.cancel();
+        }
+        self.streaming_assistant_id = None;
+    }
+
+    fn persist_assistant_content(
+        &mut self,
+        assistant_id: i64,
+        content: &str,
+        store: &Arc<dyn ChatStore>,
+    ) {
+        if assistant_id == PENDING_ASSISTANT_ID {
+            return;
+        }
+        if let Err(error) = store.update_message_content(assistant_id, content) {
+            self.state
+                .set_error(format!("Could not save message: {error}"));
+        }
+    }
+
+    fn insert_pending_assistant(
+        &mut self,
+        thread_id: i64,
+        content: &str,
+        store: &Arc<dyn ChatStore>,
+    ) -> i64 {
+        match store.insert_message(thread_id, MessageRole::Assistant, content) {
+            Ok(id) => {
+                if let Some(message) = self
+                    .state
+                    .messages
+                    .iter_mut()
+                    .find(|message| message.id == PENDING_ASSISTANT_ID)
+                {
+                    message.id = id;
+                }
+                self.streaming_assistant_id = Some(id);
+                id
+            }
+            Err(error) => {
+                self.state.set_error(error.to_string());
+                PENDING_ASSISTANT_ID
+            }
         }
     }
 
@@ -187,6 +251,7 @@ impl ChatView {
 
                         let _ = view_for_success.update(cx, |chat, cx| {
                             chat.state.error = None;
+                            chat.refresh_credential_cache();
                             cx.notify();
                         });
                         true
@@ -205,17 +270,13 @@ impl ChatView {
         self.try_send_message(input, view, cx);
     }
 
-    fn credentials_missing(&self) -> bool {
-        matches!(self.provider.credential_status(), CredentialStatus::Missing)
-    }
-
     fn try_send_message(
         &mut self,
         input: Entity<InputState>,
         view: WeakEntity<Self>,
         cx: &mut Context<Self>,
     ) {
-        if !self.state.can_send(self.credentials_missing()) {
+        if !self.state.can_send(self.credentials_missing) {
             return;
         }
 
@@ -265,18 +326,9 @@ impl ChatView {
             })
             .collect();
 
-        let assistant_id = match self
-            .store
-            .insert_message(thread_id, MessageRole::Assistant, "")
-        {
-            Ok(id) => id,
-            Err(error) => {
-                self.state.set_error(error.to_string());
-                cx.notify();
-                return;
-            }
-        };
-        self.state.begin_assistant_message(assistant_id);
+        self.cancel_active_stream();
+        self.state.begin_assistant_message(PENDING_ASSISTANT_ID);
+        self.streaming_assistant_id = Some(PENDING_ASSISTANT_ID);
         self.mark_scroll_to_latest();
         cx.notify();
 
@@ -284,6 +336,7 @@ impl ChatView {
         let store = self.store.clone();
 
         let cancel = CancelToken::new();
+        self.active_stream_cancel = Some(cancel.clone());
         let (event_tx, mut event_rx) = mpsc::unbounded();
         let request = ChatRequest {
             model: DEFAULT_MODEL.to_string(),
@@ -313,7 +366,7 @@ impl ChatView {
 
                 let should_stop = matches!(update, StreamUpdate::Done | StreamUpdate::Error(_));
                 let _ = view.update(cx, |chat, cx| {
-                    chat.apply_stream_update(assistant_id, &store, update);
+                    chat.apply_stream_update(&store, update);
                     cx.notify();
                 });
 
@@ -321,26 +374,39 @@ impl ChatView {
                     break;
                 }
             }
+            let _ = view.update(cx, |chat, _| {
+                chat.active_stream_cancel = None;
+                if chat.state.is_streaming {
+                    chat.state.finish_streaming();
+                }
+                chat.streaming_assistant_id = None;
+            });
         })
         .detach();
     }
 
-    fn apply_stream_update(
-        &mut self,
-        assistant_id: i64,
-        store: &Arc<dyn ChatStore>,
-        update: StreamUpdate,
-    ) {
+    fn apply_stream_update(&mut self, store: &Arc<dyn ChatStore>, update: StreamUpdate) {
+        let assistant_id = match self.streaming_assistant_id {
+            Some(id) => id,
+            None => return,
+        };
+        let thread_id = match self.state.thread_id {
+            Some(thread_id) => thread_id,
+            None => return,
+        };
+
         match update {
             StreamUpdate::Token(token) => {
                 self.state.append_assistant_token(assistant_id, &token);
-                if let Some(message) = self
-                    .state
-                    .messages
-                    .iter()
-                    .find(|message| message.id == assistant_id)
-                {
-                    let _ = store.update_message_content(assistant_id, &message.content);
+                if assistant_id == PENDING_ASSISTANT_ID {
+                    let content = self
+                        .state
+                        .messages
+                        .iter()
+                        .find(|message| message.id == PENDING_ASSISTANT_ID)
+                        .map(|message| message.content.clone())
+                        .unwrap_or_default();
+                    let _ = self.insert_pending_assistant(thread_id, &content, store);
                 }
                 self.mark_scroll_to_latest();
             }
@@ -352,8 +418,18 @@ impl ChatView {
                     .iter()
                     .find(|message| message.id == assistant_id)
                 {
-                    let _ = store.update_message_content(assistant_id, &message.content);
+                    let content = message.content.clone();
+                    if assistant_id == PENDING_ASSISTANT_ID {
+                        if content.is_empty() {
+                            self.state.messages.pop();
+                        } else {
+                            let _ = self.insert_pending_assistant(thread_id, &content, store);
+                        }
+                    } else {
+                        self.persist_assistant_content(assistant_id, &content, store);
+                    }
                 }
+                self.streaming_assistant_id = None;
                 self.mark_scroll_to_latest();
             }
             StreamUpdate::Error(message) => {
@@ -361,10 +437,15 @@ impl ChatView {
                     && last.role == MessageRole::Assistant
                     && last.content.is_empty()
                 {
-                    let id = last.id;
+                    if last.id != PENDING_ASSISTANT_ID {
+                        let id = last.id;
+                        if let Err(error) = store.delete_message(id) {
+                            eprintln!("opencore: failed to remove empty assistant message: {error}");
+                        }
+                    }
                     self.state.messages.pop();
-                    let _ = store.delete_message(id);
                 }
+                self.streaming_assistant_id = None;
                 self.state.set_error(message);
             }
         }
@@ -426,10 +507,9 @@ impl Render for ChatView {
         let card_bg = theme.surface(BackgroundToken::Secondary);
         let user_bubble_bg = theme.surface(BackgroundToken::Tertiary);
         let label = theme.label;
-        let credentials_missing = self.credentials_missing();
+        let credentials_missing = self.credentials_missing;
         let can_send = self.state.can_send(credentials_missing);
         let error = self.state.error.clone();
-        let messages = self.state.messages.clone();
         let api_key_label = if credentials_missing {
             "Add API key"
         } else {
@@ -451,9 +531,9 @@ impl Render for ChatView {
 
         let mut thread = v_flex().w_full().gap(px(spacing.md as f32));
 
-        for message in messages {
+        for message in &self.state.messages {
             thread = thread.child(message_row(
-                &message,
+                message,
                 foreground,
                 muted,
                 user_bubble_bg,

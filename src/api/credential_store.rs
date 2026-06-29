@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use thiserror::Error;
 
@@ -61,6 +61,19 @@ impl FileCredentialStore {
     }
 }
 
+#[cfg(unix)]
+fn restrict_file_permissions(path: &Path) -> Result<(), CredentialStoreError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .map_err(CredentialStoreError::Write)
+}
+
+#[cfg(not(unix))]
+fn restrict_file_permissions(_path: &Path) -> Result<(), CredentialStoreError> {
+    Ok(())
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 struct StoredCredentials {
     #[serde(default)]
@@ -72,8 +85,20 @@ impl CredentialStore for FileCredentialStore {
         if !self.path.exists() {
             return None;
         }
-        let contents = fs::read_to_string(&self.path).ok()?;
-        let stored: StoredCredentials = serde_json::from_str(&contents).ok()?;
+        let contents = match fs::read_to_string(&self.path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                eprintln!("opencore: failed to read credentials: {error}");
+                return None;
+            }
+        };
+        let stored: StoredCredentials = match serde_json::from_str(&contents) {
+            Ok(stored) => stored,
+            Err(error) => {
+                eprintln!("opencore: corrupt credentials file ({error}); treating as missing");
+                return None;
+            }
+        };
         stored
             .openrouter_api_key
             .filter(|value| !value.trim().is_empty())
@@ -87,7 +112,9 @@ impl CredentialStore for FileCredentialStore {
         let contents = serde_json::to_string_pretty(&stored)?;
         let temp_path = self.path.with_extension("tmp");
         fs::write(&temp_path, contents).map_err(CredentialStoreError::Write)?;
+        restrict_file_permissions(&temp_path)?;
         fs::rename(&temp_path, &self.path).map_err(CredentialStoreError::Write)?;
+        restrict_file_permissions(&self.path)?;
         Ok(())
     }
 

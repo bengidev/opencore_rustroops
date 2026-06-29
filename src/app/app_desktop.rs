@@ -278,7 +278,7 @@ impl Render for OpenCoreApp {
                 let chat_view = self.ensure_chat_view(window, cx);
                 div()
                     .size_full()
-                    .child(shell_screen(self.theme(), chat_view))
+                    .child(shell_screen(chat_view))
                     .into_any_element()
             }
         };
