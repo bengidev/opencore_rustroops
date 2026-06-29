@@ -22,6 +22,8 @@ pub enum ChatStoreError {
     Open(#[from] rusqlite::Error),
     #[error("chat database is not initialized")]
     NotInitialized,
+    #[error("unknown message role in database: {0}")]
+    InvalidRole(String),
 }
 
 /// Persistence backend for chat threads and messages.
@@ -56,6 +58,28 @@ impl SqliteChatStore {
 
     pub fn open() -> Result<Self, ChatStoreError> {
         let path = Self::default_path()?;
+        Self::open_at(path)
+    }
+
+    /// Opens the store, recreating the database file if it is corrupt or unreadable.
+    pub fn open_at(path: PathBuf) -> Result<Self, ChatStoreError> {
+        match Self::at(path.clone()) {
+            Ok(store) => Ok(store),
+            Err(error) => {
+                eprintln!("opencore: chat database unusable ({error}); recreating");
+                Self::recreate_at(path)
+            }
+        }
+    }
+
+    fn recreate_at(path: PathBuf) -> Result<Self, ChatStoreError> {
+        if path.exists() {
+            let backup = path.with_extension("corrupt");
+            let _ = std::fs::remove_file(&backup);
+            std::fs::rename(&path, &backup).map_err(|error| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+            })?;
+        }
         Self::at(path)
     }
 
@@ -124,9 +148,12 @@ impl ChatStore for SqliteChatStore {
         )?;
         let rows = statement.query_map(params![thread_id], |row| {
             let role: String = row.get(1)?;
+            let role = parse_role(&role).map_err(|error| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+            })?;
             Ok(StoredMessage {
                 id: row.get(0)?,
-                role: parse_role(&role),
+                role,
                 content: row.get(2)?,
             })
         })?;
@@ -252,11 +279,12 @@ fn role_as_str(role: MessageRole) -> &'static str {
     }
 }
 
-fn parse_role(role: &str) -> MessageRole {
+fn parse_role(role: &str) -> Result<MessageRole, ChatStoreError> {
     match role {
-        "system" => MessageRole::System,
-        "assistant" => MessageRole::Assistant,
-        _ => MessageRole::User,
+        "system" => Ok(MessageRole::System),
+        "user" => Ok(MessageRole::User),
+        "assistant" => Ok(MessageRole::Assistant),
+        other => Err(ChatStoreError::InvalidRole(other.to_string())),
     }
 }
 

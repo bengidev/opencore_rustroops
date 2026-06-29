@@ -3,10 +3,10 @@
 use std::pin::Pin;
 
 use futures::{Stream, StreamExt};
-use reqwest::Client;
 use serde::Deserialize;
 
 use super::chat_provider::{ApiError, CancelToken, ChatMessage, MessageRole, StreamEvent};
+use super::http_runtime::http_client;
 
 const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -36,20 +36,13 @@ pub fn stream_chat_completion(
     let api_key = api_key.to_string();
     let model = model.to_string();
     let messages = messages.to_vec();
+    let client = http_client().clone();
 
     Box::pin(async_stream::stream! {
         if cancel.is_cancelled() {
             yield Err(ApiError::RequestFailed("cancelled before start".into()));
             return;
         }
-
-        let client = match Client::builder().build() {
-            Ok(client) => client,
-            Err(error) => {
-                yield Err(ApiError::RequestFailed(error.to_string()));
-                return;
-            }
-        };
 
         let body = serde_json::json!({
             "model": model,
@@ -80,8 +73,10 @@ pub fn stream_chat_completion(
             return;
         }
 
-        let mut buffer = String::new();
+        let mut line_buffer = String::new();
+        let mut byte_tail: Vec<u8> = Vec::new();
         let mut byte_stream = response.bytes_stream();
+        let mut stream_finished = false;
 
         while let Some(chunk) = byte_stream.next().await {
             if cancel.is_cancelled() {
@@ -97,24 +92,50 @@ pub fn stream_chat_completion(
                 }
             };
 
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-            while let Some(line_end) = buffer.find('\n') {
-                let line = buffer.drain(..=line_end).collect::<String>();
+            byte_tail.extend_from_slice(&chunk);
+            let decoded = take_valid_utf8_prefix(&mut byte_tail);
+            line_buffer.push_str(&decoded);
+
+            while let Some(line_end) = line_buffer.find('\n') {
+                let line = line_buffer.drain(..=line_end).collect::<String>();
                 if let Some(event) = parse_sse_line(line.trim()) {
+                    if matches!(&event, Ok(StreamEvent::Done)) {
+                        stream_finished = true;
+                    }
                     yield event;
                 }
             }
         }
 
-        let trailing = buffer.trim();
+        if !byte_tail.is_empty() {
+            line_buffer.push_str(&String::from_utf8_lossy(&byte_tail));
+            byte_tail.clear();
+        }
+
+        let trailing = line_buffer.trim();
         if !trailing.is_empty()
             && let Some(event) = parse_sse_line(trailing)
         {
+            if matches!(&event, Ok(StreamEvent::Done)) {
+                stream_finished = true;
+            }
             yield event;
         }
 
-        yield Ok(StreamEvent::Done);
+        if !stream_finished {
+            yield Ok(StreamEvent::Done);
+        }
     })
+}
+
+/// Decodes as much of `bytes` as forms valid UTF-8, leaving any trailing partial codepoint in place.
+fn take_valid_utf8_prefix(bytes: &mut Vec<u8>) -> String {
+    let mut end = bytes.len();
+    while end > 0 && std::str::from_utf8(&bytes[..end]).is_err() {
+        end -= 1;
+    }
+    let valid = bytes.drain(..end).collect::<Vec<_>>();
+    String::from_utf8(valid).expect("validated utf-8 prefix")
 }
 
 fn openrouter_message(message: &ChatMessage) -> serde_json::Value {
@@ -163,5 +184,18 @@ mod tests {
     fn parse_sse_line_handles_done_marker() {
         let event = parse_sse_line("data: [DONE]").expect("event").expect("ok");
         assert_eq!(event, StreamEvent::Done);
+    }
+
+    #[test]
+    fn take_valid_utf8_prefix_preserves_split_multibyte_sequence() {
+        let snowman = "☃";
+        let bytes = snowman.as_bytes();
+        let mut buffer = bytes[..2].to_vec();
+        assert!(take_valid_utf8_prefix(&mut buffer).is_empty());
+        assert_eq!(buffer, bytes[..2]);
+
+        buffer.extend_from_slice(&bytes[2..]);
+        assert_eq!(take_valid_utf8_prefix(&mut buffer), snowman);
+        assert!(buffer.is_empty());
     }
 }

@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use reqwest::Client;
 use serde::Deserialize;
 
 use super::chat_provider::{
@@ -11,7 +10,7 @@ use super::chat_provider::{
 };
 use super::credential_store::CredentialStore;
 use super::credentials::{openrouter_credential_status, resolve_openrouter_api_key};
-use super::http_runtime::spawn as spawn_http_task;
+use super::http_runtime::{http_client, spawn as spawn_http_task};
 use super::openrouter_client::stream_chat_completion;
 
 const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
@@ -77,9 +76,7 @@ async fn list_models_inner(
 ) -> Result<Vec<ModelInfo>, ApiError> {
     let api_key =
         resolve_openrouter_api_key(credentials.as_ref()).ok_or(ApiError::MissingCredentials)?;
-    let client = Client::builder()
-        .build()
-        .map_err(|error| ApiError::RequestFailed(error.to_string()))?;
+    let client = http_client();
 
     let response = client
         .get(OPENROUTER_MODELS_URL)
