@@ -108,8 +108,7 @@ impl ChatView {
         let message_scroll = ScrollHandle::default();
         let scroll_anchor = ScrollAnchor::for_handle(message_scroll.clone());
         let pending_scroll_to_bottom = !state.messages.is_empty();
-        let credentials_missing =
-            matches!(provider.credential_status(), CredentialStatus::Missing);
+        let credentials_missing = matches!(provider.credential_status(), CredentialStatus::Missing);
 
         Self {
             provider,
@@ -440,7 +439,9 @@ impl ChatView {
                     if last.id != PENDING_ASSISTANT_ID {
                         let id = last.id;
                         if let Err(error) = store.delete_message(id) {
-                            eprintln!("opencore: failed to remove empty assistant message: {error}");
+                            eprintln!(
+                                "opencore: failed to remove empty assistant message: {error}"
+                            );
                         }
                     }
                     self.state.messages.pop();
