@@ -1,8 +1,8 @@
 //! Onboarding view — immersive monochrome landing ported to GPUI.
 
 use gpui::{
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
-    SharedString, Styled, canvas, div, px, relative,
+    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, SharedString, Styled, canvas, div, px, relative,
 };
 
 use crate::app::gpui_callbacks::{AppHandler, WindowAppHandler};
@@ -37,6 +37,7 @@ pub fn onboarding_screen(
     ui: &OnboardingUiState,
     callbacks: OnboardingCallbacks,
     persistence_error: Option<&str>,
+    focus_handle: &FocusHandle,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
     let backdrop = SceneBackdrop::new(theme, ui.started_at, ui.now);
@@ -45,6 +46,7 @@ pub fn onboarding_screen(
     div()
         .size_full()
         .tab_index(0)
+        .track_focus(focus_handle)
         .bg(background)
         .on_key_down(move |event: &KeyDownEvent, window, cx| {
             if is_enter_keystroke(event) {
@@ -71,7 +73,29 @@ pub fn onboarding_screen(
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
     let key = event.keystroke.key.as_str();
-    matches!(key, "enter" | "return") && !event.keystroke.modifiers.modified()
+    matches!(key, "enter" | "return")
+        && !event.is_held
+        && !event.keystroke.modifiers.modified()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::Keystroke;
+
+    fn enter_key_event(is_held: bool) -> KeyDownEvent {
+        KeyDownEvent {
+            keystroke: Keystroke::parse("enter").expect("enter keystroke"),
+            is_held,
+            prefer_character_input: false,
+        }
+    }
+
+    #[test]
+    fn enter_keystroke_ignores_key_autorepeat() {
+        assert!(is_enter_keystroke(&enter_key_event(false)));
+        assert!(!is_enter_keystroke(&enter_key_event(true)));
+    }
 }
 
 fn backdrop_canvas(backdrop: SceneBackdrop) -> impl IntoElement {
