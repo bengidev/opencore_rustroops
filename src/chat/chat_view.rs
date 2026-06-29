@@ -90,10 +90,10 @@ impl ChatView {
         cx.subscribe(
             &input,
             move |this: &mut Self, input, event: &InputEvent, cx| {
-                if let InputEvent::PressEnter { shift, .. } = event {
-                    if !shift {
-                        this.try_send_message(input, view.clone(), cx);
-                    }
+                if let InputEvent::PressEnter { shift, .. } = event
+                    && !shift
+                {
+                    this.try_send_message(input, view.clone(), cx);
                 }
             },
         )
@@ -357,12 +357,13 @@ impl ChatView {
                 self.mark_scroll_to_latest();
             }
             StreamUpdate::Error(message) => {
-                if let Some(last) = self.state.messages.last() {
-                    if last.role == MessageRole::Assistant && last.content.is_empty() {
-                        let id = last.id;
-                        self.state.messages.pop();
-                        let _ = store.delete_message(id);
-                    }
+                if let Some(last) = self.state.messages.last()
+                    && last.role == MessageRole::Assistant
+                    && last.content.is_empty()
+                {
+                    let id = last.id;
+                    self.state.messages.pop();
+                    let _ = store.delete_message(id);
                 }
                 self.state.set_error(message);
             }
