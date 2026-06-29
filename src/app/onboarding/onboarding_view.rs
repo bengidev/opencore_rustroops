@@ -5,7 +5,9 @@ use gpui::{
     ParentElement, SharedString, Styled, canvas, div, px, relative,
 };
 
-use crate::app::gpui_callbacks::{AppHandler, WindowAppHandler};
+use crate::app::gpui_callbacks::WindowAppHandler;
+
+use crate::app::gpui_callbacks::AppHandler;
 
 use crate::shared::theme::{
     ActionToken, BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
@@ -30,28 +32,37 @@ pub struct OnboardingCallbacks {
     pub on_orb_released: AppHandler,
 }
 
+/// Focusable shell for onboarding keyboard input (Enter to complete).
+pub fn onboarding_interactive_root(
+    focus_handle: &FocusHandle,
+    on_enter: WindowAppHandler,
+    content: impl IntoElement,
+) -> impl IntoElement {
+    div()
+        .size_full()
+        .tab_index(0)
+        .track_focus(focus_handle)
+        .on_key_down(move |event: &KeyDownEvent, window, cx| {
+            if is_enter_keystroke(event) {
+                on_enter(window, cx);
+            }
+        })
+        .child(content)
+}
+
 /// Full-screen onboarding scene matching the reference layout.
 pub fn onboarding_screen(
     theme: OpenCoreTheme,
     ui: &OnboardingUiState,
     callbacks: OnboardingCallbacks,
     persistence_error: Option<&str>,
-    focus_handle: &FocusHandle,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
     let backdrop = SceneBackdrop::new(theme, ui.started_at, ui.now);
-    let on_enter_key = callbacks.on_enter.clone();
 
     div()
         .size_full()
-        .tab_index(0)
-        .track_focus(focus_handle)
         .bg(background)
-        .on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if is_enter_keystroke(event) {
-                on_enter_key(window, cx);
-            }
-        })
         .child(
             div()
                 .absolute()

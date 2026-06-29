@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::{
-    App, AppContext, Context, FocusHandle, Focusable, IntoElement, ParentElement, Render, Styled,
-    WeakEntity, Window, WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
+    Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_component::Root;
 use gpui_component::Theme;
@@ -19,7 +19,7 @@ use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
 use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
-    onboarding_screen, reduce_onboarding,
+    onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
 use super::shell::{ShellCallbacks, shell_screen};
 use super::window_placement::center_window;
@@ -30,15 +30,8 @@ pub struct OpenCoreApp {
     store: Arc<FilePreferencesStore>,
     focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
-    onboarding_focused: bool,
     animation_scheduled: bool,
     persistence_error: Option<String>,
-}
-
-impl Focusable for OpenCoreApp {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.focus_handle.clone()
-    }
 }
 
 impl OpenCoreApp {
@@ -53,7 +46,6 @@ impl OpenCoreApp {
             store,
             focus_handle: cx.focus_handle(),
             onboarding_ui,
-            onboarding_focused: false,
             animation_scheduled: false,
             persistence_error: None,
         }
@@ -78,6 +70,12 @@ impl OpenCoreApp {
     fn finish_screen_transition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.apply_resize_intent(window, cx);
         cx.notify();
+    }
+
+    fn ensure_onboarding_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(ui) = self.onboarding_ui.as_mut() {
+            ui.ensure_initial_focus(window, &self.focus_handle, cx);
+        }
     }
 
     fn record_persistence_error(&mut self, context: &str, error: PreferencesError) {
@@ -129,9 +127,9 @@ impl OpenCoreApp {
         match self.state.reset_persistent_data(self.store.as_ref()) {
             Ok(()) => {
                 self.onboarding_ui = Some(OnboardingUiState::new());
-                self.onboarding_focused = false;
                 self.animation_scheduled = false;
                 self.persistence_error = None;
+                self.ensure_onboarding_focus(window, cx);
                 self.finish_screen_transition(window, cx);
             }
             Err(error) => {
@@ -229,10 +227,6 @@ impl Render for OpenCoreApp {
 
         match self.state.active_screen {
             ActiveScreen::Onboarding => {
-                if !self.onboarding_focused {
-                    self.onboarding_focused = true;
-                    window.focus(&self.focus_handle, cx);
-                }
                 self.schedule_animation(cx);
                 let theme = self.theme();
                 let ui = self
@@ -240,13 +234,12 @@ impl Render for OpenCoreApp {
                     .get_or_insert_with(OnboardingUiState::new);
                 let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
+                let on_enter = callbacks.on_enter.clone();
 
-                div().size_full().child(onboarding_screen(
-                    theme,
-                    ui,
-                    callbacks,
-                    persistence_error,
+                div().size_full().child(onboarding_interactive_root(
                     &self.focus_handle,
+                    on_enter,
+                    onboarding_screen(theme, ui, callbacks, persistence_error),
                 ))
             }
             ActiveScreen::Shell => {
@@ -307,8 +300,14 @@ pub fn run_desktop() -> Result<(), AppError> {
                     ..Default::default()
                 };
 
+                let starts_onboarding = state.active_screen == ActiveScreen::Onboarding;
                 cx.open_window(options, |window, cx| {
                     let view = cx.new(|cx| OpenCoreApp::new(state, store, cx));
+                    if starts_onboarding {
+                        view.update(cx, |app, cx| {
+                            app.ensure_onboarding_focus(window, cx);
+                        });
+                    }
                     cx.new(|cx| Root::new(view, window, cx))
                 })
                 .expect("failed to open window");
