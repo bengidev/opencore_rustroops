@@ -16,6 +16,8 @@ pub use app_state::{
 };
 pub use onboarding::{OnboardingCommand, OnboardingOutcome, reduce_onboarding};
 
+use crate::api::CredentialStoreError;
+use crate::chat::ChatStoreError;
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use thiserror::Error;
 
@@ -24,6 +26,10 @@ use thiserror::Error;
 pub enum AppError {
     #[error("preferences error: {0}")]
     Preferences(#[from] PreferencesError),
+    #[error("chat store error: {0}")]
+    ChatStore(#[from] ChatStoreError),
+    #[error("credential store error: {0}")]
+    CredentialStore(#[from] CredentialStoreError),
 }
 
 /// Booted application: composed state and the preferences store that loaded it.
