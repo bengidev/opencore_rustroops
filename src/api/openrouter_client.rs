@@ -107,10 +107,10 @@ pub fn stream_chat_completion(
         }
 
         let trailing = buffer.trim();
-        if !trailing.is_empty() {
-            if let Some(event) = parse_sse_line(trailing) {
-                yield event;
-            }
+        if !trailing.is_empty()
+            && let Some(event) = parse_sse_line(trailing)
+        {
+            yield event;
         }
 
         yield Ok(StreamEvent::Done);
