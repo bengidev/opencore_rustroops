@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::{
-    App, AppContext, Context, IntoElement, ParentElement, Render, Styled, WeakEntity, Window,
-    WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Context, FocusHandle, Focusable, IntoElement, ParentElement, Render, Styled,
+    WeakEntity, Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_component::Root;
 use gpui_component::Theme;
@@ -28,13 +28,21 @@ use super::window_placement::center_window;
 pub struct OpenCoreApp {
     state: AppState,
     store: Arc<FilePreferencesStore>,
+    focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
+    onboarding_focused: bool,
     animation_scheduled: bool,
     persistence_error: Option<String>,
 }
 
+impl Focusable for OpenCoreApp {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
 impl OpenCoreApp {
-    fn new(state: AppState, store: Arc<FilePreferencesStore>) -> Self {
+    fn new(state: AppState, store: Arc<FilePreferencesStore>, cx: &mut Context<Self>) -> Self {
         let onboarding_ui = if state.active_screen == ActiveScreen::Onboarding {
             Some(OnboardingUiState::new())
         } else {
@@ -43,7 +51,9 @@ impl OpenCoreApp {
         Self {
             state,
             store,
+            focus_handle: cx.focus_handle(),
             onboarding_ui,
+            onboarding_focused: false,
             animation_scheduled: false,
             persistence_error: None,
         }
@@ -123,6 +133,7 @@ impl OpenCoreApp {
         match self.state.reset_persistent_data(self.store.as_ref()) {
             Ok(()) => {
                 self.onboarding_ui = Some(OnboardingUiState::new());
+                self.onboarding_focused = false;
                 self.animation_scheduled = false;
                 self.persistence_error = None;
                 self.finish_screen_transition(window, cx);
@@ -231,6 +242,10 @@ impl Render for OpenCoreApp {
 
         match self.state.active_screen {
             ActiveScreen::Onboarding => {
+                if !self.onboarding_focused {
+                    self.onboarding_focused = true;
+                    window.focus(&self.focus_handle, cx);
+                }
                 self.schedule_animation(cx);
                 let theme = self.theme();
                 let ui = self
@@ -241,7 +256,13 @@ impl Render for OpenCoreApp {
 
                 div()
                     .size_full()
-                    .child(onboarding_screen(theme, ui, callbacks, persistence_error))
+                    .child(onboarding_screen(
+                        theme,
+                        ui,
+                        callbacks,
+                        persistence_error,
+                        &self.focus_handle,
+                    ))
             }
             ActiveScreen::Shell => {
                 let view = cx.entity().downgrade();
@@ -302,7 +323,7 @@ pub fn run_desktop() -> Result<(), AppError> {
                 };
 
                 cx.open_window(options, |window, cx| {
-                    let view = cx.new(|_| OpenCoreApp::new(state, store));
+                    let view = cx.new(|cx| OpenCoreApp::new(state, store, cx));
                     cx.new(|cx| Root::new(view, window, cx))
                 })
                 .expect("failed to open window");
