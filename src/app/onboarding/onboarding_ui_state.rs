@@ -2,6 +2,8 @@
 
 use std::time::Instant;
 
+use gpui::{App, FocusHandle, Window};
+
 use super::onboarding_dynamics::dynamics_for_progress;
 
 /// Local onboarding animation state (GPU-free).
@@ -13,6 +15,7 @@ pub struct OnboardingUiState {
     pub hold_progress: f32,
     pub displayed_speed: f32,
     pub displayed_zoom: f32,
+    focus_claimed: bool,
 }
 
 impl OnboardingUiState {
@@ -26,6 +29,24 @@ impl OnboardingUiState {
             hold_progress: 0.0,
             displayed_speed: initial_speed,
             displayed_zoom: initial_zoom,
+            focus_claimed: false,
+        }
+    }
+
+    /// Requests keyboard focus once per onboarding session.
+    pub fn ensure_initial_focus(
+        &mut self,
+        window: &mut Window,
+        handle: &FocusHandle,
+        cx: &mut App,
+    ) {
+        if self.focus_claimed {
+            return;
+        }
+        if handle.is_focused(window) {
+            self.focus_claimed = true;
+        } else {
+            window.focus(handle, cx);
         }
     }
 
