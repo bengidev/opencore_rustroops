@@ -161,9 +161,7 @@ mod tests {
 
     #[test]
     fn parse_sse_line_handles_done_marker() {
-        let event = parse_sse_line("data: [DONE]")
-            .expect("event")
-            .expect("ok");
+        let event = parse_sse_line("data: [DONE]").expect("event").expect("ok");
         assert_eq!(event, StreamEvent::Done);
     }
 }

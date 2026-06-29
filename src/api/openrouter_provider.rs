@@ -38,11 +38,9 @@ impl ChatProvider for OpenRouterProvider {
     fn list_models(&self) -> BoxedModelsFuture {
         let credentials = self.credentials.clone();
         Box::pin(async move {
-            spawn_http_task(async move {
-                list_models_inner(credentials).await
-            })
-            .await
-            .map_err(|error| ApiError::RequestFailed(error.to_string()))?
+            spawn_http_task(async move { list_models_inner(credentials).await })
+                .await
+                .map_err(|error| ApiError::RequestFailed(error.to_string()))?
         })
     }
 
