@@ -62,9 +62,8 @@ impl SqliteChatStore {
     pub fn at(path: impl Into<PathBuf>) -> Result<Self, ChatStoreError> {
         let path = path.into();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| {
-                rusqlite::Error::ToSqlConversionFailure(Box::new(error))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         }
 
         let connection = Connection::open(path)?;
@@ -102,7 +101,9 @@ impl ChatStore for SqliteChatStore {
     fn ensure_thread(&self) -> Result<i64, ChatStoreError> {
         let connection = self.connection.lock().expect("chat db lock");
         let existing: Option<i64> = connection
-            .query_row("SELECT id FROM threads ORDER BY id LIMIT 1", [], |row| row.get(0))
+            .query_row("SELECT id FROM threads ORDER BY id LIMIT 1", [], |row| {
+                row.get(0)
+            })
             .ok();
 
         if let Some(thread_id) = existing {
@@ -130,7 +131,8 @@ impl ChatStore for SqliteChatStore {
             })
         })?;
 
-        rows.collect::<Result<Vec<_>, _>>().map_err(ChatStoreError::from)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(ChatStoreError::from)
     }
 
     fn insert_message(
@@ -206,11 +208,14 @@ impl ChatStore for InMemoryChatStore {
         let mut next_id = self.next_id.lock().expect("id lock");
         let id = *next_id;
         *next_id += 1;
-        self.messages.lock().expect("messages lock").push(StoredMessage {
-            id,
-            role,
-            content: content.to_string(),
-        });
+        self.messages
+            .lock()
+            .expect("messages lock")
+            .push(StoredMessage {
+                id,
+                role,
+                content: content.to_string(),
+            });
         Ok(id)
     }
 

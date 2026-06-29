@@ -11,4 +11,4 @@ pub use chat_provider::*;
 pub use credential_store::*;
 pub use credentials::*;
 pub use http_runtime::spawn as spawn_http_task;
-pub use openrouter_provider::{OpenRouterProvider, DEFAULT_MODEL};
+pub use openrouter_provider::{DEFAULT_MODEL, OpenRouterProvider};

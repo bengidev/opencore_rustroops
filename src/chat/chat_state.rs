@@ -44,7 +44,11 @@ impl ChatState {
     }
 
     pub fn append_assistant_token(&mut self, message_id: i64, token: &str) {
-        if let Some(message) = self.messages.iter_mut().find(|message| message.id == message_id) {
+        if let Some(message) = self
+            .messages
+            .iter_mut()
+            .find(|message| message.id == message_id)
+        {
             message.content.push_str(token);
         }
     }

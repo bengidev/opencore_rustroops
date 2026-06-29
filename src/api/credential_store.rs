@@ -1,9 +1,9 @@
 //! Local persistence for saved provider API keys.
 
-use std::sync::Mutex;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use thiserror::Error;
 
 /// Errors from credential store operations.

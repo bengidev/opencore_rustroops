@@ -68,7 +68,11 @@ impl OpenCoreApp {
         }
     }
 
-    fn ensure_chat_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<ChatView> {
+    fn ensure_chat_view(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<ChatView> {
         if let Some(view) = &self.chat_view {
             view.update(cx, |chat, _| chat.set_theme(self.theme()));
             return view.clone();
@@ -261,12 +265,14 @@ impl Render for OpenCoreApp {
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
 
-                div().size_full().child(onboarding_interactive_root(
-                    &self.focus_handle,
-                    on_enter,
-                    onboarding_screen(theme, ui, callbacks, persistence_error),
-                ))
-                .into_any_element()
+                div()
+                    .size_full()
+                    .child(onboarding_interactive_root(
+                        &self.focus_handle,
+                        on_enter,
+                        onboarding_screen(theme, ui, callbacks, persistence_error),
+                    ))
+                    .into_any_element()
             }
             ActiveScreen::Shell => {
                 let chat_view = self.ensure_chat_view(window, cx);

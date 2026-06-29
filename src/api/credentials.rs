@@ -127,15 +127,15 @@ mod tests {
     fn credential_status_is_missing_without_env_or_saved_key() {
         let _env = EnvGuard::with(&[(OPENROUTER_API_KEY, None), (OPENROUTER_KEY, None)]);
         let store = InMemoryCredentialStore::new();
-        assert_eq!(openrouter_credential_status(&store), CredentialStatus::Missing);
+        assert_eq!(
+            openrouter_credential_status(&store),
+            CredentialStatus::Missing
+        );
     }
 
     #[test]
     fn credential_status_reports_environment_source() {
-        let _env = EnvGuard::with(&[
-            (OPENROUTER_API_KEY, Some("secret")),
-            (OPENROUTER_KEY, None),
-        ]);
+        let _env = EnvGuard::with(&[(OPENROUTER_API_KEY, Some("secret")), (OPENROUTER_KEY, None)]);
         let store = InMemoryCredentialStore::new();
         store.save_api_key("saved").expect("save");
         assert_eq!(
@@ -159,7 +159,10 @@ mod tests {
 
     #[test]
     fn env_api_key_wins_over_saved_key() {
-        let _env = EnvGuard::with(&[(OPENROUTER_API_KEY, Some("env-key")), (OPENROUTER_KEY, None)]);
+        let _env = EnvGuard::with(&[
+            (OPENROUTER_API_KEY, Some("env-key")),
+            (OPENROUTER_KEY, None),
+        ]);
         let store = InMemoryCredentialStore::new();
         store.save_api_key("saved-key").expect("save");
         assert_eq!(

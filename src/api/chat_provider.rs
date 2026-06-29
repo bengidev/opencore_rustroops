@@ -97,11 +97,9 @@ impl Default for CancelToken {
     }
 }
 
-pub type BoxedChatStream =
-    Pin<Box<dyn Stream<Item = Result<StreamEvent, ApiError>> + Send>>;
+pub type BoxedChatStream = Pin<Box<dyn Stream<Item = Result<StreamEvent, ApiError>> + Send>>;
 
-pub type BoxedModelsFuture =
-    Pin<Box<dyn Future<Output = Result<Vec<ModelInfo>, ApiError>> + Send>>;
+pub type BoxedModelsFuture = Pin<Box<dyn Future<Output = Result<Vec<ModelInfo>, ApiError>> + Send>>;
 
 /// Provider-agnostic chat boundary — the primary test seam for streaming behavior.
 pub trait ChatProvider: Send + Sync {
@@ -168,19 +166,19 @@ mod tests {
     #[test]
     fn accumulate_stream_joins_tokens_until_done() {
         futures::executor::block_on(async {
-        let provider = FakeProvider {
-            tokens: vec!["Hello".into(), ", ".into(), "world".into()],
-            status: CredentialStatus::Missing,
-        };
-        let stream = provider.stream_chat(
-            ChatRequest {
-                model: "test".into(),
-                messages: vec![],
-            },
-            CancelToken::new(),
-        );
-        let content = accumulate_stream(stream).await.expect("accumulate");
-        assert_eq!(content, "Hello, world");
+            let provider = FakeProvider {
+                tokens: vec!["Hello".into(), ", ".into(), "world".into()],
+                status: CredentialStatus::Missing,
+            };
+            let stream = provider.stream_chat(
+                ChatRequest {
+                    model: "test".into(),
+                    messages: vec![],
+                },
+                CancelToken::new(),
+            );
+            let content = accumulate_stream(stream).await.expect("accumulate");
+            assert_eq!(content, "Hello, world");
         });
     }
 }
