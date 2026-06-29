@@ -25,7 +25,6 @@ const EDGE_INSET_V: f32 = 20.0;
 #[derive(Clone)]
 pub struct OnboardingCallbacks {
     pub on_enter: WindowAppHandler,
-    pub on_skip: WindowAppHandler,
     pub on_toggle_theme: WindowAppHandler,
     pub on_orb_pressed: AppHandler,
     pub on_orb_released: AppHandler,
@@ -249,25 +248,13 @@ fn orb_canvas(orb: GalaxyOrb) -> impl IntoElement {
 }
 
 fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
-    let skip_color = theme.foreground(ForegroundToken::Muted);
-    let on_skip = callbacks.on_skip.clone();
-
     div()
         .w_full()
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(12.))
         .pb(px(8.))
         .child(primary_button(theme, "Enter OpenCore", callbacks.on_enter))
-        .child(
-            div()
-                .text_size(px(12.))
-                .text_color(skip_color)
-                .cursor_pointer()
-                .child("Skip")
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| on_skip(window, cx)),
-        )
 }
 
 fn primary_button(
