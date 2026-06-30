@@ -108,7 +108,6 @@ pub fn render_composer_toolbar(
     cx: &mut Context<ChatView>,
 ) -> impl IntoElement {
     let weak = cx.entity().downgrade();
-    let show_controls = has_generation_toolbar_controls(model);
     let show_strip = show_composer_toolbar_strip(model, catalog_refreshing);
 
     let mut bar = h_flex()
