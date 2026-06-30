@@ -16,7 +16,12 @@ use gpui_component::text::{TextView, TextViewStyle};
 /// the parent styling. Safe to call every frame during streaming.
 /// `message_id` is the unique `UiMessage.id` — used as the GPUI element ID
 /// to guarantee distinct identity in the view tree.
-pub fn render_markdown(content: &str, base_size: f32, is_dark: bool, message_id: i64) -> impl IntoElement {
+pub fn render_markdown(
+    content: &str,
+    base_size: f32,
+    is_dark: bool,
+    message_id: i64,
+) -> impl IntoElement {
     let id = SharedString::from(format!("md_{}", message_id));
     let style = TextViewStyle {
         heading_base_font_size: gpui::px(base_size),
