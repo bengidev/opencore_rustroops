@@ -80,7 +80,7 @@ pub fn capability_lines(model: &ModelInfo) -> Vec<String> {
     if !model.output_modalities.is_empty() {
         lines.push(format!("Output: {}", model.output_modalities.join(", ")));
     }
-    if model.supports_reasoning() {
+    if model.supports_reasoning_controls() {
         lines.push("Reasoning supported".into());
     }
     lines
@@ -113,28 +113,31 @@ pub fn render_composer_toolbar(
         );
 
     if let Some(model) = model {
-        if model.supports_parameter("temperature") {
+        if model.supports_temperature_controls() {
             bar = bar.child(toolbar_divider(border)).child(temperature_menu(
                 weak.clone(),
                 generation.temperature,
                 muted,
             ));
         }
-        if model.supports_parameter("max_tokens") {
+        if model.supports_max_tokens_controls() {
             bar = bar.child(toolbar_divider(border)).child(max_tokens_menu(
                 weak.clone(),
                 generation.max_tokens,
                 muted,
             ));
         }
-        if model.supports_reasoning() {
+        if model.supports_reasoning_controls() {
             bar = bar.child(toolbar_divider(border)).child(reasoning_menu(
                 weak.clone(),
                 &generation.reasoning_effort,
                 muted,
             ));
         }
-        bar = bar.child(toolbar_divider(border)).child(capabilities_menu(model, muted));
+        let lines = capability_lines(model);
+        if !lines.is_empty() {
+            bar = bar.child(toolbar_divider(border)).child(capabilities_menu(&lines, muted));
+        }
     } else if catalog_refreshing {
         bar = bar.child(
             div()
@@ -261,8 +264,8 @@ fn reasoning_menu(
         .into_any_element()
 }
 
-fn capabilities_menu(model: &ModelInfo, muted: Hsla) -> impl IntoElement {
-    let lines = capability_lines(model);
+fn capabilities_menu(lines: &[String], muted: Hsla) -> impl IntoElement {
+    let lines = lines.to_vec();
     Button::new("model-capabilities")
         .ghost()
         .small()
@@ -303,5 +306,19 @@ mod tests {
         assert!(lines.iter().any(|line| line.contains("128000")));
         assert!(lines.iter().any(|line| line.starts_with("Input:")));
         assert!(lines.iter().any(|line| line.contains("Reasoning")));
+    }
+
+    #[test]
+    fn capability_lines_omit_reasoning_for_router_models() {
+        let router = ModelInfo {
+            id: "openrouter/auto".into(),
+            name: "Auto Router".into(),
+            context_length: Some(2_000_000),
+            input_modalities: vec!["text".into()],
+            output_modalities: vec!["text".into()],
+            supported_parameters: vec!["reasoning".into()],
+        };
+        let lines = capability_lines(&router);
+        assert!(!lines.iter().any(|line| line.contains("Reasoning")));
     }
 }

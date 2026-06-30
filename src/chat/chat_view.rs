@@ -111,6 +111,13 @@ impl ChatView {
             Err(error) => state.set_error(error.to_string()),
         }
 
+        if let Some(model) = state
+            .catalog
+            .model_for_id(&state.thread_settings.model_id)
+        {
+            model.sanitize_generation(&mut state.thread_settings.generation);
+        }
+
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
@@ -148,6 +155,9 @@ impl ChatView {
         let store_for_model = store.clone();
         cx.subscribe(&model_select, move |this, _, event: &SelectEvent<SearchableVec<ModelSelectEntry>>, cx| {
             if let SelectEvent::Confirm(Some(model_id)) = event {
+                if let Some(model) = this.state.catalog.model_for_id(model_id) {
+                    model.sanitize_generation(&mut this.state.thread_settings.generation);
+                }
                 if let Some(thread_id) = this.state.thread_id {
                     persist_model_selection(
                         &store_for_model,
@@ -210,18 +220,27 @@ impl ChatView {
     }
 
     pub(crate) fn set_temperature(&mut self, value: Option<f32>, cx: &mut Context<Self>) {
+        if !self.current_model_supports(|model| model.supports_temperature_controls()) {
+            return;
+        }
         self.state.thread_settings.generation.temperature = value;
         self.persist_generation_settings(cx);
         cx.notify();
     }
 
     pub(crate) fn set_max_tokens(&mut self, value: Option<u32>, cx: &mut Context<Self>) {
+        if !self.current_model_supports(|model| model.supports_max_tokens_controls()) {
+            return;
+        }
         self.state.thread_settings.generation.max_tokens = value;
         self.persist_generation_settings(cx);
         cx.notify();
     }
 
     pub(crate) fn set_reasoning_effort(&mut self, value: &str, cx: &mut Context<Self>) {
+        if !self.current_model_supports(|model| model.supports_reasoning_controls()) {
+            return;
+        }
         self.state.thread_settings.generation.reasoning_effort = if value == "default" {
             None
         } else {
@@ -229,6 +248,13 @@ impl ChatView {
         };
         self.persist_generation_settings(cx);
         cx.notify();
+    }
+
+    fn current_model_supports(&self, predicate: impl FnOnce(&crate::api::ModelInfo) -> bool) -> bool {
+        self.state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
+            .is_some_and(predicate)
     }
 
     fn refresh_catalog_in_background(&mut self, cx: &mut Context<Self>) {
