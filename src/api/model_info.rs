@@ -68,18 +68,15 @@ impl ModelInfo {
         match effort {
             Some(value) if self.is_supported_thinking_effort(&value) => Some(value),
             Some(_) => None,
-            None if self.supports_thinking_controls() => self
-                .reasoning
-                .as_ref()
-                .and_then(|caps| {
-                    if caps.mandatory {
-                        caps.default_effort
-                            .clone()
-                            .filter(|effort| self.is_supported_thinking_effort(effort))
-                    } else {
-                        None
-                    }
-                }),
+            None if self.supports_thinking_controls() => self.reasoning.as_ref().and_then(|caps| {
+                if caps.mandatory {
+                    caps.default_effort
+                        .clone()
+                        .filter(|effort| self.is_supported_thinking_effort(effort))
+                } else {
+                    None
+                }
+            }),
             None => None,
         }
     }

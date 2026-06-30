@@ -8,10 +8,10 @@ use super::chat_provider::{
     ApiError, BoxedChatStream, BoxedModelsFuture, CancelToken, ChatProvider, ChatRequest,
     CredentialStatus,
 };
-use super::model_info::{GATEWAY_REASONING_EFFORTS, ModelInfo, ReasoningCapabilities};
 use super::credential_store::CredentialStore;
 use super::credentials::{openrouter_credential_status, resolve_openrouter_api_key};
 use super::http_runtime::{http_client, spawn as spawn_http_task};
+use super::model_info::{GATEWAY_REASONING_EFFORTS, ModelInfo, ReasoningCapabilities};
 use super::openrouter_client::stream_chat_completion;
 
 const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";

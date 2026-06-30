@@ -1,6 +1,6 @@
 //! In-memory chat state for the single implicit thread.
 
-use crate::api::{ChatMessage, MessageRole, ModelInfo, DEFAULT_MODEL};
+use crate::api::{ChatMessage, DEFAULT_MODEL, MessageRole, ModelInfo};
 
 use super::chat_store::ThreadSettings;
 use super::generation_ui::{catalog_loading_message, model_unavailable_message};
@@ -140,7 +140,11 @@ mod tests {
     #[test]
     fn validate_model_id_blocks_unknown_models_while_catalog_empty() {
         let catalog = ModelCatalogState::default();
-        assert!(catalog.validate_model_id("anthropic/claude-3.5-sonnet").is_err());
+        assert!(
+            catalog
+                .validate_model_id("anthropic/claude-3.5-sonnet")
+                .is_err()
+        );
     }
 
     #[test]

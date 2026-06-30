@@ -18,4 +18,6 @@ pub use model_info::{
     generation_without_model_metadata,
 };
 pub use openrouter_provider::{DEFAULT_MODEL, OpenRouterProvider};
-pub use speed_mode::{SpeedWireField, apply_speed_to_json, model_supports_speed_mode, speed_wire_field};
+pub use speed_mode::{
+    SpeedWireField, apply_speed_to_json, model_supports_speed_mode, speed_wire_field,
+};
