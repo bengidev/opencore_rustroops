@@ -44,7 +44,7 @@ use super::model_picker::{
     sync_model_select,
 };
 use super::stream_indicator::{
-    assistant_stream_status, bounded_message_text, render_assistant_stream_body,
+    assistant_stream_status, render_assistant_stream_body,
 };
 
 /// In-memory assistant row before the first streamed token is persisted.
@@ -70,6 +70,7 @@ pub struct ChatView {
     credential_ui: CredentialUiState,
     active_stream_cancel: Option<CancelToken>,
     streaming_assistant_id: Option<i64>,
+    stream_cancelled_by_user: bool,
     pending_model_select_sync: bool,
     pending_assistant_insert_failed: bool,
 }
@@ -207,6 +208,7 @@ impl ChatView {
             credential_ui,
             active_stream_cancel: None,
             streaming_assistant_id: None,
+            stream_cancelled_by_user: false,
             pending_model_select_sync: false,
             pending_assistant_insert_failed: false,
         };
@@ -317,9 +319,8 @@ impl ChatView {
         let catalog_store = self.catalog_store.clone();
         let view = cx.entity().downgrade();
         let watchdog_view = view.clone();
-
         cx.spawn(async move |_, cx| {
-            tokio::time::sleep(std::time::Duration::from_secs(90)).await;
+            cx.background_executor().timer(std::time::Duration::from_secs(90)).await;
             let _ = watchdog_view.update(cx, |chat, cx| {
                 if chat.state.catalog.is_refreshing {
                     chat.state.catalog.is_refreshing = false;
@@ -589,6 +590,7 @@ impl ChatView {
 
         let request_messages = self.state.api_messages();
 
+        self.stream_cancelled_by_user = false;
         self.cancel_active_stream();
         self.pending_assistant_insert_failed = false;
         self.state.begin_assistant_message(PENDING_ASSISTANT_ID);
@@ -659,7 +661,10 @@ impl ChatView {
             StreamUpdate::Error(message) => {
                 self.cleanup_inflight_assistant(store);
                 self.streaming_assistant_id = None;
-                self.state.set_error(message);
+                if !self.stream_cancelled_by_user {
+                    self.state.set_error(message);
+                }
+                self.stream_cancelled_by_user = false;
             }
             StreamUpdate::Token(token) => {
                 let assistant_id = match self.streaming_assistant_id {
@@ -721,9 +726,9 @@ impl ChatView {
                 self.mark_scroll_to_latest();
             }
         }
-    }
 }
 
+}
 impl ComposerActions for ChatView {
     fn set_speed_mode(&mut self, mode: crate::api::SpeedMode, cx: &mut Context<Self>) {
         ChatView::set_speed_mode(self, mode, cx);
@@ -741,12 +746,13 @@ impl ComposerActions for ChatView {
         &mut self,
         _event: &ClickEvent,
         _window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
+        self.stream_cancelled_by_user = true;
         self.cancel_active_stream();
+        cx.notify();
     }
 }
-
 enum StreamUpdate {
     Token(String),
     Done,
@@ -876,6 +882,7 @@ impl Render for ChatView {
 
         let mut thread = v_flex().w_full().gap(px(spacing.md as f32));
 
+        let is_dark = self.theme.mode == ThemeMode::Dark;
         for message in &self.state.messages {
             let stream_status = assistant_stream_status(
                 message,
@@ -883,7 +890,6 @@ impl Render for ChatView {
                 streaming_assistant_id,
                 supports_thinking,
             );
-            let is_dark = self.theme.mode == ThemeMode::Dark;
             thread = thread.child(message_row(
                 message,
                 stream_status,
@@ -1023,11 +1029,15 @@ fn message_row(
                 .py(px(10.))
                 .rounded_lg()
                 .bg(user_bubble_bg)
-                .child(bounded_message_text(
-                    message.content.clone(),
-                    text_size,
-                    foreground,
-                )),
+                .child(
+                    div()
+                        .w_full()
+                        .min_w(px(0.))
+                        .overflow_hidden()
+                        .text_size(text_size)
+                        .text_color(foreground)
+                        .child(message.content.clone()),
+                ),
         ),
         MessageRole::Assistant => div()
             .w_full()
@@ -1039,7 +1049,6 @@ fn message_row(
                 render_assistant_stream_body(
                     message,
                     stream_status,
-                    foreground,
                     muted,
                     assistant_pill_bg,
                     label.size_px as f32,
