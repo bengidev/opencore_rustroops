@@ -6,8 +6,9 @@ use serde::Deserialize;
 
 use super::chat_provider::{
     ApiError, BoxedChatStream, BoxedModelsFuture, CancelToken, ChatProvider, ChatRequest,
-    CredentialStatus, GATEWAY_REASONING_EFFORTS, ModelInfo, ReasoningCapabilities,
+    CredentialStatus,
 };
+use super::model_info::{GATEWAY_REASONING_EFFORTS, ModelInfo, ReasoningCapabilities};
 use super::credential_store::CredentialStore;
 use super::credentials::{openrouter_credential_status, resolve_openrouter_api_key};
 use super::http_runtime::{http_client, spawn as spawn_http_task};
@@ -201,11 +202,16 @@ mod tests {
         let info = normalize_openrouter_model(remote);
         assert!(info.supports_thinking_controls());
         assert_eq!(
-            info.thinking_level_menu_options()
-                .iter()
-                .map(|(value, _)| value.as_str())
-                .collect::<Vec<_>>(),
-            vec!["default", "xhigh", "high", "medium", "low", "none"]
+            info.reasoning
+                .as_ref()
+                .map(|caps| caps.supported_efforts.clone()),
+            Some(vec![
+                "xhigh".into(),
+                "high".into(),
+                "medium".into(),
+                "low".into(),
+                "none".into(),
+            ])
         );
     }
 }

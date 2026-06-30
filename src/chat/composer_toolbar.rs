@@ -16,8 +16,11 @@ use gpui_component::{Sizable, Size, h_flex};
 use crate::api::{GenerationSettings, ModelInfo, SpeedMode};
 
 use super::chat_state::UiMessage;
-use super::chat_view::ChatView;
+use super::composer_actions::ComposerActions;
 use super::context_window_ring::render_context_window_indicator;
+use super::generation_ui::{
+    thinking_level_button_label, thinking_level_menu_options,
+};
 use super::model_picker::{ModelSelectEntry, render_composer_model_select};
 
 pub const SPEED_MODE_OPTIONS: &[(SpeedMode, &str)] =
@@ -42,33 +45,6 @@ pub fn speed_mode_button_label(mode: SpeedMode) -> SharedString {
     })
 }
 
-pub fn capability_lines(model: &ModelInfo) -> Vec<String> {
-    let mut lines = Vec::new();
-    if let Some(context) = model.context_length {
-        lines.push(format!("{context} context window"));
-    }
-    if !model.input_modalities.is_empty() {
-        lines.push(format!("Input: {}", model.input_modalities.join(", ")));
-    }
-    if !model.output_modalities.is_empty() {
-        lines.push(format!("Output: {}", model.output_modalities.join(", ")));
-    }
-    if model.supports_thinking_controls()
-        && let Some(caps) = model.reasoning.as_ref()
-    {
-        let labels: Vec<_> = caps
-            .supported_efforts
-            .iter()
-            .map(|effort| crate::api::effort_display_label(effort))
-            .collect();
-        lines.push(format!("Thinking levels: {}", labels.join(", ")));
-    }
-    if model.supports_speed_mode_controls() {
-        lines.push("Speed mode supported".into());
-    }
-    lines
-}
-
 pub struct ComposerToolbarProps<'a> {
     pub model_select: &'a Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
     pub model: Option<&'a ModelInfo>,
@@ -81,9 +57,9 @@ pub struct ComposerToolbarProps<'a> {
     pub can_send: bool,
 }
 
-pub fn render_composer_toolbar(
+pub fn render_composer_toolbar<H: ComposerActions + 'static>(
     props: ComposerToolbarProps<'_>,
-    cx: &mut Context<ChatView>,
+    cx: &mut Context<H>,
 ) -> impl IntoElement {
     let ComposerToolbarProps {
         model_select,
@@ -146,6 +122,7 @@ pub fn render_composer_toolbar(
         }
     }
 
+    let send_weak = weak.clone();
     bar.child(div().flex_1().min_w(px(8.)))
         .children(
             model.map(|model| render_context_window_indicator(model, messages, muted, border)),
@@ -164,7 +141,11 @@ pub fn render_composer_toolbar(
                 .xsmall()
                 .rounded(ButtonRounded::Size(px(14.)))
                 .disabled(!can_send)
-                .on_click(cx.listener(ChatView::on_send_clicked))
+                .on_click(move |event, window, cx| {
+                    let _ = send_weak.update(cx, |host, cx| {
+                        host.on_send_clicked(event, window, cx);
+                    });
+                })
         })
 }
 
@@ -186,8 +167,8 @@ fn compact_menu_button(id: &'static str, label: SharedString, muted: Hsla) -> Bu
         .dropdown_caret(true)
 }
 
-fn speed_mode_menu(
-    view: WeakEntity<ChatView>,
+fn speed_mode_menu<H: ComposerActions + 'static>(
+    view: WeakEntity<H>,
     current: SpeedMode,
     muted: Hsla,
 ) -> impl IntoElement {
@@ -204,8 +185,8 @@ fn speed_mode_menu(
                         PopupMenuItem::new(SharedString::from(*title))
                             .checked(checked)
                             .on_click(move |_, _, cx| {
-                                let _ = view.update(cx, |chat, cx| {
-                                    chat.set_speed_mode(selected, cx);
+                                let _ = view.update(cx, |host, cx| {
+                                    host.set_speed_mode(selected, cx);
                                 });
                             }),
                     )
@@ -214,15 +195,15 @@ fn speed_mode_menu(
         .into_any_element()
 }
 
-fn thinking_level_menu(
-    view: WeakEntity<ChatView>,
+fn thinking_level_menu<H: ComposerActions + 'static>(
+    view: WeakEntity<H>,
     model: &ModelInfo,
     current: &Option<String>,
     muted: Hsla,
 ) -> impl IntoElement {
-    let options = model.thinking_level_menu_options();
+    let options = thinking_level_menu_options(model);
     let current = current.clone();
-    let label = SharedString::from(model.thinking_level_button_label(&current));
+    let label = SharedString::from(thinking_level_button_label(model, &current));
     compact_menu_button("thinking-level-menu", label, muted)
         .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
             options.iter().fold(menu, |menu, (value, title)| {
@@ -238,8 +219,8 @@ fn thinking_level_menu(
                     PopupMenuItem::new(SharedString::from(title.clone()))
                         .checked(checked)
                         .on_click(move |_, _, cx| {
-                            let _ = view.update(cx, |chat, cx| {
-                                chat.set_reasoning_effort(&selected, cx);
+                            let _ = view.update(cx, |host, cx| {
+                                host.set_reasoning_effort(&selected, cx);
                             });
                         }),
                 )
@@ -252,6 +233,7 @@ fn thinking_level_menu(
 mod tests {
     use super::*;
     use crate::api::{ModelInfo, ReasoningCapabilities};
+    use crate::chat::generation_ui::capability_lines;
 
     #[test]
     fn format_context_indicator_uses_compact_suffixes() {
@@ -280,16 +262,6 @@ mod tests {
                 mandatory: false,
             }),
         }
-    }
-
-    #[test]
-    fn thinking_level_button_label_uses_model_default_effort() {
-        let model = codex_model();
-        assert_eq!(model.thinking_level_button_label(&None), "Medium");
-        assert_eq!(
-            model.thinking_level_button_label(&Some("low".into())),
-            "Low"
-        );
     }
 
     #[test]

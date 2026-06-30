@@ -90,9 +90,9 @@ pub fn persist_model_selection(
     thread_id: i64,
     settings: &mut ThreadSettings,
     model_id: String,
-) {
+) -> Result<(), String> {
     settings.model_id = model_id;
-    if let Err(error) = store.save_thread_settings(thread_id, settings) {
-        eprintln!("opencore: failed to save thread model: {error}");
-    }
+    store
+        .save_thread_settings(thread_id, settings)
+        .map_err(|error| error.to_string())
 }

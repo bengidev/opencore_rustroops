@@ -9,7 +9,8 @@ use gpui_component::{Sizable, Size};
 use crate::api::ModelInfo;
 
 use super::chat_state::UiMessage;
-use super::composer_toolbar::{capability_lines, format_context_indicator};
+use super::composer_toolbar::format_context_indicator;
+use super::generation_ui::capability_lines;
 
 /// Rough context usage from message character counts (~4 chars per token).
 pub fn estimate_context_usage_percent(messages: &[UiMessage], context_length: u32) -> u8 {
