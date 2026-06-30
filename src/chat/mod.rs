@@ -4,6 +4,7 @@ mod chat_state;
 mod chat_store;
 mod chat_view;
 mod composer_toolbar;
+mod context_window_ring;
 mod credential_dialog;
 mod credential_ui;
 mod credentials_banner;
