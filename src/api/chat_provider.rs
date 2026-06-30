@@ -37,18 +37,60 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+/// Per-request generation controls mapped to provider request fields.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GenerationSettings {
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub reasoning_effort: Option<String>,
+}
+
 /// Parameters for a streaming chat completion.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
+    pub generation: GenerationSettings,
 }
 
 /// Normalized model metadata from a provider catalog.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModelInfo {
     pub id: String,
     pub name: String,
+    pub context_length: Option<u32>,
+    pub input_modalities: Vec<String>,
+    pub output_modalities: Vec<String>,
+    pub supported_parameters: Vec<String>,
+}
+
+impl ModelInfo {
+    pub fn supports_parameter(&self, parameter: &str) -> bool {
+        self.supported_parameters
+            .iter()
+            .any(|value| value == parameter)
+    }
+
+    pub fn supports_reasoning(&self) -> bool {
+        self.supports_parameter("reasoning")
+            || self.supports_parameter("reasoning_effort")
+            || self.supports_parameter("include_reasoning")
+    }
+
+    pub fn filter_generation(&self, generation: &GenerationSettings) -> GenerationSettings {
+        GenerationSettings {
+            temperature: generation
+                .temperature
+                .filter(|_| self.supports_parameter("temperature")),
+            max_tokens: generation
+                .max_tokens
+                .filter(|_| self.supports_parameter("max_tokens")),
+            reasoning_effort: generation
+                .reasoning_effort
+                .clone()
+                .filter(|_| self.supports_reasoning()),
+        }
+    }
 }
 
 /// Events emitted while streaming an assistant reply.
@@ -63,6 +105,8 @@ pub enum StreamEvent {
 pub enum ApiError {
     #[error("credentials are not configured")]
     MissingCredentials,
+    #[error("model '{0}' is not available in the catalog")]
+    UnknownModel(String),
     #[error("provider request failed: {0}")]
     RequestFailed(String),
     #[error("failed to parse provider response: {0}")]
@@ -174,6 +218,7 @@ mod tests {
                 ChatRequest {
                     model: "test".into(),
                     messages: vec![],
+                    generation: GenerationSettings::default(),
                 },
                 CancelToken::new(),
             );
