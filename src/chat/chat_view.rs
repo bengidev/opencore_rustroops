@@ -23,7 +23,7 @@ use gpui_component::StyledExt;
 use gpui_component::v_flex;
 
 use crate::api::{
-    ApiError, CancelToken, ChatMessage, ChatProvider, ChatRequest, CredentialStatus,
+    ApiError, CancelToken, ChatProvider, ChatRequest, CredentialStatus,
     CredentialStore, MessageRole, StreamEvent,
 };
 use crate::shared::theme::{
@@ -39,7 +39,10 @@ use super::credentials_banner;
 use super::model_catalog_store::ModelCatalogStore;
 use super::model_picker::{
     ModelSelectEntry, entries_from_models, persist_model_selection,
-    render_header_model_select, selected_index_for_model, sync_model_select,
+    selected_index_for_model, sync_model_select,
+};
+use super::stream_indicator::{
+    assistant_stream_status, bounded_message_text, render_assistant_stream_body,
 };
 
 /// In-memory assistant row before the first streamed token is persisted.
@@ -86,6 +89,7 @@ impl ChatView {
                     Ok(messages) => {
                         state.messages = messages
                             .into_iter()
+                            .filter(|message| !message.content.trim().is_empty())
                             .map(|message| UiMessage {
                                 id: message.id,
                                 role: message.role,
@@ -219,32 +223,32 @@ impl ChatView {
         }
     }
 
-    pub(crate) fn set_temperature(&mut self, value: Option<f32>, cx: &mut Context<Self>) {
-        if !self.current_model_supports(|model| model.supports_temperature_controls()) {
+    pub(crate) fn set_speed_mode(&mut self, mode: crate::api::SpeedMode, cx: &mut Context<Self>) {
+        if !self.current_model_supports(|model| model.supports_speed_mode_controls()) {
             return;
         }
-        self.state.thread_settings.generation.temperature = value;
-        self.persist_generation_settings(cx);
-        cx.notify();
-    }
-
-    pub(crate) fn set_max_tokens(&mut self, value: Option<u32>, cx: &mut Context<Self>) {
-        if !self.current_model_supports(|model| model.supports_max_tokens_controls()) {
-            return;
-        }
-        self.state.thread_settings.generation.max_tokens = value;
+        self.state.thread_settings.generation.speed_mode = mode;
         self.persist_generation_settings(cx);
         cx.notify();
     }
 
     pub(crate) fn set_reasoning_effort(&mut self, value: &str, cx: &mut Context<Self>) {
-        if !self.current_model_supports(|model| model.supports_reasoning_controls()) {
+        let Some(model) = self
+            .state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
+        else {
+            return;
+        };
+        if !model.supports_thinking_controls() {
             return;
         }
         self.state.thread_settings.generation.reasoning_effort = if value == "default" {
             None
-        } else {
+        } else if model.is_supported_thinking_effort(value) {
             Some(value.to_string())
+        } else {
+            return;
         };
         self.persist_generation_settings(cx);
         cx.notify();
@@ -336,7 +340,30 @@ impl ChatView {
         if let Some(token) = self.active_stream_cancel.take() {
             token.cancel();
         }
+        self.state.remove_trailing_empty_assistants();
+        if self.state.is_streaming {
+            self.state.finish_streaming();
+        }
         self.streaming_assistant_id = None;
+    }
+
+    fn cleanup_inflight_assistant(&mut self, store: &Arc<dyn ChatStore>) {
+        while let Some(last) = self.state.messages.last() {
+            if last.role == MessageRole::Assistant && last.content.trim().is_empty() {
+                let id = last.id;
+                self.state.messages.pop();
+                if id != PENDING_ASSISTANT_ID
+                    && let Err(error) = store.delete_message(id)
+                {
+                    eprintln!("opencore: failed to remove empty assistant message: {error}");
+                }
+            } else {
+                break;
+            }
+        }
+        if self.state.is_streaming {
+            self.state.finish_streaming();
+        }
     }
 
     fn persist_assistant_content(
@@ -493,15 +520,7 @@ impl ChatView {
         self.pending_clear_input = true;
         self.mark_scroll_to_latest();
 
-        let request_messages = self
-            .state
-            .messages
-            .iter()
-            .map(|message| ChatMessage {
-                role: message.role,
-                content: message.content.clone(),
-            })
-            .collect();
+        let request_messages = self.state.api_messages();
 
         self.cancel_active_stream();
         self.state.begin_assistant_message(PENDING_ASSISTANT_ID);
@@ -559,9 +578,7 @@ impl ChatView {
             }
             let _ = view.update(cx, |chat, _| {
                 chat.active_stream_cancel = None;
-                if chat.state.is_streaming {
-                    chat.state.finish_streaming();
-                }
+                chat.cleanup_inflight_assistant(&store);
                 chat.streaming_assistant_id = None;
             });
         })
@@ -569,17 +586,21 @@ impl ChatView {
     }
 
     fn apply_stream_update(&mut self, store: &Arc<dyn ChatStore>, update: StreamUpdate) {
-        let assistant_id = match self.streaming_assistant_id {
-            Some(id) => id,
-            None => return,
-        };
-        let thread_id = match self.state.thread_id {
-            Some(thread_id) => thread_id,
-            None => return,
-        };
-
         match update {
+            StreamUpdate::Error(message) => {
+                self.cleanup_inflight_assistant(store);
+                self.streaming_assistant_id = None;
+                self.state.set_error(message);
+            }
             StreamUpdate::Token(token) => {
+                let assistant_id = match self.streaming_assistant_id {
+                    Some(id) => id,
+                    None => return,
+                };
+                let thread_id = match self.state.thread_id {
+                    Some(thread_id) => thread_id,
+                    None => return,
+                };
                 self.state.append_assistant_token(assistant_id, &token);
                 if assistant_id == PENDING_ASSISTANT_ID {
                     let content = self
@@ -594,6 +615,14 @@ impl ChatView {
                 self.mark_scroll_to_latest();
             }
             StreamUpdate::Done => {
+                let assistant_id = match self.streaming_assistant_id {
+                    Some(id) => id,
+                    None => return,
+                };
+                let thread_id = match self.state.thread_id {
+                    Some(thread_id) => thread_id,
+                    None => return,
+                };
                 self.state.finish_streaming();
                 if let Some(message) = self
                     .state
@@ -603,7 +632,7 @@ impl ChatView {
                 {
                     let content = message.content.clone();
                     if assistant_id == PENDING_ASSISTANT_ID {
-                        if content.is_empty() {
+                        if content.trim().is_empty() {
                             self.state.messages.pop();
                         } else {
                             let _ = self.insert_pending_assistant(thread_id, &content, store);
@@ -614,24 +643,6 @@ impl ChatView {
                 }
                 self.streaming_assistant_id = None;
                 self.mark_scroll_to_latest();
-            }
-            StreamUpdate::Error(message) => {
-                if let Some(last) = self.state.messages.last()
-                    && last.role == MessageRole::Assistant
-                    && last.content.is_empty()
-                {
-                    if last.id != PENDING_ASSISTANT_ID {
-                        let id = last.id;
-                        if let Err(error) = store.delete_message(id) {
-                            eprintln!(
-                                "opencore: failed to remove empty assistant message: {error}"
-                            );
-                        }
-                    }
-                    self.state.messages.pop();
-                }
-                self.streaming_assistant_id = None;
-                self.state.set_error(message);
             }
         }
     }
@@ -715,12 +726,16 @@ impl Render for ChatView {
         let user_bubble_bg = theme.surface(BackgroundToken::Tertiary);
         let label = theme.label;
         let can_send = self.state.can_send(self.credential_ui.missing);
+        let is_streaming = self.state.is_streaming;
+        let streaming_assistant_id = self.streaming_assistant_id;
         let show_credentials_banner = self.credential_ui.should_show_banner();
         let error = self.state.error.clone();
         let selected_model = self
             .state
             .catalog
             .model_for_id(&self.state.thread_settings.model_id);
+        let supports_thinking = selected_model
+            .is_some_and(|model| model.supports_thinking_controls());
         let catalog_refreshing = self.state.catalog.is_refreshing;
 
         let mut content = v_flex().size_full().min_h_0().bg(background);
@@ -733,16 +748,14 @@ impl Render for ChatView {
                 .pt(inset)
                 .pb(px(8.))
                 .items_center()
-                .gap(px(12.))
+                .justify_between()
                 .child(
                     div()
-                        .flex_shrink_0()
                         .text_size(px(label.size_px as f32))
                         .font_semibold()
                         .text_color(foreground)
                         .child("Chat"),
                 )
-                .child(render_header_model_select(&self.model_select))
                 .child(
                     Button::new("open-credential-settings")
                         .icon(IconName::Settings)
@@ -767,11 +780,19 @@ impl Render for ChatView {
         let mut thread = v_flex().w_full().gap(px(spacing.md as f32));
 
         for message in &self.state.messages {
+            let stream_status = assistant_stream_status(
+                message,
+                is_streaming,
+                streaming_assistant_id,
+                supports_thinking,
+            );
             thread = thread.child(message_row(
                 message,
+                stream_status,
                 foreground,
                 muted,
                 user_bubble_bg,
+                card_bg,
                 label,
             ));
         }
@@ -786,6 +807,8 @@ impl Render for ChatView {
 
         let message_list = v_flex()
             .w_full()
+            .min_w(px(0.))
+            .overflow_hidden()
             .px(inset)
             .pt(inset)
             .pb(inset)
@@ -796,7 +819,9 @@ impl Render for ChatView {
                 .id("chat-messages-scroll")
                 .flex_1()
                 .min_h_0()
+                .min_w(px(0.))
                 .w_full()
+                .overflow_x_hidden()
                 .track_scroll(&self.message_scroll)
                 .overflow_y_scroll()
                 .child(message_list)
@@ -807,11 +832,6 @@ impl Render for ChatView {
             .h(px(64.))
             .appearance(false)
             .disabled(!can_send);
-
-        let show_toolbar_controls = super::composer_toolbar::show_composer_toolbar_strip(
-            selected_model,
-            catalog_refreshing,
-        );
 
         let composer = div().flex_shrink_0().w_full().px(inset).pb(inset).child(
             v_flex()
@@ -840,15 +860,18 @@ impl Render for ChatView {
                             div()
                                 .px(px(12.))
                                 .pt(px(10.))
-                                .pb(px(if show_toolbar_controls { 4. } else { 10. }))
+                                .pb(px(4.))
                                 .when(!can_send, |this| this.opacity(0.6))
                                 .child(input),
                         )
                         .child(
                             render_composer_toolbar(
+                                &self.model_select,
                                 selected_model,
+                                &self.state.messages,
                                 &self.state.thread_settings.generation,
                                 catalog_refreshing,
+                                is_streaming,
                                 muted,
                                 border,
                                 can_send,
@@ -882,16 +905,14 @@ fn error_panel(
 
 fn message_row(
     message: &UiMessage,
+    stream_status: super::stream_indicator::AssistantStreamStatus,
     foreground: gpui::Hsla,
     muted: gpui::Hsla,
     user_bubble_bg: gpui::Hsla,
+    assistant_pill_bg: gpui::Hsla,
     label: LegacyTypeRole,
 ) -> impl IntoElement {
     let text_size = px(label.size_px as f32);
-    let body = div()
-        .text_size(text_size)
-        .text_color(foreground)
-        .child(message.content.clone());
 
     match message.role {
         MessageRole::User => div().w_full().flex().justify_end().child(
@@ -901,9 +922,32 @@ fn message_row(
                 .py(px(10.))
                 .rounded_lg()
                 .bg(user_bubble_bg)
-                .child(body),
+                .child(bounded_message_text(
+                    message.content.clone(),
+                    text_size,
+                    foreground,
+                )),
         ),
-        MessageRole::Assistant => div().w_full().max_w(relative(0.92)).py(px(4.)).child(body),
+        MessageRole::Assistant => div()
+            .w_full()
+            .min_w(px(0.))
+            .overflow_hidden()
+            .py(px(4.))
+            .pr(px(24.))
+            .child(
+                div()
+                    .w_full()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .child(render_assistant_stream_body(
+                        message,
+                        stream_status,
+                        foreground,
+                        muted,
+                        assistant_pill_bg,
+                        label.size_px as f32,
+                    )),
+            ),
         MessageRole::System => div().w_full().flex().justify_center().py(px(8.)).child(
             div()
                 .text_size(px(11.))
