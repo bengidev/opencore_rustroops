@@ -11,20 +11,20 @@ use gpui::{
     IntoElement, ParentElement, Render, ScrollAnchor, ScrollHandle, StatefulInteractiveElement,
     Styled, WeakEntity, Window, div, prelude::FluentBuilder, px, relative,
 };
+use gpui_component::IconName;
+use gpui_component::Sizable;
+use gpui_component::StyledExt;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
-use gpui_component::select::{SelectEvent, SelectState};
 use gpui_component::select::SearchableVec;
-use gpui_component::IconName;
-use gpui_component::Sizable;
-use gpui_component::StyledExt;
+use gpui_component::select::{SelectEvent, SelectState};
 use gpui_component::v_flex;
 
 use crate::api::{
-    ApiError, CancelToken, ChatProvider, ChatRequest, CredentialStatus,
-    CredentialStore, MessageRole, StreamEvent,
+    ApiError, CancelToken, ChatProvider, ChatRequest, CredentialStatus, CredentialStore,
+    MessageRole, StreamEvent,
 };
 use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, LegacyTypeRole, OpenCoreTheme,
@@ -38,8 +38,8 @@ use super::credential_ui::CredentialUiState;
 use super::credentials_banner;
 use super::model_catalog_store::ModelCatalogStore;
 use super::model_picker::{
-    ModelSelectEntry, entries_from_models, persist_model_selection,
-    selected_index_for_model, sync_model_select,
+    ModelSelectEntry, entries_from_models, persist_model_selection, selected_index_for_model,
+    sync_model_select,
 };
 use super::stream_indicator::{
     assistant_stream_status, bounded_message_text, render_assistant_stream_body,
@@ -115,10 +115,7 @@ impl ChatView {
             Err(error) => state.set_error(error.to_string()),
         }
 
-        if let Some(model) = state
-            .catalog
-            .model_for_id(&state.thread_settings.model_id)
-        {
+        if let Some(model) = state.catalog.model_for_id(&state.thread_settings.model_id) {
             model.sanitize_generation(&mut state.thread_settings.generation);
         }
 
@@ -128,10 +125,8 @@ impl ChatView {
                 .placeholder("Message OpenRouter…")
         });
 
-        let selected_model_index = selected_index_for_model(
-            &state.catalog.models,
-            &state.thread_settings.model_id,
-        );
+        let selected_model_index =
+            selected_index_for_model(&state.catalog.models, &state.thread_settings.model_id);
         let model_select = cx.new(|cx| {
             SelectState::new(
                 entries_from_models(&state.catalog.models),
@@ -157,23 +152,26 @@ impl ChatView {
 
         let view = cx.entity().downgrade();
         let store_for_model = store.clone();
-        cx.subscribe(&model_select, move |this, _, event: &SelectEvent<SearchableVec<ModelSelectEntry>>, cx| {
-            if let SelectEvent::Confirm(Some(model_id)) = event {
-                if let Some(model) = this.state.catalog.model_for_id(model_id) {
-                    model.sanitize_generation(&mut this.state.thread_settings.generation);
+        cx.subscribe(
+            &model_select,
+            move |this, _, event: &SelectEvent<SearchableVec<ModelSelectEntry>>, cx| {
+                if let SelectEvent::Confirm(Some(model_id)) = event {
+                    if let Some(model) = this.state.catalog.model_for_id(model_id) {
+                        model.sanitize_generation(&mut this.state.thread_settings.generation);
+                    }
+                    if let Some(thread_id) = this.state.thread_id {
+                        persist_model_selection(
+                            &store_for_model,
+                            thread_id,
+                            &mut this.state.thread_settings,
+                            model_id.clone(),
+                        );
+                    }
+                    cx.notify();
                 }
-                if let Some(thread_id) = this.state.thread_id {
-                    persist_model_selection(
-                        &store_for_model,
-                        thread_id,
-                        &mut this.state.thread_settings,
-                        model_id.clone(),
-                    );
-                }
-                cx.notify();
-            }
-            let _ = view.clone();
-        })
+                let _ = view.clone();
+            },
+        )
         .detach();
 
         let message_scroll = ScrollHandle::default();
@@ -254,7 +252,10 @@ impl ChatView {
         cx.notify();
     }
 
-    fn current_model_supports(&self, predicate: impl FnOnce(&crate::api::ModelInfo) -> bool) -> bool {
+    fn current_model_supports(
+        &self,
+        predicate: impl FnOnce(&crate::api::ModelInfo) -> bool,
+    ) -> bool {
         self.state
             .catalog
             .model_for_id(&self.state.thread_settings.model_id)
@@ -279,9 +280,8 @@ impl ChatView {
                     Ok(models) => {
                         let fetched_at = catalog_fetched_at_now();
                         if let Err(error) = catalog_store.save_catalog(&models, &fetched_at) {
-                            chat.state.set_error(format!(
-                                "Could not cache model catalog: {error}"
-                            ));
+                            chat.state
+                                .set_error(format!("Could not cache model catalog: {error}"));
                             return;
                         }
                         chat.state.catalog.replace_catalog(models, fetched_at);
@@ -456,7 +456,12 @@ impl ChatView {
         self.theme = theme;
     }
 
-    pub(crate) fn on_send_clicked(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn on_send_clicked(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let input = self.input.clone();
         let view = cx.entity().downgrade();
         self.try_send_message(input, view, cx);
@@ -659,9 +664,9 @@ fn format_provider_error(error: ApiError) -> String {
         ApiError::MissingCredentials => {
             "OpenRouter credentials are missing. Add an API key to continue.".into()
         }
-        ApiError::UnknownModel(model) => format!(
-            "Model \"{model}\" is not available. Choose another model from the catalog."
-        ),
+        ApiError::UnknownModel(model) => {
+            format!("Model \"{model}\" is not available. Choose another model from the catalog.")
+        }
         ApiError::RequestFailed(message) => format!("Request failed: {message}"),
         ApiError::ParseError(message) => format!("Could not read provider response: {message}"),
     }
@@ -734,8 +739,8 @@ impl Render for ChatView {
             .state
             .catalog
             .model_for_id(&self.state.thread_settings.model_id);
-        let supports_thinking = selected_model
-            .is_some_and(|model| model.supports_thinking_controls());
+        let supports_thinking =
+            selected_model.is_some_and(|model| model.supports_thinking_controls());
         let catalog_refreshing = self.state.catalog.is_refreshing;
 
         let mut content = v_flex().size_full().min_h_0().bg(background);
@@ -864,20 +869,18 @@ impl Render for ChatView {
                                 .when(!can_send, |this| this.opacity(0.6))
                                 .child(input),
                         )
-                        .child(
-                            render_composer_toolbar(
-                                &self.model_select,
-                                selected_model,
-                                &self.state.messages,
-                                &self.state.thread_settings.generation,
-                                catalog_refreshing,
-                                is_streaming,
-                                muted,
-                                border,
-                                can_send,
-                                cx,
-                            ),
-                        ),
+                        .child(render_composer_toolbar(
+                            &self.model_select,
+                            selected_model,
+                            &self.state.messages,
+                            &self.state.thread_settings.generation,
+                            catalog_refreshing,
+                            is_streaming,
+                            muted,
+                            border,
+                            can_send,
+                            cx,
+                        )),
                 ),
         );
 
@@ -934,20 +937,16 @@ fn message_row(
             .overflow_hidden()
             .py(px(4.))
             .pr(px(24.))
-            .child(
-                div()
-                    .w_full()
-                    .min_w(px(0.))
-                    .overflow_hidden()
-                    .child(render_assistant_stream_body(
-                        message,
-                        stream_status,
-                        foreground,
-                        muted,
-                        assistant_pill_bg,
-                        label.size_px as f32,
-                    )),
-            ),
+            .child(div().w_full().min_w(px(0.)).overflow_hidden().child(
+                render_assistant_stream_body(
+                    message,
+                    stream_status,
+                    foreground,
+                    muted,
+                    assistant_pill_bg,
+                    label.size_px as f32,
+                ),
+            )),
         MessageRole::System => div().w_full().flex().justify_center().py(px(8.)).child(
             div()
                 .text_size(px(11.))

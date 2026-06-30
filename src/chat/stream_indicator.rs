@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt as _, Hsla, IntoElement, ParentElement, Styled as _, bounce,
-    div, ease_in_out, px,
+    Animation, AnimationExt as _, Hsla, IntoElement, ParentElement, Styled as _, bounce, div,
+    ease_in_out, px,
 };
 use gpui_component::h_flex;
 use gpui_component::spinner::Spinner;

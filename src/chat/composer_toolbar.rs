@@ -8,8 +8,8 @@ use gpui_component::Disableable;
 use gpui_component::IconName;
 use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_component::select::SelectState;
 use gpui_component::select::SearchableVec;
+use gpui_component::select::SelectState;
 use gpui_component::spinner::Spinner;
 use gpui_component::{Sizable, Size, h_flex};
 
@@ -127,18 +127,14 @@ pub fn render_composer_toolbar(
             if needs_divider {
                 bar = bar.child(toolbar_divider(border));
             }
-            bar = bar.child(speed_mode_menu(
-                weak.clone(),
-                generation.speed_mode,
-                muted,
-            ));
+            bar = bar.child(speed_mode_menu(weak.clone(), generation.speed_mode, muted));
         }
     }
 
     bar.child(div().flex_1().min_w(px(8.)))
-        .children(model.map(|model| {
-            render_context_window_indicator(model, messages, muted, border)
-        }))
+        .children(
+            model.map(|model| render_context_window_indicator(model, messages, muted, border)),
+        )
         .child(if is_streaming {
             Button::new("send-message")
                 .icon(Spinner::new().with_size(Size::XSmall).color(muted))
@@ -183,20 +179,22 @@ fn speed_mode_menu(
     let label = speed_mode_button_label(current);
     compact_menu_button("speed-mode-menu", label, muted)
         .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
-            SPEED_MODE_OPTIONS.iter().fold(menu, |menu, (value, title)| {
-                let checked = *value == current;
-                let view = view.clone();
-                let selected = *value;
-                menu.item(
-                    PopupMenuItem::new(SharedString::from(*title))
-                        .checked(checked)
-                        .on_click(move |_, _, cx| {
-                            let _ = view.update(cx, |chat, cx| {
-                                chat.set_speed_mode(selected, cx);
-                            });
-                        }),
-                )
-            })
+            SPEED_MODE_OPTIONS
+                .iter()
+                .fold(menu, |menu, (value, title)| {
+                    let checked = *value == current;
+                    let view = view.clone();
+                    let selected = *value;
+                    menu.item(
+                        PopupMenuItem::new(SharedString::from(*title))
+                            .checked(checked)
+                            .on_click(move |_, _, cx| {
+                                let _ = view.update(cx, |chat, cx| {
+                                    chat.set_speed_mode(selected, cx);
+                                });
+                            }),
+                    )
+                })
         })
         .into_any_element()
 }
@@ -273,7 +271,10 @@ mod tests {
     fn thinking_level_button_label_uses_model_default_effort() {
         let model = codex_model();
         assert_eq!(model.thinking_level_button_label(&None), "Medium");
-        assert_eq!(model.thinking_level_button_label(&Some("low".into())), "Low");
+        assert_eq!(
+            model.thinking_level_button_label(&Some("low".into())),
+            "Low"
+        );
     }
 
     #[test]

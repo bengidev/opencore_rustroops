@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
-use gpui_component::select::{Select, SelectState, SearchableVec};
 use gpui_component::Sizable;
+use gpui_component::select::{SearchableVec, Select, SelectState};
 
 use crate::api::ModelInfo;
 
@@ -70,25 +70,19 @@ pub fn sync_model_select(
 pub fn render_model_select(
     select: &Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
 ) -> Select<SearchableVec<ModelSelectEntry>> {
-    Select::new(select)
-        .placeholder("Model")
-        .small()
+    Select::new(select).placeholder("Model").small()
 }
 
 /// Inline model picker for the composer footer row.
 pub fn render_composer_model_select(
     select: &Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
 ) -> impl IntoElement {
-    div()
-        .flex_shrink_0()
-        .max_w(px(180.))
-        .min_w(px(96.))
-        .child(
-            render_model_select(select)
-                .appearance(false)
-                .small()
-                .menu_width(px(320.)),
-        )
+    div().flex_shrink_0().max_w(px(180.)).min_w(px(96.)).child(
+        render_model_select(select)
+            .appearance(false)
+            .small()
+            .menu_width(px(320.)),
+    )
 }
 
 pub fn persist_model_selection(

@@ -319,8 +319,7 @@ pub fn run_desktop() -> Result<(), AppError> {
     let credential_store: Arc<dyn CredentialStore> = Arc::new(FileCredentialStore::open()?);
     let chat_provider: Arc<dyn ChatProvider> =
         Arc::new(OpenRouterProvider::new(credential_store.clone()));
-    let sqlite_chat_store =
-        Arc::new(SqliteChatStore::open().map_err(AppError::from)?);
+    let sqlite_chat_store = Arc::new(SqliteChatStore::open().map_err(AppError::from)?);
     let chat_store: Arc<dyn ChatStore> = sqlite_chat_store.clone();
     let catalog_store: Arc<dyn ModelCatalogStore> = sqlite_chat_store;
 
