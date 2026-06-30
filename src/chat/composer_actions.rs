@@ -15,5 +15,6 @@ pub trait ComposerActions: Sized + 'static {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
+        eprintln!("opencore: ComposerActions::on_stop_clicked not implemented — stop click silently swallowed");
     }
 }
