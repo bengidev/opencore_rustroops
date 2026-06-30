@@ -32,7 +32,7 @@ use crate::shared::theme::{
 
 use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
-use super::composer_toolbar::render_composer_toolbar;
+use super::composer_toolbar::{ComposerToolbarProps, render_composer_toolbar};
 use super::credential_dialog::{self, CredentialDialogContext};
 use super::credential_ui::CredentialUiState;
 use super::credentials_banner;
@@ -870,15 +870,17 @@ impl Render for ChatView {
                                 .child(input),
                         )
                         .child(render_composer_toolbar(
-                            &self.model_select,
-                            selected_model,
-                            &self.state.messages,
-                            &self.state.thread_settings.generation,
-                            catalog_refreshing,
-                            is_streaming,
-                            muted,
-                            border,
-                            can_send,
+                            ComposerToolbarProps {
+                                model_select: &self.model_select,
+                                model: selected_model,
+                                messages: &self.state.messages,
+                                generation: &self.state.thread_settings.generation,
+                                catalog_refreshing,
+                                is_streaming,
+                                muted,
+                                border,
+                                can_send,
+                            },
                             cx,
                         )),
                 ),
