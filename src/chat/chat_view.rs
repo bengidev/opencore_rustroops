@@ -15,7 +15,6 @@ use gpui_component::Disableable;
 use gpui_component::StyledExt;
 use gpui_component::IconName;
 use gpui_component::Sizable;
-use gpui_component::WindowExt;
 use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -32,7 +31,9 @@ use crate::shared::theme::{
 
 use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
+use super::credential_dialog::{self, CredentialDialogContext};
 use super::credential_ui::CredentialUiState;
+use super::credentials_banner;
 
 /// In-memory assistant row before the first streamed token is persisted.
 const PENDING_ASSISTANT_ID: i64 = -1;
@@ -140,6 +141,25 @@ impl ChatView {
         self.credential_ui.refresh(was_missing, now_missing);
     }
 
+    pub(crate) fn on_credentials_changed(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        clear_input: bool,
+    ) {
+        self.state.error = None;
+        self.refresh_credential_cache();
+        if clear_input {
+            if let Some(input) = &self.api_key_input {
+                input.update(cx, |state, cx| state.set_value("", window, cx));
+            }
+        }
+    }
+
+    pub(crate) fn set_credential_error(&mut self, message: String) {
+        self.state.set_error(message);
+    }
+
     fn dismiss_credentials_banner(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.credential_ui.dismiss_banner();
         cx.notify();
@@ -208,34 +228,7 @@ impl ChatView {
         });
     }
 
-    fn save_api_key_from_dialog(
-        api_key_input: &Entity<InputState>,
-        credentials: &Arc<dyn CredentialStore>,
-        view: WeakEntity<Self>,
-        cx: &mut App,
-    ) -> bool {
-        let key = api_key_input.read(cx).value().trim().to_string();
-        if key.is_empty() {
-            return false;
-        }
-
-        if let Err(error) = credentials.save_api_key(&key) {
-            let _ = view.update(cx, |chat, cx| {
-                chat.state.set_error(error.to_string());
-                cx.notify();
-            });
-            return false;
-        }
-
-        let _ = view.update(cx, |chat, cx| {
-            chat.state.error = None;
-            chat.refresh_credential_cache();
-            cx.notify();
-        });
-        true
-    }
-
-    fn open_api_key_dialog(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_credential_settings(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.api_key_input.is_none() {
             self.api_key_input = Some(cx.new(|cx| {
                 InputState::new(window, cx)
@@ -248,112 +241,16 @@ impl ChatView {
             .api_key_input
             .clone()
             .expect("api key input should exist");
-        let credentials = self.credentials.clone();
-        let view = cx.entity().downgrade();
 
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let api_key_input_for_save = api_key_input.clone();
-            let credentials_for_save = credentials.clone();
-            let credentials_for_clear = credentials.clone();
-            let view_for_clear = view.clone();
-            let view_for_success = view.clone();
-            let view_for_confirm = view.clone();
-
-            dialog
-                .title("OpenRouter API Key")
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .child("Paste your API key from openrouter.ai. Environment variables override a saved key.")
-                        .child(Input::new(&api_key_input).mask_toggle()),
-                )
-                .on_ok({
-                    let api_key_input_for_save = api_key_input_for_save.clone();
-                    let credentials_for_save = credentials_for_save.clone();
-                    let view_for_confirm = view_for_confirm.clone();
-                    move |_, window, cx| {
-                        if Self::save_api_key_from_dialog(
-                            &api_key_input_for_save,
-                            &credentials_for_save,
-                            view_for_confirm.clone(),
-                            cx,
-                        ) {
-                            window.close_dialog(cx);
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                })
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_between()
-                        .child(
-                            Button::new("clear-saved-key")
-                                .label("Clear")
-                                .ghost()
-                                .on_click({
-                                    let credentials_for_clear = credentials_for_clear.clone();
-                                    let view_for_clear = view_for_clear.clone();
-                                    move |_, window, cx| {
-                                        if let Err(error) = credentials_for_clear.clear_api_key() {
-                                            let _ = view_for_clear.update(cx, |chat, cx| {
-                                                chat.state.set_error(error.to_string());
-                                                cx.notify();
-                                            });
-                                            return;
-                                        }
-
-                                        let _ = view_for_clear.update(cx, |chat, cx| {
-                                            chat.state.error = None;
-                                            chat.refresh_credential_cache();
-                                            if let Some(input) = &chat.api_key_input {
-                                                input.update(cx, |state, cx| {
-                                                    state.set_value("", window, cx);
-                                                });
-                                            }
-                                            cx.notify();
-                                        });
-                                    }
-                                }),
-                        )
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .child(
-                                    Button::new("cancel-api-key")
-                                        .label("Cancel")
-                                        .on_click(move |_, window, cx| {
-                                            window.close_dialog(cx);
-                                        }),
-                                )
-                                .child(
-                                    Button::new("save-api-key")
-                                        .label("Save")
-                                        .primary()
-                                        .on_click({
-                                            let api_key_input_for_save =
-                                                api_key_input_for_save.clone();
-                                            let credentials_for_save =
-                                                credentials_for_save.clone();
-                                            let view_for_success = view_for_success.clone();
-                                            move |_, window, cx| {
-                                                if Self::save_api_key_from_dialog(
-                                                    &api_key_input_for_save,
-                                                    &credentials_for_save,
-                                                    view_for_success.clone(),
-                                                    cx,
-                                                ) {
-                                                    window.close_dialog(cx);
-                                                }
-                                            }
-                                        }),
-                                ),
-                        ),
-                )
-        });
+        credential_dialog::open(
+            window,
+            cx,
+            CredentialDialogContext {
+                api_key_input,
+                credentials: self.credentials.clone(),
+                view: cx.entity().downgrade(),
+            },
+        );
     }
 
     pub fn set_theme(&mut self, theme: OpenCoreTheme) {
@@ -633,7 +530,7 @@ impl Render for ChatView {
                         .ghost()
                         .small()
                         .tooltip("OpenRouter credentials")
-                        .on_click(cx.listener(Self::open_api_key_dialog)),
+                        .on_click(cx.listener(Self::open_credential_settings)),
                 ),
         );
 
@@ -697,12 +594,13 @@ impl Render for ChatView {
                 .w_full()
                 .gap_2()
                 .when(show_credentials_banner, |this| {
-                    this.child(credentials_banner(
+                    this.child(credentials_banner::credentials_banner(
                         border,
                         card_bg,
                         theme.foreground(ForegroundToken::Accent),
                         muted,
                         label,
+                        cx.listener(Self::open_credential_settings),
                         cx.listener(Self::dismiss_credentials_banner),
                     ))
                 })
@@ -749,54 +647,6 @@ impl Render for ChatView {
 
         content.child(composer)
     }
-}
-
-fn credentials_banner(
-    border: gpui::Hsla,
-    background: gpui::Hsla,
-    foreground: gpui::Hsla,
-    muted: gpui::Hsla,
-    label: LegacyTypeRole,
-    on_dismiss: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> impl IntoElement {
-    h_flex()
-        .w_full()
-        .gap_2()
-        .items_start()
-        .px(px(12.))
-        .py(px(10.))
-        .rounded_md()
-        .border_1()
-        .border_color(border)
-        .bg(background)
-        .child(
-            v_flex()
-                .flex_1()
-                .gap_1()
-                .child(
-                    div()
-                        .text_size(px(label.size_px as f32))
-                        .text_color(foreground)
-                        .child("OpenRouter credentials are not configured"),
-                )
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(muted)
-                        .child(
-                            "Set OPENROUTER_API_KEY or OPENROUTER_KEY in your environment, \
-                             or open settings to save a key locally. Sending is disabled until \
-                             credentials are available.",
-                        ),
-                ),
-        )
-        .child(
-            Button::new("dismiss-credentials-banner")
-                .icon(IconName::Close)
-                .ghost()
-                .xsmall()
-                .on_click(on_dismiss),
-        )
 }
 
 fn error_panel(
