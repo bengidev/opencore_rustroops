@@ -1,6 +1,6 @@
 //! In-memory chat state for the single implicit thread.
 
-use crate::api::{MessageRole, ModelInfo};
+use crate::api::{ChatMessage, MessageRole, ModelInfo};
 
 use super::chat_store::ThreadSettings;
 
@@ -110,5 +110,86 @@ impl ChatState {
     pub fn set_error(&mut self, message: String) {
         self.error = Some(message);
         self.is_streaming = false;
+    }
+
+    /// Messages with non-empty content for provider API requests.
+    ///
+    /// Providers such as Cohere reject messages whose `content` is empty.
+    pub fn api_messages(&self) -> Vec<ChatMessage> {
+        self.messages
+            .iter()
+            .filter(|message| !message.content.trim().is_empty())
+            .map(|message| ChatMessage {
+                role: message.role,
+                content: message.content.clone(),
+            })
+            .collect()
+    }
+
+    /// Drops trailing assistant placeholders left by cancelled or failed streams.
+    pub fn remove_trailing_empty_assistants(&mut self) {
+        while let Some(last) = self.messages.last() {
+            if last.role == MessageRole::Assistant && last.content.trim().is_empty() {
+                self.messages.pop();
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn api_messages_omits_empty_content() {
+        let state = ChatState {
+            messages: vec![
+                UiMessage {
+                    id: 1,
+                    role: MessageRole::User,
+                    content: "hello".into(),
+                },
+                UiMessage {
+                    id: 2,
+                    role: MessageRole::Assistant,
+                    content: String::new(),
+                },
+                UiMessage {
+                    id: 3,
+                    role: MessageRole::User,
+                    content: "again".into(),
+                },
+            ],
+            ..ChatState::default()
+        };
+
+        let api = state.api_messages();
+        assert_eq!(api.len(), 2);
+        assert_eq!(api[0].content, "hello");
+        assert_eq!(api[1].content, "again");
+    }
+
+    #[test]
+    fn remove_trailing_empty_assistants_only_strips_suffix() {
+        let mut state = ChatState {
+            messages: vec![
+                UiMessage {
+                    id: 1,
+                    role: MessageRole::User,
+                    content: "hi".into(),
+                },
+                UiMessage {
+                    id: 2,
+                    role: MessageRole::Assistant,
+                    content: String::new(),
+                },
+            ],
+            ..ChatState::default()
+        };
+
+        state.remove_trailing_empty_assistants();
+        assert_eq!(state.messages.len(), 1);
     }
 }
