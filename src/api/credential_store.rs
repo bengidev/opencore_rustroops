@@ -89,18 +89,31 @@ impl FileCredentialStore {
         }
     }
 
+    fn remove_legacy_file(&self) -> Result<(), CredentialStoreError> {
+        if let Some(legacy_path) = self.legacy_path()
+            && legacy_path.exists()
+        {
+            fs::remove_file(&legacy_path).map_err(CredentialStoreError::Write)?;
+        }
+        Ok(())
+    }
+
     fn load_stored(&self) -> Option<StoredCredentials> {
-        if let Some(stored) = self.read_stored_from(&self.path) {
+        if let Some(stored) = self.read_stored_from(&self.path)
+            && stored.has_usable_api_key()
+        {
             return Some(stored);
         }
 
         let legacy_path = self.legacy_path()?;
         let stored = self.read_stored_from(&legacy_path)?;
+        if !stored.has_usable_api_key() {
+            return None;
+        }
         if let Err(error) = self.write_stored(&stored) {
             eprintln!("opencore: failed to migrate legacy credentials: {error}");
             return Some(stored);
         }
-        let _ = fs::remove_file(&legacy_path);
         Some(stored)
     }
 
@@ -112,6 +125,7 @@ impl FileCredentialStore {
         restrict_file_permissions(&temp_path)?;
         fs::rename(&temp_path, &self.path).map_err(CredentialStoreError::Write)?;
         restrict_file_permissions(&self.path)?;
+        self.remove_legacy_file()?;
         Ok(())
     }
 }
@@ -135,6 +149,14 @@ struct StoredCredentials {
     openrouter_api_key: Option<String>,
 }
 
+impl StoredCredentials {
+    fn has_usable_api_key(&self) -> bool {
+        self.openrouter_api_key
+            .as_ref()
+            .is_some_and(|value| !value.trim().is_empty())
+    }
+}
+
 impl CredentialStore for FileCredentialStore {
     fn saved_api_key(&self) -> Option<String> {
         self.load_stored()
@@ -153,11 +175,7 @@ impl CredentialStore for FileCredentialStore {
         if self.path.exists() {
             fs::remove_file(&self.path).map_err(CredentialStoreError::Write)?;
         }
-        if let Some(legacy_path) = self.legacy_path()
-            && legacy_path.exists()
-        {
-            fs::remove_file(&legacy_path).map_err(CredentialStoreError::Write)?;
-        }
+        self.remove_legacy_file()?;
         Ok(())
     }
 }
@@ -246,5 +264,57 @@ mod tests {
         assert_eq!(store.saved_api_key().as_deref(), Some("legacy-key"));
         assert!(path.exists());
         assert!(!legacy_path.exists());
+    }
+
+    #[test]
+    fn file_store_falls_back_when_new_file_has_empty_key() {
+        let dir = TempDir::new().expect("temp dir");
+        let legacy_path = dir.path().join("openrouter_credentials.json");
+        let path = dir.path().join("credentials.json");
+        fs::write(&path, r#"{"openrouter_api_key":""}"#).expect("write empty new");
+        fs::write(
+            &legacy_path,
+            r#"{"openrouter_api_key":"legacy-key"}"#,
+        )
+        .expect("write legacy");
+
+        let store = FileCredentialStore::at(&path);
+        assert_eq!(store.saved_api_key().as_deref(), Some("legacy-key"));
+        assert!(!legacy_path.exists());
+    }
+
+    #[test]
+    fn file_store_save_removes_legacy_file() {
+        let dir = TempDir::new().expect("temp dir");
+        let legacy_path = dir.path().join("openrouter_credentials.json");
+        let path = dir.path().join("credentials.json");
+        fs::write(
+            &legacy_path,
+            r#"{"openrouter_api_key":"legacy-key"}"#,
+        )
+        .expect("write legacy");
+
+        let store = FileCredentialStore::at(&path);
+        store.save_api_key("new-key").expect("save");
+        assert_eq!(store.saved_api_key().as_deref(), Some("new-key"));
+        assert!(!legacy_path.exists());
+    }
+
+    #[test]
+    fn file_store_clear_removes_legacy_only_file() {
+        let dir = TempDir::new().expect("temp dir");
+        let legacy_path = dir.path().join("openrouter_credentials.json");
+        let path = dir.path().join("credentials.json");
+        fs::write(
+            &legacy_path,
+            r#"{"openrouter_api_key":"legacy-key"}"#,
+        )
+        .expect("write legacy");
+
+        let store = FileCredentialStore::at(&path);
+        store.clear_api_key().expect("clear");
+        assert_eq!(store.saved_api_key(), None);
+        assert!(!legacy_path.exists());
+        assert!(!path.exists());
     }
 }
