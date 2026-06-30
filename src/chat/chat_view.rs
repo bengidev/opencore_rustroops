@@ -39,7 +39,7 @@ use super::credentials_banner;
 use super::model_catalog_store::ModelCatalogStore;
 use super::model_picker::{
     ModelSelectEntry, entries_from_models, persist_model_selection,
-    selected_index_for_model, sync_model_select,
+    render_header_model_select, selected_index_for_model, sync_model_select,
 };
 
 /// In-memory assistant row before the first streamed token is persisted.
@@ -733,14 +733,16 @@ impl Render for ChatView {
                 .pt(inset)
                 .pb(px(8.))
                 .items_center()
-                .justify_between()
+                .gap(px(12.))
                 .child(
                     div()
+                        .flex_shrink_0()
                         .text_size(px(label.size_px as f32))
                         .font_semibold()
                         .text_color(foreground)
                         .child("Chat"),
                 )
+                .child(render_header_model_select(&self.model_select))
                 .child(
                     Button::new("open-credential-settings")
                         .icon(IconName::Settings)
@@ -802,9 +804,14 @@ impl Render for ChatView {
         );
 
         let input = Input::new(&self.input)
-            .h(px(72.))
+            .h(px(64.))
             .appearance(false)
             .disabled(!can_send);
+
+        let show_toolbar_controls = super::composer_toolbar::show_composer_toolbar_strip(
+            selected_model,
+            catalog_refreshing,
+        );
 
         let composer = div().flex_shrink_0().w_full().px(inset).pb(inset).child(
             v_flex()
@@ -828,10 +835,12 @@ impl Render for ChatView {
                         .border_1()
                         .border_color(border)
                         .bg(card_bg)
+                        .overflow_hidden()
                         .child(
                             div()
                                 .px(px(12.))
-                                .pt(px(12.))
+                                .pt(px(10.))
+                                .pb(px(if show_toolbar_controls { 4. } else { 10. }))
                                 .when(!can_send, |this| this.opacity(0.6))
                                 .child(input),
                         )
@@ -839,7 +848,6 @@ impl Render for ChatView {
                             render_composer_toolbar(
                                 selected_model,
                                 &self.state.thread_settings.generation,
-                                &self.model_select,
                                 catalog_refreshing,
                                 muted,
                                 border,

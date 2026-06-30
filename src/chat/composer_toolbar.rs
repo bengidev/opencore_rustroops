@@ -1,20 +1,18 @@
-//! Compact composer controls for model and generation settings.
+//! Compact composer controls for generation settings.
 
 use gpui::{
     Anchor, Context, Hsla, IntoElement, ParentElement, SharedString, Styled, WeakEntity, div, px,
+    prelude::FluentBuilder,
 };
 use gpui_component::Disableable;
 use gpui_component::IconName;
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_component::select::SelectState;
-use gpui_component::select::SearchableVec;
 use gpui_component::{Sizable, h_flex};
 
 use crate::api::{GenerationSettings, ModelInfo};
 
 use super::chat_view::ChatView;
-use super::model_picker::{ModelSelectEntry, render_model_select};
 
 pub const TEMPERATURE_OPTIONS: &[(Option<f32>, &str)] = &[
     (None, "Default"),
@@ -86,10 +84,23 @@ pub fn capability_lines(model: &ModelInfo) -> Vec<String> {
     lines
 }
 
+pub fn has_generation_toolbar_controls(model: Option<&ModelInfo>) -> bool {
+    model.is_some_and(|model| {
+        model.supports_temperature_controls()
+            || model.supports_max_tokens_controls()
+            || model.supports_reasoning_controls()
+    })
+}
+
+pub fn show_composer_toolbar_strip(model: Option<&ModelInfo>, catalog_refreshing: bool) -> bool {
+    catalog_refreshing
+        || has_generation_toolbar_controls(model)
+        || model.is_some_and(|model| !capability_lines(model).is_empty())
+}
+
 pub fn render_composer_toolbar(
     model: Option<&ModelInfo>,
     generation: &GenerationSettings,
-    model_select: &gpui::Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
     catalog_refreshing: bool,
     muted: Hsla,
     border: Hsla,
@@ -97,38 +108,44 @@ pub fn render_composer_toolbar(
     cx: &mut Context<ChatView>,
 ) -> impl IntoElement {
     let weak = cx.entity().downgrade();
+    let show_controls = has_generation_toolbar_controls(model);
+    let show_strip = show_composer_toolbar_strip(model, catalog_refreshing);
+
     let mut bar = h_flex()
         .w_full()
-        .px(px(8.))
-        .pb(px(8.))
-        .pt(px(4.))
-        .gap(px(2.))
+        .h(px(36.))
+        .px(px(10.))
         .items_center()
-        .flex_wrap()
-        .child(
-            render_model_select(model_select)
-                .appearance(false)
-                .small()
-                .menu_width(px(280.)),
-        );
+        .gap(px(2.))
+        .when(show_strip, |this| this.border_t_1().border_color(border));
+
+    let mut needs_divider = false;
 
     if let Some(model) = model {
         if model.supports_temperature_controls() {
-            bar = bar.child(toolbar_divider(border)).child(temperature_menu(
+            if needs_divider {
+                bar = bar.child(toolbar_divider(border));
+            }
+            needs_divider = true;
+            bar = bar.child(temperature_menu(
                 weak.clone(),
                 generation.temperature,
                 muted,
             ));
         }
         if model.supports_max_tokens_controls() {
-            bar = bar.child(toolbar_divider(border)).child(max_tokens_menu(
-                weak.clone(),
-                generation.max_tokens,
-                muted,
-            ));
+            if needs_divider {
+                bar = bar.child(toolbar_divider(border));
+            }
+            needs_divider = true;
+            bar = bar.child(max_tokens_menu(weak.clone(), generation.max_tokens, muted));
         }
         if model.supports_reasoning_controls() {
-            bar = bar.child(toolbar_divider(border)).child(reasoning_menu(
+            if needs_divider {
+                bar = bar.child(toolbar_divider(border));
+            }
+            needs_divider = true;
+            bar = bar.child(reasoning_menu(
                 weak.clone(),
                 &generation.reasoning_effort,
                 muted,
@@ -136,7 +153,10 @@ pub fn render_composer_toolbar(
         }
         let lines = capability_lines(model);
         if !lines.is_empty() {
-            bar = bar.child(toolbar_divider(border)).child(capabilities_menu(&lines, muted));
+            if needs_divider {
+                bar = bar.child(toolbar_divider(border));
+            }
+            bar = bar.child(capabilities_menu(&lines, muted));
         }
     } else if catalog_refreshing {
         bar = bar.child(
@@ -151,7 +171,8 @@ pub fn render_composer_toolbar(
         Button::new("send-message")
             .icon(IconName::ArrowUp)
             .primary()
-            .small()
+            .xsmall()
+            .rounded(ButtonRounded::Size(px(14.)))
             .disabled(!can_send)
             .on_click(cx.listener(ChatView::on_send_clicked)),
     )
@@ -161,9 +182,18 @@ fn toolbar_divider(border: Hsla) -> impl IntoElement {
     div()
         .flex_shrink_0()
         .w(px(1.))
-        .h(px(14.))
-        .mx(px(4.))
+        .h(px(12.))
+        .mx(px(2.))
         .bg(border)
+}
+
+fn compact_menu_button(id: &'static str, label: SharedString, muted: Hsla) -> Button {
+    Button::new(id)
+        .ghost()
+        .xsmall()
+        .text_color(muted)
+        .label(label)
+        .dropdown_caret(true)
 }
 
 fn temperature_menu(
@@ -172,12 +202,7 @@ fn temperature_menu(
     muted: Hsla,
 ) -> impl IntoElement {
     let label = temperature_button_label(current);
-    Button::new("temperature-menu")
-        .ghost()
-        .small()
-        .text_color(muted)
-        .label(label)
-        .dropdown_caret(true)
+    compact_menu_button("temperature-menu", label, muted)
         .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
             TEMPERATURE_OPTIONS.iter().fold(menu, |menu, (value, title)| {
                 let checked = *value == current;
@@ -203,12 +228,7 @@ fn max_tokens_menu(
     muted: Hsla,
 ) -> impl IntoElement {
     let label = max_tokens_button_label(current);
-    Button::new("max-tokens-menu")
-        .ghost()
-        .small()
-        .text_color(muted)
-        .label(label)
-        .dropdown_caret(true)
+    compact_menu_button("max-tokens-menu", label, muted)
         .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
             MAX_TOKEN_OPTIONS.iter().fold(menu, |menu, (value, title)| {
                 let checked = *value == current;
@@ -235,12 +255,7 @@ fn reasoning_menu(
 ) -> impl IntoElement {
     let current = current.clone();
     let label = reasoning_button_label(&current);
-    Button::new("reasoning-menu")
-        .ghost()
-        .small()
-        .text_color(muted)
-        .label(label)
-        .dropdown_caret(true)
+    compact_menu_button("reasoning-menu", label, muted)
         .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
             REASONING_OPTIONS.iter().fold(menu, |menu, (value, title)| {
                 let checked = match (current.as_deref(), *value) {
@@ -268,7 +283,7 @@ fn capabilities_menu(lines: &[String], muted: Hsla) -> impl IntoElement {
     let lines = lines.to_vec();
     Button::new("model-capabilities")
         .ghost()
-        .small()
+        .xsmall()
         .icon(IconName::Info)
         .text_color(muted)
         .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
@@ -320,5 +335,22 @@ mod tests {
         };
         let lines = capability_lines(&router);
         assert!(!lines.iter().any(|line| line.contains("Reasoning")));
+    }
+
+    #[test]
+    fn router_model_has_no_generation_toolbar_controls() {
+        let router = ModelInfo {
+            id: "openrouter/auto".into(),
+            name: "Auto Router".into(),
+            context_length: Some(2_000_000),
+            input_modalities: vec!["text".into()],
+            output_modalities: vec!["text".into()],
+            supported_parameters: vec![
+                "temperature".into(),
+                "max_tokens".into(),
+                "reasoning".into(),
+            ],
+        };
+        assert!(!has_generation_toolbar_controls(Some(&router)));
     }
 }

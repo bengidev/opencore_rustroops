@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use gpui::{App, Entity, SharedString, Window};
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::select::{Select, SelectState, SearchableVec};
 use gpui_component::Sizable;
 
@@ -71,8 +71,23 @@ pub fn render_model_select(
     select: &Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
 ) -> Select<SearchableVec<ModelSelectEntry>> {
     Select::new(select)
-        .placeholder("Select model…")
+        .placeholder("Model")
         .small()
+}
+
+/// Header model picker — borderless, constrained width.
+pub fn render_header_model_select(
+    select: &Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
+) -> impl IntoElement {
+    div()
+        .flex_1()
+        .min_w_0()
+        .max_w(px(420.))
+        .child(
+            render_model_select(select)
+                .appearance(false)
+                .menu_width(px(320.)),
+        )
 }
 
 pub fn persist_model_selection(
