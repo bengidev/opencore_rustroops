@@ -75,17 +75,18 @@ pub fn render_model_select(
         .small()
 }
 
-/// Header model picker — borderless, constrained width.
-pub fn render_header_model_select(
+/// Inline model picker for the composer footer row.
+pub fn render_composer_model_select(
     select: &Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
 ) -> impl IntoElement {
     div()
-        .flex_1()
-        .min_w_0()
-        .max_w(px(420.))
+        .flex_shrink_0()
+        .max_w(px(180.))
+        .min_w(px(96.))
         .child(
             render_model_select(select)
                 .appearance(false)
+                .small()
                 .menu_width(px(320.)),
         )
 }
