@@ -40,7 +40,7 @@ impl FileCredentialStore {
             })?
             .data_dir()
             .to_path_buf();
-        Ok(base.join("openrouter_credentials.json"))
+        Ok(base.join("credentials.json"))
     }
 
     pub fn open() -> Result<Self, CredentialStoreError> {
@@ -57,6 +57,61 @@ impl FileCredentialStore {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).map_err(CredentialStoreError::Write)?;
         }
+        Ok(())
+    }
+
+    fn legacy_path(&self) -> Option<PathBuf> {
+        self.path
+            .parent()
+            .map(|parent| parent.join("openrouter_credentials.json"))
+    }
+
+    fn read_stored_from(&self, path: &Path) -> Option<StoredCredentials> {
+        if !path.exists() {
+            return None;
+        }
+        let contents = match fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                eprintln!("opencore: failed to read credentials from {}: {error}", path.display());
+                return None;
+            }
+        };
+        match serde_json::from_str(&contents) {
+            Ok(stored) => Some(stored),
+            Err(error) => {
+                eprintln!(
+                    "opencore: corrupt credentials file at {} ({error}); treating as missing",
+                    path.display()
+                );
+                None
+            }
+        }
+    }
+
+    fn load_stored(&self) -> Option<StoredCredentials> {
+        if let Some(stored) = self.read_stored_from(&self.path) {
+            return Some(stored);
+        }
+
+        let legacy_path = self.legacy_path()?;
+        let stored = self.read_stored_from(&legacy_path)?;
+        if let Err(error) = self.write_stored(&stored) {
+            eprintln!("opencore: failed to migrate legacy credentials: {error}");
+            return Some(stored);
+        }
+        let _ = fs::remove_file(&legacy_path);
+        Some(stored)
+    }
+
+    fn write_stored(&self, stored: &StoredCredentials) -> Result<(), CredentialStoreError> {
+        self.ensure_parent()?;
+        let contents = serde_json::to_string_pretty(stored)?;
+        let temp_path = self.path.with_extension("tmp");
+        fs::write(&temp_path, contents).map_err(CredentialStoreError::Write)?;
+        restrict_file_permissions(&temp_path)?;
+        fs::rename(&temp_path, &self.path).map_err(CredentialStoreError::Write)?;
+        restrict_file_permissions(&self.path)?;
         Ok(())
     }
 }
@@ -82,45 +137,26 @@ struct StoredCredentials {
 
 impl CredentialStore for FileCredentialStore {
     fn saved_api_key(&self) -> Option<String> {
-        if !self.path.exists() {
-            return None;
-        }
-        let contents = match fs::read_to_string(&self.path) {
-            Ok(contents) => contents,
-            Err(error) => {
-                eprintln!("opencore: failed to read credentials: {error}");
-                return None;
-            }
-        };
-        let stored: StoredCredentials = match serde_json::from_str(&contents) {
-            Ok(stored) => stored,
-            Err(error) => {
-                eprintln!("opencore: corrupt credentials file ({error}); treating as missing");
-                return None;
-            }
-        };
-        stored
-            .openrouter_api_key
+        self.load_stored()
+            .and_then(|stored| stored.openrouter_api_key)
             .filter(|value| !value.trim().is_empty())
     }
 
     fn save_api_key(&self, key: &str) -> Result<(), CredentialStoreError> {
-        self.ensure_parent()?;
         let stored = StoredCredentials {
             openrouter_api_key: Some(key.trim().to_string()),
         };
-        let contents = serde_json::to_string_pretty(&stored)?;
-        let temp_path = self.path.with_extension("tmp");
-        fs::write(&temp_path, contents).map_err(CredentialStoreError::Write)?;
-        restrict_file_permissions(&temp_path)?;
-        fs::rename(&temp_path, &self.path).map_err(CredentialStoreError::Write)?;
-        restrict_file_permissions(&self.path)?;
-        Ok(())
+        self.write_stored(&stored)
     }
 
     fn clear_api_key(&self) -> Result<(), CredentialStoreError> {
         if self.path.exists() {
             fs::remove_file(&self.path).map_err(CredentialStoreError::Write)?;
+        }
+        if let Some(legacy_path) = self.legacy_path()
+            && legacy_path.exists()
+        {
+            fs::remove_file(&legacy_path).map_err(CredentialStoreError::Write)?;
         }
         Ok(())
     }
@@ -162,7 +198,7 @@ mod tests {
     #[test]
     fn file_store_round_trips_saved_api_key() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("openrouter_credentials.json");
+        let path = dir.path().join("credentials.json");
         let store = FileCredentialStore::at(&path);
         store.save_api_key("secret-key").expect("save");
         assert_eq!(store.saved_api_key().as_deref(), Some("secret-key"));
@@ -171,10 +207,44 @@ mod tests {
     #[test]
     fn file_store_clear_removes_saved_key() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("openrouter_credentials.json");
+        let path = dir.path().join("credentials.json");
         let store = FileCredentialStore::at(&path);
         store.save_api_key("secret-key").expect("save");
         store.clear_api_key().expect("clear");
         assert_eq!(store.saved_api_key(), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_store_writes_with_restricted_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("credentials.json");
+        let store = FileCredentialStore::at(&path);
+        store.save_api_key("secret-key").expect("save");
+        let mode = fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[test]
+    fn file_store_migrates_legacy_credentials_file() {
+        let dir = TempDir::new().expect("temp dir");
+        let legacy_path = dir.path().join("openrouter_credentials.json");
+        let path = dir.path().join("credentials.json");
+        fs::write(
+            &legacy_path,
+            r#"{"openrouter_api_key":"legacy-key"}"#,
+        )
+        .expect("write legacy");
+
+        let store = FileCredentialStore::at(&path);
+        assert_eq!(store.saved_api_key().as_deref(), Some("legacy-key"));
+        assert!(path.exists());
+        assert!(!legacy_path.exists());
     }
 }
