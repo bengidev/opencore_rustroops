@@ -32,6 +32,7 @@ use crate::shared::theme::{
 
 use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
+use super::credential_ui::CredentialUiState;
 
 /// In-memory assistant row before the first streamed token is persisted.
 const PENDING_ASSISTANT_ID: i64 = -1;
@@ -51,8 +52,7 @@ pub struct ChatView {
     scroll_anchor: ScrollAnchor,
     pending_scroll_to_bottom: bool,
     scroll_settle_frames: u8,
-    credentials_missing: bool,
-    credentials_banner_dismissed: bool,
+    credential_ui: CredentialUiState,
     active_stream_cancel: Option<CancelToken>,
     streaming_assistant_id: Option<i64>,
 }
@@ -109,7 +109,10 @@ impl ChatView {
         let message_scroll = ScrollHandle::default();
         let scroll_anchor = ScrollAnchor::for_handle(message_scroll.clone());
         let pending_scroll_to_bottom = !state.messages.is_empty();
-        let credentials_missing = matches!(provider.credential_status(), CredentialStatus::Missing);
+        let credential_ui = CredentialUiState {
+            missing: matches!(provider.credential_status(), CredentialStatus::Missing),
+            banner_dismissed: false,
+        };
 
         Self {
             provider,
@@ -125,24 +128,20 @@ impl ChatView {
             scroll_anchor,
             pending_scroll_to_bottom,
             scroll_settle_frames: if pending_scroll_to_bottom { 4 } else { 0 },
-            credentials_missing,
-            credentials_banner_dismissed: false,
+            credential_ui,
             active_stream_cancel: None,
             streaming_assistant_id: None,
         }
     }
 
     fn refresh_credential_cache(&mut self) {
-        let was_missing = self.credentials_missing;
-        self.credentials_missing =
-            matches!(self.provider.credential_status(), CredentialStatus::Missing);
-        if !was_missing && self.credentials_missing {
-            self.credentials_banner_dismissed = false;
-        }
+        let was_missing = self.credential_ui.missing;
+        let now_missing = matches!(self.provider.credential_status(), CredentialStatus::Missing);
+        self.credential_ui.refresh(was_missing, now_missing);
     }
 
     fn dismiss_credentials_banner(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.credentials_banner_dismissed = true;
+        self.credential_ui.dismiss_banner();
         cx.notify();
     }
 
@@ -373,7 +372,7 @@ impl ChatView {
         view: WeakEntity<Self>,
         cx: &mut Context<Self>,
     ) {
-        if !self.state.can_send(self.credentials_missing) {
+        if !self.state.can_send(self.credential_ui.missing) {
             return;
         }
 
@@ -606,10 +605,8 @@ impl Render for ChatView {
         let card_bg = theme.surface(BackgroundToken::Secondary);
         let user_bubble_bg = theme.surface(BackgroundToken::Tertiary);
         let label = theme.label;
-        let credentials_missing = self.credentials_missing;
-        let can_send = self.state.can_send(credentials_missing);
-        let show_credentials_banner =
-            credentials_missing && !self.credentials_banner_dismissed;
+        let can_send = self.state.can_send(self.credential_ui.missing);
+        let show_credentials_banner = self.credential_ui.should_show_banner();
         let error = self.state.error.clone();
 
         let mut content = v_flex().size_full().min_h_0().bg(background);
