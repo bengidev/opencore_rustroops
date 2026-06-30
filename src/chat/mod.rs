@@ -10,6 +10,7 @@ mod credential_dialog;
 mod credential_ui;
 mod credentials_banner;
 mod generation_ui;
+mod markdown_render;
 mod model_catalog_store;
 mod model_picker;
 mod stream_indicator;

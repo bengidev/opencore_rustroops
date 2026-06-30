@@ -120,19 +120,24 @@ pub fn render_composer_toolbar<H: ComposerActions + 'static>(
         }
     }
 
-    let send_weak = weak.clone();
     bar.child(div().flex_1().min_w(px(8.)))
         .children(
             model.map(|model| render_context_window_indicator(model, messages, muted, border)),
         )
         .child(if is_streaming {
-            Button::new("send-message")
-                .icon(Spinner::new().with_size(Size::XSmall).color(muted))
+            let stop_weak = weak.clone();
+            Button::new("stop-generation")
+                .icon(IconName::CircleX)
                 .primary()
                 .xsmall()
                 .rounded(ButtonRounded::Size(px(14.)))
-                .disabled(true)
+                .on_click(move |event, window, cx| {
+                    let _ = stop_weak.update(cx, |host, cx| {
+                        host.on_stop_clicked(event, window, cx);
+                    });
+                })
         } else {
+            let send_weak = weak.clone();
             Button::new("send-message")
                 .icon(IconName::ArrowUp)
                 .primary()
