@@ -11,6 +11,8 @@ use gpui::{
     IntoElement, ParentElement, Render, ScrollAnchor, ScrollHandle, StatefulInteractiveElement,
     Styled, WeakEntity, Window, div, prelude::FluentBuilder, px, relative,
 };
+use gpui_component::select::{SelectEvent, SelectState};
+use gpui_component::select::SearchableVec;
 use gpui_component::Disableable;
 use gpui_component::IconName;
 use gpui_component::Sizable;
@@ -23,7 +25,7 @@ use gpui_component::v_flex;
 
 use crate::api::{
     ApiError, CancelToken, ChatMessage, ChatProvider, ChatRequest, CredentialStatus,
-    CredentialStore, DEFAULT_MODEL, MessageRole, StreamEvent,
+    CredentialStore, MessageRole, StreamEvent,
 };
 use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, LegacyTypeRole, OpenCoreTheme,
@@ -34,6 +36,12 @@ use super::chat_store::ChatStore;
 use super::credential_dialog::{self, CredentialDialogContext};
 use super::credential_ui::CredentialUiState;
 use super::credentials_banner;
+use super::generation_settings::{GenerationInputs, render_capability_chips, render_generation_controls};
+use super::model_catalog_store::ModelCatalogStore;
+use super::model_picker::{
+    ModelSelectEntry, entries_from_models, persist_model_selection, render_model_select,
+    selected_index_for_model, sync_model_select,
+};
 
 /// In-memory assistant row before the first streamed token is persisted.
 const PENDING_ASSISTANT_ID: i64 = -1;
@@ -42,10 +50,13 @@ const PENDING_ASSISTANT_ID: i64 = -1;
 pub struct ChatView {
     provider: Arc<dyn ChatProvider>,
     store: Arc<dyn ChatStore>,
+    catalog_store: Arc<dyn ModelCatalogStore>,
     credentials: Arc<dyn CredentialStore>,
     state: ChatState,
     input: Entity<InputState>,
     api_key_input: Option<Entity<InputState>>,
+    model_select: Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
+    generation_inputs: GenerationInputs,
     focus_handle: FocusHandle,
     theme: OpenCoreTheme,
     pending_clear_input: bool,
@@ -56,6 +67,7 @@ pub struct ChatView {
     credential_ui: CredentialUiState,
     active_stream_cancel: Option<CancelToken>,
     streaming_assistant_id: Option<i64>,
+    pending_model_select_sync: bool,
 }
 
 impl ChatView {
@@ -64,6 +76,7 @@ impl ChatView {
         cx: &mut Context<Self>,
         provider: Arc<dyn ChatProvider>,
         store: Arc<dyn ChatStore>,
+        catalog_store: Arc<dyn ModelCatalogStore>,
         credentials: Arc<dyn CredentialStore>,
         theme: OpenCoreTheme,
     ) -> Self {
@@ -84,6 +97,18 @@ impl ChatView {
                     }
                     Err(error) => state.set_error(error.to_string()),
                 }
+                match store.load_thread_settings(thread_id) {
+                    Ok(settings) => state.thread_settings = settings,
+                    Err(error) => state.set_error(error.to_string()),
+                }
+            }
+            Err(error) => state.set_error(error.to_string()),
+        }
+
+        match catalog_store.load_catalog() {
+            Ok(catalog) => {
+                state.catalog.models = catalog.models;
+                state.catalog.fetched_at = catalog.fetched_at;
             }
             Err(error) => state.set_error(error.to_string()),
         }
@@ -93,6 +118,23 @@ impl ChatView {
                 .multi_line(true)
                 .placeholder("Message OpenRouter…")
         });
+
+        let selected_model_index = selected_index_for_model(
+            &state.catalog.models,
+            &state.thread_settings.model_id,
+        );
+        let model_select = cx.new(|cx| {
+            SelectState::new(
+                entries_from_models(&state.catalog.models),
+                selected_model_index,
+                window,
+                cx,
+            )
+            .searchable(true)
+        });
+
+        let generation_inputs =
+            GenerationInputs::new(window, cx, &state.thread_settings.generation);
 
         let view = cx.entity().downgrade();
         cx.subscribe(
@@ -107,6 +149,24 @@ impl ChatView {
         )
         .detach();
 
+        let view = cx.entity().downgrade();
+        let store_for_model = store.clone();
+        cx.subscribe(&model_select, move |this, _, event: &SelectEvent<SearchableVec<ModelSelectEntry>>, cx| {
+            if let SelectEvent::Confirm(Some(model_id)) = event {
+                if let Some(thread_id) = this.state.thread_id {
+                    persist_model_selection(
+                        &store_for_model,
+                        thread_id,
+                        &mut this.state.thread_settings,
+                        model_id.clone(),
+                    );
+                }
+                cx.notify();
+            }
+            let _ = view.clone();
+        })
+        .detach();
+
         let message_scroll = ScrollHandle::default();
         let scroll_anchor = ScrollAnchor::for_handle(message_scroll.clone());
         let pending_scroll_to_bottom = !state.messages.is_empty();
@@ -115,13 +175,16 @@ impl ChatView {
             banner_dismissed: false,
         };
 
-        Self {
-            provider,
+        let mut chat = Self {
+            provider: provider.clone(),
             store,
+            catalog_store,
             credentials,
             state,
             input,
             api_key_input: None,
+            model_select,
+            generation_inputs,
             focus_handle: cx.focus_handle(),
             theme,
             pending_clear_input: false,
@@ -132,7 +195,64 @@ impl ChatView {
             credential_ui,
             active_stream_cancel: None,
             streaming_assistant_id: None,
+            pending_model_select_sync: false,
+        };
+
+        chat.refresh_catalog_in_background(cx);
+        chat
+    }
+
+    fn persist_generation_settings(&mut self, cx: &App) {
+        let Some(thread_id) = self.state.thread_id else {
+            return;
+        };
+        self.state.thread_settings.generation = self.generation_inputs.read_settings(cx);
+        if let Err(error) = self
+            .store
+            .save_thread_settings(thread_id, &self.state.thread_settings)
+        {
+            self.state
+                .set_error(format!("Could not save generation settings: {error}"));
         }
+    }
+
+    fn refresh_catalog_in_background(&mut self, cx: &mut Context<Self>) {
+        if self.credential_ui.missing || self.state.catalog.is_refreshing {
+            return;
+        }
+
+        self.state.catalog.is_refreshing = true;
+        let provider = self.provider.clone();
+        let catalog_store = self.catalog_store.clone();
+        let view = cx.entity().downgrade();
+
+        cx.spawn(async move |_, cx| {
+            let result = provider.list_models().await;
+            let _ = view.update(cx, |chat, cx| {
+                chat.state.catalog.is_refreshing = false;
+                match result {
+                    Ok(models) => {
+                        let fetched_at = catalog_fetched_at_now();
+                        if let Err(error) = catalog_store.save_catalog(&models, &fetched_at) {
+                            chat.state.set_error(format!(
+                                "Could not cache model catalog: {error}"
+                            ));
+                            return;
+                        }
+                        chat.state.catalog.replace_catalog(models, fetched_at);
+                        chat.pending_model_select_sync = true;
+                    }
+                    Err(error) => {
+                        if chat.state.catalog.models.is_empty() {
+                            chat.state
+                                .set_error(format!("Could not refresh model catalog: {error}"));
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn refresh_credential_cache(&mut self) {
@@ -151,6 +271,9 @@ impl ChatView {
         self.refresh_credential_cache();
         if clear_input && let Some(input) = &self.api_key_input {
             input.update(cx, |state, cx| state.set_value("", window, cx));
+        }
+        if !self.credential_ui.missing {
+            self.refresh_catalog_in_background(cx);
         }
     }
 
@@ -286,6 +409,18 @@ impl ChatView {
             return;
         }
 
+        self.persist_generation_settings(cx);
+
+        if let Err(message) = self
+            .state
+            .catalog
+            .validate_model_id(&self.state.thread_settings.model_id)
+        {
+            self.state.set_error(message);
+            cx.notify();
+            return;
+        }
+
         let thread_id = match self.state.thread_id {
             Some(thread_id) => thread_id,
             None => match self.store.ensure_thread() {
@@ -340,8 +475,14 @@ impl ChatView {
         self.active_stream_cancel = Some(cancel.clone());
         let (event_tx, mut event_rx) = mpsc::unbounded();
         let request = ChatRequest {
-            model: DEFAULT_MODEL.to_string(),
+            model: self.state.thread_settings.model_id.clone(),
             messages: request_messages,
+            generation: self
+                .state
+                .catalog
+                .model_for_id(&self.state.thread_settings.model_id)
+                .map(|model| model.filter_generation(&self.state.thread_settings.generation))
+                .unwrap_or_else(|| self.state.thread_settings.generation.clone()),
         };
 
         spawn_http_task({
@@ -466,9 +607,20 @@ fn format_provider_error(error: ApiError) -> String {
         ApiError::MissingCredentials => {
             "OpenRouter credentials are missing. Add an API key to continue.".into()
         }
+        ApiError::UnknownModel(model) => format!(
+            "Model \"{model}\" is not available. Choose another model from the catalog."
+        ),
         ApiError::RequestFailed(message) => format!("Request failed: {message}"),
         ApiError::ParseError(message) => format!("Could not read provider response: {message}"),
     }
+}
+
+fn catalog_fetched_at_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".into())
 }
 
 impl Focusable for ChatView {
@@ -479,6 +631,17 @@ impl Focusable for ChatView {
 
 impl Render for ChatView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.pending_model_select_sync {
+            self.pending_model_select_sync = false;
+            sync_model_select(
+                &self.model_select,
+                &self.state.catalog.models,
+                &self.state.thread_settings.model_id,
+                window,
+                cx,
+            );
+        }
+
         if self.pending_clear_input {
             self.pending_clear_input = false;
             self.input.update(cx, |input, cx| {
@@ -513,6 +676,13 @@ impl Render for ChatView {
         let can_send = self.state.can_send(self.credential_ui.missing);
         let show_credentials_banner = self.credential_ui.should_show_banner();
         let error = self.state.error.clone();
+        let selected_model = self
+            .state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
+            .cloned();
+        let chip_bg = theme.surface(BackgroundToken::Tertiary);
+        let catalog_refreshing = self.state.catalog.is_refreshing;
 
         let mut content = v_flex().size_full().min_h_0().bg(background);
 
@@ -525,12 +695,21 @@ impl Render for ChatView {
                 .pb(px(8.))
                 .items_center()
                 .justify_between()
+                .gap(px(8.))
                 .child(
-                    div()
-                        .text_size(px(label.size_px as f32))
-                        .font_semibold()
-                        .text_color(foreground)
-                        .child("Chat"),
+                    h_flex()
+                        .flex_1()
+                        .min_w_0()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .text_size(px(label.size_px as f32))
+                                .font_semibold()
+                                .text_color(foreground)
+                                .child("Chat"),
+                        )
+                        .child(render_model_select(&self.model_select)),
                 )
                 .child(
                     Button::new("open-credential-settings")
@@ -541,6 +720,43 @@ impl Render for ChatView {
                         .on_click(cx.listener(Self::open_credential_settings)),
                 ),
         );
+
+        if let Some(model) = &selected_model {
+            content = content.child(
+                div()
+                    .flex_shrink_0()
+                    .px(inset)
+                    .pb(px(8.))
+                    .child(render_capability_chips(
+                        model,
+                        chip_bg,
+                        muted,
+                        label,
+                    )),
+            );
+            content = content.child(
+                div()
+                    .flex_shrink_0()
+                    .px(inset)
+                    .pb(px(8.))
+                    .child(render_generation_controls(
+                        model,
+                        &self.generation_inputs,
+                        muted,
+                        label,
+                    )),
+            );
+        } else if catalog_refreshing {
+            content = content.child(
+                div()
+                    .flex_shrink_0()
+                    .px(inset)
+                    .pb(px(8.))
+                    .text_size(px(11.))
+                    .text_color(muted)
+                    .child("Refreshing model catalog…"),
+            );
+        }
 
         if let Some(text) = error {
             content = content.child(div().flex_shrink_0().px(inset).pt(inset).child(error_panel(
@@ -633,13 +849,7 @@ impl Render for ChatView {
                                 .pt(px(4.))
                                 .gap(px(8.))
                                 .items_center()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_size(px(11.))
-                                        .text_color(muted)
-                                        .child(DEFAULT_MODEL),
-                                )
+                                .justify_end()
                                 .child(
                                     Button::new("send-message")
                                         .icon(IconName::ArrowUp)
