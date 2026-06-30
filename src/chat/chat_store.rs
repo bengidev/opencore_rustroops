@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::api::{DEFAULT_MODEL, GenerationSettings, MessageRole, ModelInfo};
+use crate::api::{DEFAULT_MODEL, GenerationSettings, MessageRole, ModelInfo, SpeedMode};
 use rusqlite::{Connection, params};
 use thiserror::Error;
 
@@ -145,6 +145,10 @@ impl SqliteChatStore {
         }
         if !columns.iter().any(|column| column == "reasoning_effort") {
             connection.execute("ALTER TABLE threads ADD COLUMN reasoning_effort TEXT", [])?;
+            columns.push("reasoning_effort".into());
+        }
+        if !columns.iter().any(|column| column == "speed_mode") {
+            connection.execute("ALTER TABLE threads ADD COLUMN speed_mode TEXT", [])?;
         }
 
         connection.execute(
@@ -286,19 +290,21 @@ impl ChatStore for SqliteChatStore {
         let connection = self.connection.lock().expect("chat db lock");
         connection
             .query_row(
-                "SELECT model_id, temperature, max_tokens, reasoning_effort FROM threads WHERE id = ?1",
+                "SELECT model_id, temperature, max_tokens, reasoning_effort, speed_mode FROM threads WHERE id = ?1",
                 params![thread_id],
                 |row| {
                     let model_id: Option<String> = row.get(0)?;
                     let temperature: Option<f64> = row.get(1)?;
                     let max_tokens: Option<i64> = row.get(2)?;
                     let reasoning_effort: Option<String> = row.get(3)?;
+                    let speed_mode: Option<String> = row.get(4)?;
                     Ok(ThreadSettings {
                         model_id: model_id.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
                         generation: GenerationSettings {
                             temperature: temperature.map(|value| value as f32),
                             max_tokens: max_tokens.and_then(|value| u32::try_from(value).ok()),
                             reasoning_effort,
+                            speed_mode: SpeedMode::from_persisted(speed_mode.as_deref()),
                         },
                     })
                 },
@@ -313,12 +319,13 @@ impl ChatStore for SqliteChatStore {
     ) -> Result<(), ChatStoreError> {
         let connection = self.connection.lock().expect("chat db lock");
         connection.execute(
-            "UPDATE threads SET model_id = ?1, temperature = ?2, max_tokens = ?3, reasoning_effort = ?4 WHERE id = ?5",
+            "UPDATE threads SET model_id = ?1, temperature = ?2, max_tokens = ?3, reasoning_effort = ?4, speed_mode = ?5 WHERE id = ?6",
             params![
                 settings.model_id,
                 settings.generation.temperature.map(f64::from),
                 settings.generation.max_tokens.map(i64::from),
                 settings.generation.reasoning_effort,
+                settings.generation.speed_mode.as_str(),
                 thread_id,
             ],
         )?;
@@ -527,6 +534,7 @@ mod tests {
                 temperature: Some(0.7),
                 max_tokens: Some(4096),
                 reasoning_effort: Some("high".into()),
+                speed_mode: SpeedMode::Fast,
             },
         };
         store
