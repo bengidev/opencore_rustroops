@@ -73,7 +73,10 @@ impl FileCredentialStore {
         let contents = match fs::read_to_string(path) {
             Ok(contents) => contents,
             Err(error) => {
-                eprintln!("opencore: failed to read credentials from {}: {error}", path.display());
+                eprintln!(
+                    "opencore: failed to read credentials from {}: {error}",
+                    path.display()
+                );
                 return None;
             }
         };
@@ -241,11 +244,7 @@ mod tests {
         let path = dir.path().join("credentials.json");
         let store = FileCredentialStore::at(&path);
         store.save_api_key("secret-key").expect("save");
-        let mode = fs::metadata(&path)
-            .expect("metadata")
-            .permissions()
-            .mode()
-            & 0o777;
+        let mode = fs::metadata(&path).expect("metadata").permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
     }
 
@@ -254,11 +253,7 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         let legacy_path = dir.path().join("openrouter_credentials.json");
         let path = dir.path().join("credentials.json");
-        fs::write(
-            &legacy_path,
-            r#"{"openrouter_api_key":"legacy-key"}"#,
-        )
-        .expect("write legacy");
+        fs::write(&legacy_path, r#"{"openrouter_api_key":"legacy-key"}"#).expect("write legacy");
 
         let store = FileCredentialStore::at(&path);
         assert_eq!(store.saved_api_key().as_deref(), Some("legacy-key"));
@@ -272,11 +267,7 @@ mod tests {
         let legacy_path = dir.path().join("openrouter_credentials.json");
         let path = dir.path().join("credentials.json");
         fs::write(&path, r#"{"openrouter_api_key":""}"#).expect("write empty new");
-        fs::write(
-            &legacy_path,
-            r#"{"openrouter_api_key":"legacy-key"}"#,
-        )
-        .expect("write legacy");
+        fs::write(&legacy_path, r#"{"openrouter_api_key":"legacy-key"}"#).expect("write legacy");
 
         let store = FileCredentialStore::at(&path);
         assert_eq!(store.saved_api_key().as_deref(), Some("legacy-key"));
@@ -288,11 +279,7 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         let legacy_path = dir.path().join("openrouter_credentials.json");
         let path = dir.path().join("credentials.json");
-        fs::write(
-            &legacy_path,
-            r#"{"openrouter_api_key":"legacy-key"}"#,
-        )
-        .expect("write legacy");
+        fs::write(&legacy_path, r#"{"openrouter_api_key":"legacy-key"}"#).expect("write legacy");
 
         let store = FileCredentialStore::at(&path);
         store.save_api_key("new-key").expect("save");
@@ -305,11 +292,7 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         let legacy_path = dir.path().join("openrouter_credentials.json");
         let path = dir.path().join("credentials.json");
-        fs::write(
-            &legacy_path,
-            r#"{"openrouter_api_key":"legacy-key"}"#,
-        )
-        .expect("write legacy");
+        fs::write(&legacy_path, r#"{"openrouter_api_key":"legacy-key"}"#).expect("write legacy");
 
         let store = FileCredentialStore::at(&path);
         store.clear_api_key().expect("clear");

@@ -38,16 +38,11 @@ pub(crate) fn credentials_banner(
                         .text_color(foreground)
                         .child("OpenRouter credentials are not configured"),
                 )
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(muted)
-                        .child(
-                            "Set OPENROUTER_API_KEY or OPENROUTER_KEY in your environment, \
+                .child(div().text_size(px(11.)).text_color(muted).child(
+                    "Set OPENROUTER_API_KEY or OPENROUTER_KEY in your environment, \
                              or save a key locally. Sending is disabled until credentials \
                              are available.",
-                        ),
-                ),
+                )),
         )
         .child(
             h_flex()

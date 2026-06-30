@@ -12,9 +12,9 @@ use gpui::{
     Styled, WeakEntity, Window, div, prelude::FluentBuilder, px, relative,
 };
 use gpui_component::Disableable;
-use gpui_component::StyledExt;
 use gpui_component::IconName;
 use gpui_component::Sizable;
+use gpui_component::StyledExt;
 use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -149,10 +149,8 @@ impl ChatView {
     ) {
         self.state.error = None;
         self.refresh_credential_cache();
-        if clear_input {
-            if let Some(input) = &self.api_key_input {
-                input.update(cx, |state, cx| state.set_value("", window, cx));
-            }
+        if clear_input && let Some(input) = &self.api_key_input {
+            input.update(cx, |state, cx| state.set_value("", window, cx));
         }
     }
 
@@ -160,7 +158,12 @@ impl ChatView {
         self.state.set_error(message);
     }
 
-    fn dismiss_credentials_banner(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn dismiss_credentials_banner(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.credential_ui.dismiss_banner();
         cx.notify();
     }
@@ -228,7 +231,12 @@ impl ChatView {
         });
     }
 
-    fn open_credential_settings(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_credential_settings(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.api_key_input.is_none() {
             self.api_key_input = Some(cx.new(|cx| {
                 InputState::new(window, cx)
