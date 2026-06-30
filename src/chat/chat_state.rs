@@ -1,8 +1,9 @@
 //! In-memory chat state for the single implicit thread.
 
-use crate::api::{ChatMessage, MessageRole, ModelInfo};
+use crate::api::{ChatMessage, MessageRole, ModelInfo, DEFAULT_MODEL};
 
 use super::chat_store::ThreadSettings;
+use super::generation_ui::{catalog_loading_message, model_unavailable_message};
 
 /// Cached model catalog available to the chat UI.
 #[derive(Debug, Clone, Default)]
@@ -25,14 +26,15 @@ impl ModelCatalogState {
 
     pub fn validate_model_id(&self, model_id: &str) -> Result<(), String> {
         if self.models.is_empty() {
-            return Ok(());
+            if model_id == DEFAULT_MODEL {
+                return Ok(());
+            }
+            return Err(catalog_loading_message().into());
         }
         if self.models.iter().any(|model| model.id == model_id) {
             Ok(())
         } else {
-            Err(format!(
-                "Model \"{model_id}\" is not available. Choose another model from the catalog or refresh the list."
-            ))
+            Err(model_unavailable_message(model_id))
         }
     }
 }
@@ -128,6 +130,36 @@ impl ChatState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validate_model_id_allows_default_model_while_catalog_empty() {
+        let catalog = ModelCatalogState::default();
+        assert!(catalog.validate_model_id(DEFAULT_MODEL).is_ok());
+    }
+
+    #[test]
+    fn validate_model_id_blocks_unknown_models_while_catalog_empty() {
+        let catalog = ModelCatalogState::default();
+        assert!(catalog.validate_model_id("anthropic/claude-3.5-sonnet").is_err());
+    }
+
+    #[test]
+    fn validate_model_id_checks_populated_catalog() {
+        let catalog = ModelCatalogState {
+            models: vec![ModelInfo {
+                id: "provider/model".into(),
+                name: "Model".into(),
+                context_length: None,
+                input_modalities: Vec::new(),
+                output_modalities: Vec::new(),
+                supported_parameters: Vec::new(),
+                reasoning: None,
+            }],
+            ..ModelCatalogState::default()
+        };
+        assert!(catalog.validate_model_id("provider/model").is_ok());
+        assert!(catalog.validate_model_id("missing/model").is_err());
+    }
 
     #[test]
     fn api_messages_omits_empty_content() {

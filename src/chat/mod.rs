@@ -3,11 +3,13 @@
 mod chat_state;
 mod chat_store;
 mod chat_view;
+mod composer_actions;
 mod composer_toolbar;
 mod context_window_ring;
 mod credential_dialog;
 mod credential_ui;
 mod credentials_banner;
+mod generation_ui;
 mod model_catalog_store;
 mod model_picker;
 mod stream_indicator;

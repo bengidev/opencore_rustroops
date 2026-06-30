@@ -6,8 +6,9 @@ use futures::{Stream, StreamExt};
 use serde::Deserialize;
 
 use super::chat_provider::{
-    ApiError, CancelToken, ChatMessage, GenerationSettings, MessageRole, SpeedMode, StreamEvent,
+    ApiError, CancelToken, ChatMessage, GenerationSettings, MessageRole, StreamEvent,
 };
+use super::speed_mode::apply_speed_to_json;
 use super::http_runtime::http_client;
 
 const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
@@ -174,26 +175,9 @@ fn build_request_body(
     if let Some(effort) = &generation.reasoning_effort {
         body["reasoning"] = serde_json::json!({ "effort": effort });
     }
-    apply_speed_mode(&mut body, model, generation.speed_mode);
+    apply_speed_to_json(&mut body, model, generation.speed_mode);
 
     body
-}
-
-fn apply_speed_mode(body: &mut serde_json::Value, model: &str, speed_mode: SpeedMode) {
-    if speed_mode != SpeedMode::Fast || model.ends_with("-fast") {
-        return;
-    }
-
-    if model == "anthropic/claude-opus-4.6"
-        || model.starts_with("anthropic/claude-opus-4.7")
-        || model.starts_with("anthropic/claude-opus-4.8")
-    {
-        body["speed"] = serde_json::json!("fast");
-    } else if model.starts_with("openai/gpt-5")
-        && (model.contains("codex") || model.starts_with("openai/gpt-5.5"))
-    {
-        body["service_tier"] = serde_json::json!("priority");
-    }
 }
 
 fn parse_sse_line(line: &str) -> Option<Result<StreamEvent, ApiError>> {
@@ -218,6 +202,7 @@ fn parse_sse_line(line: &str) -> Option<Result<StreamEvent, ApiError>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::chat_provider::SpeedMode;
 
     #[test]
     fn parse_sse_line_extracts_token_content() {
