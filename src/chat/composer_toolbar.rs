@@ -26,7 +26,7 @@ pub const SPEED_MODE_OPTIONS: &[(SpeedMode, &str)] =
 pub fn format_context_indicator(length: u32) -> String {
     if length >= 1_000_000 {
         format!("{}M", length / 1_000_000)
-    } else if length >= 1024 && length % 1024 == 0 {
+    } else if length >= 1024 && length.is_multiple_of(1024) {
         format!("{}k", length / 1024)
     } else if length >= 1000 {
         format!("{}k", length / 1000)
@@ -53,15 +53,15 @@ pub fn capability_lines(model: &ModelInfo) -> Vec<String> {
     if !model.output_modalities.is_empty() {
         lines.push(format!("Output: {}", model.output_modalities.join(", ")));
     }
-    if model.supports_thinking_controls() {
-        if let Some(caps) = model.reasoning.as_ref() {
-            let labels: Vec<_> = caps
-                .supported_efforts
-                .iter()
-                .map(|effort| crate::api::effort_display_label(effort))
-                .collect();
-            lines.push(format!("Thinking levels: {}", labels.join(", ")));
-        }
+    if model.supports_thinking_controls()
+        && let Some(caps) = model.reasoning.as_ref()
+    {
+        let labels: Vec<_> = caps
+            .supported_efforts
+            .iter()
+            .map(|effort| crate::api::effort_display_label(effort))
+            .collect();
+        lines.push(format!("Thinking levels: {}", labels.join(", ")));
     }
     if model.supports_speed_mode_controls() {
         lines.push("Speed mode supported".into());
@@ -69,18 +69,33 @@ pub fn capability_lines(model: &ModelInfo) -> Vec<String> {
     lines
 }
 
+pub struct ComposerToolbarProps<'a> {
+    pub model_select: &'a Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
+    pub model: Option<&'a ModelInfo>,
+    pub messages: &'a [UiMessage],
+    pub generation: &'a GenerationSettings,
+    pub catalog_refreshing: bool,
+    pub is_streaming: bool,
+    pub muted: Hsla,
+    pub border: Hsla,
+    pub can_send: bool,
+}
+
 pub fn render_composer_toolbar(
-    model_select: &Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
-    model: Option<&ModelInfo>,
-    messages: &[UiMessage],
-    generation: &GenerationSettings,
-    catalog_refreshing: bool,
-    is_streaming: bool,
-    muted: Hsla,
-    border: Hsla,
-    can_send: bool,
+    props: ComposerToolbarProps<'_>,
     cx: &mut Context<ChatView>,
 ) -> impl IntoElement {
+    let ComposerToolbarProps {
+        model_select,
+        model,
+        messages,
+        generation,
+        catalog_refreshing,
+        is_streaming,
+        muted,
+        border,
+        can_send,
+    } = props;
     let weak = cx.entity().downgrade();
 
     let mut bar = h_flex()
@@ -213,7 +228,7 @@ fn thinking_level_menu(
             options.iter().fold(menu, |menu, (value, title)| {
                 let checked = match (current.as_deref(), value.as_str()) {
                     (None, "default") => true,
-                    (Some(effort), "default") if effort.is_empty() => true,
+                    (Some(""), "default") => true,
                     (Some(effort), selected) => effort == selected,
                     _ => false,
                 };

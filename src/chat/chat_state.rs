@@ -46,7 +46,7 @@ pub struct UiMessage {
 }
 
 /// Mutable chat state for one conversation thread.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChatState {
     pub thread_id: Option<i64>,
     pub messages: Vec<UiMessage>,
@@ -54,19 +54,6 @@ pub struct ChatState {
     pub error: Option<String>,
     pub thread_settings: ThreadSettings,
     pub catalog: ModelCatalogState,
-}
-
-impl Default for ChatState {
-    fn default() -> Self {
-        Self {
-            thread_id: None,
-            messages: Vec::new(),
-            is_streaming: false,
-            error: None,
-            thread_settings: ThreadSettings::default(),
-            catalog: ModelCatalogState::default(),
-        }
-    }
 }
 
 impl ChatState {
