@@ -43,9 +43,7 @@ use super::model_picker::{
     ModelSelectEntry, entries_from_models, persist_model_selection, selected_index_for_model,
     sync_model_select,
 };
-use super::stream_indicator::{
-    assistant_stream_status, render_assistant_stream_body,
-};
+use super::stream_indicator::{assistant_stream_status, render_assistant_stream_body};
 
 /// In-memory assistant row before the first streamed token is persisted.
 const PENDING_ASSISTANT_ID: i64 = -1;
@@ -320,7 +318,9 @@ impl ChatView {
         let view = cx.entity().downgrade();
         let watchdog_view = view.clone();
         cx.spawn(async move |_, cx| {
-            cx.background_executor().timer(std::time::Duration::from_secs(90)).await;
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(90))
+                .await;
             let _ = watchdog_view.update(cx, |chat, cx| {
                 if chat.state.catalog.is_refreshing {
                     chat.state.catalog.is_refreshing = false;
@@ -726,8 +726,7 @@ impl ChatView {
                 self.mark_scroll_to_latest();
             }
         }
-}
-
+    }
 }
 impl ComposerActions for ChatView {
     fn set_speed_mode(&mut self, mode: crate::api::SpeedMode, cx: &mut Context<Self>) {
