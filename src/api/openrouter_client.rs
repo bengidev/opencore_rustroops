@@ -5,7 +5,7 @@ use std::pin::Pin;
 use futures::{Stream, StreamExt};
 use serde::Deserialize;
 
-use super::chat_provider::{ApiError, CancelToken, ChatMessage, MessageRole, StreamEvent};
+use super::chat_provider::{ApiError, CancelToken, ChatMessage, GenerationSettings, MessageRole, StreamEvent};
 use super::http_runtime::http_client;
 
 const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
@@ -31,11 +31,13 @@ pub fn stream_chat_completion(
     api_key: &str,
     model: &str,
     messages: &[ChatMessage],
+    generation: &GenerationSettings,
     cancel: CancelToken,
 ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ApiError>> + Send>> {
     let api_key = api_key.to_string();
     let model = model.to_string();
     let messages = messages.to_vec();
+    let generation = generation.clone();
     let client = http_client().clone();
 
     Box::pin(async_stream::stream! {
@@ -44,11 +46,7 @@ pub fn stream_chat_completion(
             return;
         }
 
-        let body = serde_json::json!({
-            "model": model,
-            "stream": true,
-            "messages": messages.iter().map(openrouter_message).collect::<Vec<_>>(),
-        });
+        let body = build_request_body(&model, messages.as_slice(), &generation);
 
         let response = match client
             .post(OPENROUTER_CHAT_URL)
@@ -150,6 +148,30 @@ fn openrouter_message(message: &ChatMessage) -> serde_json::Value {
     })
 }
 
+fn build_request_body(
+    model: &str,
+    messages: &[ChatMessage],
+    generation: &GenerationSettings,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "stream": true,
+        "messages": messages.iter().map(openrouter_message).collect::<Vec<_>>(),
+    });
+
+    if let Some(temperature) = generation.temperature {
+        body["temperature"] = serde_json::json!(temperature);
+    }
+    if let Some(max_tokens) = generation.max_tokens {
+        body["max_tokens"] = serde_json::json!(max_tokens);
+    }
+    if let Some(effort) = &generation.reasoning_effort {
+        body["reasoning"] = serde_json::json!({ "effort": effort });
+    }
+
+    body
+}
+
 fn parse_sse_line(line: &str) -> Option<Result<StreamEvent, ApiError>> {
     let data = line.strip_prefix("data: ")?.trim();
     if data == "[DONE]" {
@@ -184,6 +206,30 @@ mod tests {
     fn parse_sse_line_handles_done_marker() {
         let event = parse_sse_line("data: [DONE]").expect("event").expect("ok");
         assert_eq!(event, StreamEvent::Done);
+    }
+
+    #[test]
+    fn build_request_body_includes_supported_generation_fields() {
+        let body = build_request_body(
+            "openai/gpt-4",
+            &[],
+            &GenerationSettings {
+                temperature: Some(0.8),
+                max_tokens: Some(1024),
+                reasoning_effort: Some("medium".into()),
+            },
+        );
+        assert!(body.get("temperature").is_some());
+        assert_eq!(body["max_tokens"], 1024);
+        assert_eq!(body["reasoning"]["effort"], "medium");
+    }
+
+    #[test]
+    fn build_request_body_omits_unset_generation_fields() {
+        let body = build_request_body("openai/gpt-4", &[], &GenerationSettings::default());
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("max_tokens").is_none());
+        assert!(body.get("reasoning").is_none());
     }
 
     #[test]
