@@ -9,4 +9,14 @@ pub trait ComposerActions: Sized + 'static {
     fn set_speed_mode(&mut self, mode: SpeedMode, cx: &mut Context<Self>);
     fn set_reasoning_effort(&mut self, effort: &str, cx: &mut Context<Self>);
     fn on_send_clicked(&mut self, event: &ClickEvent, window: &mut Window, cx: &mut Context<Self>);
+    fn on_stop_clicked(
+        &mut self,
+        _event: &ClickEvent,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        eprintln!(
+            "opencore: ComposerActions::on_stop_clicked not implemented — stop click silently swallowed"
+        );
+    }
 }
