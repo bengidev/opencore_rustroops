@@ -71,25 +71,46 @@ impl ModelInfo {
             .any(|value| value == parameter)
     }
 
+    /// Router models pick a concrete provider at request time, so per-model
+    /// generation metadata is not reliable for custom request fields.
+    pub fn is_router_model(&self) -> bool {
+        self.id == "openrouter/auto" || self.id.ends_with("/auto")
+    }
+
+    pub fn supports_temperature_controls(&self) -> bool {
+        !self.is_router_model() && self.supports_parameter("temperature")
+    }
+
+    pub fn supports_max_tokens_controls(&self) -> bool {
+        !self.is_router_model() && self.supports_parameter("max_tokens")
+    }
+
+    /// Reasoning UI maps to the OpenRouter `reasoning` request object.
+    pub fn supports_reasoning_controls(&self) -> bool {
+        !self.is_router_model() && self.supports_parameter("reasoning")
+    }
+
     pub fn supports_reasoning(&self) -> bool {
-        self.supports_parameter("reasoning")
-            || self.supports_parameter("reasoning_effort")
-            || self.supports_parameter("include_reasoning")
+        self.supports_reasoning_controls()
     }
 
     pub fn filter_generation(&self, generation: &GenerationSettings) -> GenerationSettings {
         GenerationSettings {
             temperature: generation
                 .temperature
-                .filter(|_| self.supports_parameter("temperature")),
+                .filter(|_| self.supports_temperature_controls()),
             max_tokens: generation
                 .max_tokens
-                .filter(|_| self.supports_parameter("max_tokens")),
+                .filter(|_| self.supports_max_tokens_controls()),
             reasoning_effort: generation
                 .reasoning_effort
                 .clone()
-                .filter(|_| self.supports_reasoning()),
+                .filter(|_| self.supports_reasoning_controls()),
         }
+    }
+
+    pub fn sanitize_generation(&self, generation: &mut GenerationSettings) {
+        *generation = self.filter_generation(generation);
     }
 }
 
@@ -205,6 +226,46 @@ mod tests {
         assert!(!token.is_cancelled());
         token.cancel();
         assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn router_model_filters_generation_controls() {
+        let router = ModelInfo {
+            id: "openrouter/auto".into(),
+            name: "Auto Router".into(),
+            context_length: Some(2_000_000),
+            input_modalities: vec!["text".into()],
+            output_modalities: vec!["text".into()],
+            supported_parameters: vec![
+                "temperature".into(),
+                "max_tokens".into(),
+                "reasoning".into(),
+            ],
+        };
+        assert!(router.is_router_model());
+        assert!(!router.supports_temperature_controls());
+        assert!(!router.supports_max_tokens_controls());
+        assert!(!router.supports_reasoning_controls());
+
+        let generation = GenerationSettings {
+            temperature: Some(0.7),
+            max_tokens: Some(4096),
+            reasoning_effort: Some("high".into()),
+        };
+        assert_eq!(router.filter_generation(&generation), GenerationSettings::default());
+    }
+
+    #[test]
+    fn reasoning_controls_require_reasoning_parameter() {
+        let model = ModelInfo {
+            id: "provider/model".into(),
+            name: "Model".into(),
+            context_length: None,
+            input_modalities: Vec::new(),
+            output_modalities: Vec::new(),
+            supported_parameters: vec!["reasoning_effort".into()],
+        };
+        assert!(!model.supports_reasoning_controls());
     }
 
     #[test]
