@@ -8,6 +8,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use futures::Stream;
 use thiserror::Error;
 
+use super::model_info::ModelInfo;
+
 /// Whether credentials are available and where they came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CredentialStatus {
@@ -37,18 +39,45 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+/// Per-request generation controls mapped to provider request fields.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GenerationSettings {
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub reasoning_effort: Option<String>,
+    pub speed_mode: SpeedMode,
+}
+
+/// Composer speed preset for models that support accelerated inference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum SpeedMode {
+    #[default]
+    Normal,
+    Fast,
+}
+
+impl SpeedMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Fast => "fast",
+        }
+    }
+
+    pub fn from_persisted(value: Option<&str>) -> Self {
+        match value {
+            Some("fast") => Self::Fast,
+            _ => Self::Normal,
+        }
+    }
+}
+
 /// Parameters for a streaming chat completion.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
-}
-
-/// Normalized model metadata from a provider catalog.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModelInfo {
-    pub id: String,
-    pub name: String,
+    pub generation: GenerationSettings,
 }
 
 /// Events emitted while streaming an assistant reply.
@@ -63,6 +92,8 @@ pub enum StreamEvent {
 pub enum ApiError {
     #[error("credentials are not configured")]
     MissingCredentials,
+    #[error("model '{0}' is not available in the catalog")]
+    UnknownModel(String),
     #[error("provider request failed: {0}")]
     RequestFailed(String),
     #[error("failed to parse provider response: {0}")]
@@ -174,6 +205,7 @@ mod tests {
                 ChatRequest {
                     model: "test".into(),
                     messages: vec![],
+                    generation: GenerationSettings::default(),
                 },
                 CancelToken::new(),
             );

@@ -11,19 +11,20 @@ use gpui::{
     IntoElement, ParentElement, Render, ScrollAnchor, ScrollHandle, StatefulInteractiveElement,
     Styled, WeakEntity, Window, div, prelude::FluentBuilder, px, relative,
 };
-use gpui_component::Disableable;
 use gpui_component::IconName;
 use gpui_component::Sizable;
 use gpui_component::StyledExt;
-use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
+use gpui_component::select::SearchableVec;
+use gpui_component::select::{SelectEvent, SelectState};
 use gpui_component::v_flex;
 
 use crate::api::{
-    ApiError, CancelToken, ChatMessage, ChatProvider, ChatRequest, CredentialStatus,
-    CredentialStore, DEFAULT_MODEL, MessageRole, StreamEvent,
+    ApiError, CancelToken, ChatProvider, ChatRequest, CredentialStatus, CredentialStore,
+    DEFAULT_MODEL, MessageRole, StreamEvent, filter_generation_for_model,
 };
 use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, LegacyTypeRole, OpenCoreTheme,
@@ -31,9 +32,20 @@ use crate::shared::theme::{
 
 use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
+use super::composer_actions::ComposerActions;
+use super::composer_toolbar::{ComposerToolbarProps, render_composer_toolbar};
 use super::credential_dialog::{self, CredentialDialogContext};
 use super::credential_ui::CredentialUiState;
 use super::credentials_banner;
+use super::generation_ui::model_unavailable_message;
+use super::model_catalog_store::ModelCatalogStore;
+use super::model_picker::{
+    ModelSelectEntry, entries_from_models, persist_model_selection, selected_index_for_model,
+    sync_model_select,
+};
+use super::stream_indicator::{
+    assistant_stream_status, bounded_message_text, render_assistant_stream_body,
+};
 
 /// In-memory assistant row before the first streamed token is persisted.
 const PENDING_ASSISTANT_ID: i64 = -1;
@@ -42,10 +54,12 @@ const PENDING_ASSISTANT_ID: i64 = -1;
 pub struct ChatView {
     provider: Arc<dyn ChatProvider>,
     store: Arc<dyn ChatStore>,
+    catalog_store: Arc<dyn ModelCatalogStore>,
     credentials: Arc<dyn CredentialStore>,
     state: ChatState,
     input: Entity<InputState>,
     api_key_input: Option<Entity<InputState>>,
+    model_select: Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
     focus_handle: FocusHandle,
     theme: OpenCoreTheme,
     pending_clear_input: bool,
@@ -56,6 +70,8 @@ pub struct ChatView {
     credential_ui: CredentialUiState,
     active_stream_cancel: Option<CancelToken>,
     streaming_assistant_id: Option<i64>,
+    pending_model_select_sync: bool,
+    pending_assistant_insert_failed: bool,
 }
 
 impl ChatView {
@@ -64,6 +80,7 @@ impl ChatView {
         cx: &mut Context<Self>,
         provider: Arc<dyn ChatProvider>,
         store: Arc<dyn ChatStore>,
+        catalog_store: Arc<dyn ModelCatalogStore>,
         credentials: Arc<dyn CredentialStore>,
         theme: OpenCoreTheme,
     ) -> Self {
@@ -75,6 +92,7 @@ impl ChatView {
                     Ok(messages) => {
                         state.messages = messages
                             .into_iter()
+                            .filter(|message| !message.content.trim().is_empty())
                             .map(|message| UiMessage {
                                 id: message.id,
                                 role: message.role,
@@ -84,14 +102,42 @@ impl ChatView {
                     }
                     Err(error) => state.set_error(error.to_string()),
                 }
+                match store.load_thread_settings(thread_id) {
+                    Ok(settings) => state.thread_settings = settings,
+                    Err(error) => state.set_error(error.to_string()),
+                }
             }
             Err(error) => state.set_error(error.to_string()),
+        }
+
+        match catalog_store.load_catalog() {
+            Ok(catalog) => {
+                state.catalog.models = catalog.models;
+                state.catalog.fetched_at = catalog.fetched_at;
+            }
+            Err(error) => state.set_error(error.to_string()),
+        }
+
+        if let Some(model) = state.catalog.model_for_id(&state.thread_settings.model_id) {
+            model.sanitize_generation(&mut state.thread_settings.generation);
         }
 
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
                 .placeholder("Message OpenRouter…")
+        });
+
+        let selected_model_index =
+            selected_index_for_model(&state.catalog.models, &state.thread_settings.model_id);
+        let model_select = cx.new(|cx| {
+            SelectState::new(
+                entries_from_models(&state.catalog.models),
+                selected_model_index,
+                window,
+                cx,
+            )
+            .searchable(true)
         });
 
         let view = cx.entity().downgrade();
@@ -107,6 +153,33 @@ impl ChatView {
         )
         .detach();
 
+        let view = cx.entity().downgrade();
+        let store_for_model = store.clone();
+        cx.subscribe(
+            &model_select,
+            move |this, _, event: &SelectEvent<SearchableVec<ModelSelectEntry>>, cx| {
+                if let SelectEvent::Confirm(Some(model_id)) = event {
+                    if let Some(model) = this.state.catalog.model_for_id(model_id) {
+                        model.sanitize_generation(&mut this.state.thread_settings.generation);
+                    }
+                    if let Some(thread_id) = this.state.thread_id
+                        && let Err(error) = persist_model_selection(
+                            &store_for_model,
+                            thread_id,
+                            &mut this.state.thread_settings,
+                            model_id.clone(),
+                        )
+                    {
+                        this.state
+                            .set_error(format!("Could not save model selection: {error}"));
+                    }
+                    cx.notify();
+                }
+                let _ = view.clone();
+            },
+        )
+        .detach();
+
         let message_scroll = ScrollHandle::default();
         let scroll_anchor = ScrollAnchor::for_handle(message_scroll.clone());
         let pending_scroll_to_bottom = !state.messages.is_empty();
@@ -115,13 +188,15 @@ impl ChatView {
             banner_dismissed: false,
         };
 
-        Self {
-            provider,
+        let mut chat = Self {
+            provider: provider.clone(),
             store,
+            catalog_store,
             credentials,
             state,
             input,
             api_key_input: None,
+            model_select,
             focus_handle: cx.focus_handle(),
             theme,
             pending_clear_input: false,
@@ -132,7 +207,158 @@ impl ChatView {
             credential_ui,
             active_stream_cancel: None,
             streaming_assistant_id: None,
+            pending_model_select_sync: false,
+            pending_assistant_insert_failed: false,
+        };
+
+        chat.refresh_catalog_in_background(cx);
+        chat
+    }
+
+    fn persist_generation_settings(&mut self, _cx: &App) {
+        let Some(thread_id) = self.state.thread_id else {
+            return;
+        };
+        if let Err(error) = self
+            .store
+            .save_thread_settings(thread_id, &self.state.thread_settings)
+        {
+            self.state
+                .set_error(format!("Could not save generation settings: {error}"));
         }
+    }
+
+    pub(crate) fn set_speed_mode(&mut self, mode: crate::api::SpeedMode, cx: &mut Context<Self>) {
+        if !self.current_model_supports(|model| model.supports_speed_mode_controls()) {
+            return;
+        }
+        self.state.thread_settings.generation.speed_mode = mode;
+        self.persist_generation_settings(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_reasoning_effort(&mut self, value: &str, cx: &mut Context<Self>) {
+        let Some(model) = self
+            .state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
+        else {
+            return;
+        };
+        if !model.supports_thinking_controls() {
+            return;
+        }
+        self.state.thread_settings.generation.reasoning_effort = if value == "default" {
+            None
+        } else if model.is_supported_thinking_effort(value) {
+            Some(value.to_string())
+        } else {
+            return;
+        };
+        self.persist_generation_settings(cx);
+        cx.notify();
+    }
+
+    fn current_model_supports(
+        &self,
+        predicate: impl FnOnce(&crate::api::ModelInfo) -> bool,
+    ) -> bool {
+        self.state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
+            .is_some_and(predicate)
+    }
+
+    fn reconcile_settings_after_catalog_refresh(&mut self) {
+        let previous_model_id = self.state.thread_settings.model_id.clone();
+        if let Some(model) = self
+            .state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
+        {
+            model.sanitize_generation(&mut self.state.thread_settings.generation);
+            return;
+        }
+
+        if self.state.catalog.models.is_empty() {
+            return;
+        }
+
+        self.state.thread_settings.model_id = DEFAULT_MODEL.to_string();
+        if let Some(model) = self
+            .state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
+        {
+            model.sanitize_generation(&mut self.state.thread_settings.generation);
+        }
+        self.state.set_error(format!(
+            "{} Switched to Auto.",
+            model_unavailable_message(&previous_model_id)
+        ));
+
+        if let Some(thread_id) = self.state.thread_id
+            && let Err(error) = self
+                .store
+                .save_thread_settings(thread_id, &self.state.thread_settings)
+        {
+            self.state
+                .set_error(format!("Could not save model selection: {error}"));
+        }
+    }
+
+    fn refresh_catalog_in_background(&mut self, cx: &mut Context<Self>) {
+        if self.credential_ui.missing || self.state.catalog.is_refreshing {
+            return;
+        }
+
+        self.state.catalog.is_refreshing = true;
+        let provider = self.provider.clone();
+        let catalog_store = self.catalog_store.clone();
+        let view = cx.entity().downgrade();
+        let watchdog_view = view.clone();
+
+        cx.spawn(async move |_, cx| {
+            tokio::time::sleep(std::time::Duration::from_secs(90)).await;
+            let _ = watchdog_view.update(cx, |chat, cx| {
+                if chat.state.catalog.is_refreshing {
+                    chat.state.catalog.is_refreshing = false;
+                    chat.state.set_error(
+                        "Model catalog refresh timed out. Try again from settings.".into(),
+                    );
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |_, cx| {
+            let result = provider.list_models().await;
+            let _ = view.update(cx, |chat, cx| {
+                chat.state.catalog.is_refreshing = false;
+                match result {
+                    Ok(models) => {
+                        let fetched_at = catalog_fetched_at_now();
+                        if let Err(error) = catalog_store.save_catalog(&models, &fetched_at) {
+                            chat.state
+                                .set_error(format!("Could not cache model catalog: {error}"));
+                            return;
+                        }
+                        chat.state.catalog.replace_catalog(models, fetched_at);
+                        chat.reconcile_settings_after_catalog_refresh();
+                        chat.pending_model_select_sync = true;
+                    }
+                    Err(error) => {
+                        if chat.state.catalog.models.is_empty() {
+                            chat.state
+                                .set_error(format!("Could not refresh model catalog: {error}"));
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn refresh_credential_cache(&mut self) {
@@ -151,6 +377,9 @@ impl ChatView {
         self.refresh_credential_cache();
         if clear_input && let Some(input) = &self.api_key_input {
             input.update(cx, |state, cx| state.set_value("", window, cx));
+        }
+        if !self.credential_ui.missing {
+            self.refresh_catalog_in_background(cx);
         }
     }
 
@@ -172,7 +401,31 @@ impl ChatView {
         if let Some(token) = self.active_stream_cancel.take() {
             token.cancel();
         }
+        self.state.remove_trailing_empty_assistants();
+        if self.state.is_streaming {
+            self.state.finish_streaming();
+        }
         self.streaming_assistant_id = None;
+        self.pending_assistant_insert_failed = false;
+    }
+
+    fn cleanup_inflight_assistant(&mut self, store: &Arc<dyn ChatStore>) {
+        while let Some(last) = self.state.messages.last() {
+            if last.role == MessageRole::Assistant && last.content.trim().is_empty() {
+                let id = last.id;
+                self.state.messages.pop();
+                if id != PENDING_ASSISTANT_ID
+                    && let Err(error) = store.delete_message(id)
+                {
+                    eprintln!("opencore: failed to remove empty assistant message: {error}");
+                }
+            } else {
+                break;
+            }
+        }
+        if self.state.is_streaming {
+            self.state.finish_streaming();
+        }
     }
 
     fn persist_assistant_content(
@@ -265,7 +518,12 @@ impl ChatView {
         self.theme = theme;
     }
 
-    fn on_send_clicked(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn on_send_clicked(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let input = self.input.clone();
         let view = cx.entity().downgrade();
         self.try_send_message(input, view, cx);
@@ -283,6 +541,18 @@ impl ChatView {
 
         let content = input.read(cx).value().trim().to_string();
         if content.is_empty() {
+            return;
+        }
+
+        self.persist_generation_settings(cx);
+
+        if let Err(message) = self
+            .state
+            .catalog
+            .validate_model_id(&self.state.thread_settings.model_id)
+        {
+            self.state.set_error(message);
+            cx.notify();
             return;
         }
 
@@ -317,17 +587,10 @@ impl ChatView {
         self.pending_clear_input = true;
         self.mark_scroll_to_latest();
 
-        let request_messages = self
-            .state
-            .messages
-            .iter()
-            .map(|message| ChatMessage {
-                role: message.role,
-                content: message.content.clone(),
-            })
-            .collect();
+        let request_messages = self.state.api_messages();
 
         self.cancel_active_stream();
+        self.pending_assistant_insert_failed = false;
         self.state.begin_assistant_message(PENDING_ASSISTANT_ID);
         self.streaming_assistant_id = Some(PENDING_ASSISTANT_ID);
         self.mark_scroll_to_latest();
@@ -340,8 +603,14 @@ impl ChatView {
         self.active_stream_cancel = Some(cancel.clone());
         let (event_tx, mut event_rx) = mpsc::unbounded();
         let request = ChatRequest {
-            model: DEFAULT_MODEL.to_string(),
+            model: self.state.thread_settings.model_id.clone(),
             messages: request_messages,
+            generation: filter_generation_for_model(
+                self.state
+                    .catalog
+                    .model_for_id(&self.state.thread_settings.model_id),
+                &self.state.thread_settings.generation,
+            ),
         };
 
         spawn_http_task({
@@ -377,29 +646,32 @@ impl ChatView {
             }
             let _ = view.update(cx, |chat, _| {
                 chat.active_stream_cancel = None;
-                if chat.state.is_streaming {
-                    chat.state.finish_streaming();
-                }
+                chat.cleanup_inflight_assistant(&store);
                 chat.streaming_assistant_id = None;
+                chat.pending_assistant_insert_failed = false;
             });
         })
         .detach();
     }
 
     fn apply_stream_update(&mut self, store: &Arc<dyn ChatStore>, update: StreamUpdate) {
-        let assistant_id = match self.streaming_assistant_id {
-            Some(id) => id,
-            None => return,
-        };
-        let thread_id = match self.state.thread_id {
-            Some(thread_id) => thread_id,
-            None => return,
-        };
-
         match update {
+            StreamUpdate::Error(message) => {
+                self.cleanup_inflight_assistant(store);
+                self.streaming_assistant_id = None;
+                self.state.set_error(message);
+            }
             StreamUpdate::Token(token) => {
+                let assistant_id = match self.streaming_assistant_id {
+                    Some(id) => id,
+                    None => return,
+                };
+                let thread_id = match self.state.thread_id {
+                    Some(thread_id) => thread_id,
+                    None => return,
+                };
                 self.state.append_assistant_token(assistant_id, &token);
-                if assistant_id == PENDING_ASSISTANT_ID {
+                if assistant_id == PENDING_ASSISTANT_ID && !self.pending_assistant_insert_failed {
                     let content = self
                         .state
                         .messages
@@ -407,11 +679,22 @@ impl ChatView {
                         .find(|message| message.id == PENDING_ASSISTANT_ID)
                         .map(|message| message.content.clone())
                         .unwrap_or_default();
-                    let _ = self.insert_pending_assistant(thread_id, &content, store);
+                    let inserted_id = self.insert_pending_assistant(thread_id, &content, store);
+                    if inserted_id == PENDING_ASSISTANT_ID {
+                        self.pending_assistant_insert_failed = true;
+                    }
                 }
                 self.mark_scroll_to_latest();
             }
             StreamUpdate::Done => {
+                let assistant_id = match self.streaming_assistant_id {
+                    Some(id) => id,
+                    None => return,
+                };
+                let thread_id = match self.state.thread_id {
+                    Some(thread_id) => thread_id,
+                    None => return,
+                };
                 self.state.finish_streaming();
                 if let Some(message) = self
                     .state
@@ -421,10 +704,14 @@ impl ChatView {
                 {
                     let content = message.content.clone();
                     if assistant_id == PENDING_ASSISTANT_ID {
-                        if content.is_empty() {
+                        if content.trim().is_empty() {
                             self.state.messages.pop();
-                        } else {
-                            let _ = self.insert_pending_assistant(thread_id, &content, store);
+                        } else if !self.pending_assistant_insert_failed {
+                            let inserted_id =
+                                self.insert_pending_assistant(thread_id, &content, store);
+                            if inserted_id == PENDING_ASSISTANT_ID {
+                                self.pending_assistant_insert_failed = true;
+                            }
                         }
                     } else {
                         self.persist_assistant_content(assistant_id, &content, store);
@@ -433,25 +720,21 @@ impl ChatView {
                 self.streaming_assistant_id = None;
                 self.mark_scroll_to_latest();
             }
-            StreamUpdate::Error(message) => {
-                if let Some(last) = self.state.messages.last()
-                    && last.role == MessageRole::Assistant
-                    && last.content.is_empty()
-                {
-                    if last.id != PENDING_ASSISTANT_ID {
-                        let id = last.id;
-                        if let Err(error) = store.delete_message(id) {
-                            eprintln!(
-                                "opencore: failed to remove empty assistant message: {error}"
-                            );
-                        }
-                    }
-                    self.state.messages.pop();
-                }
-                self.streaming_assistant_id = None;
-                self.state.set_error(message);
-            }
         }
+    }
+}
+
+impl ComposerActions for ChatView {
+    fn set_speed_mode(&mut self, mode: crate::api::SpeedMode, cx: &mut Context<Self>) {
+        ChatView::set_speed_mode(self, mode, cx);
+    }
+
+    fn set_reasoning_effort(&mut self, effort: &str, cx: &mut Context<Self>) {
+        ChatView::set_reasoning_effort(self, effort, cx);
+    }
+
+    fn on_send_clicked(&mut self, event: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        ChatView::on_send_clicked(self, event, window, cx);
     }
 }
 
@@ -466,9 +749,18 @@ fn format_provider_error(error: ApiError) -> String {
         ApiError::MissingCredentials => {
             "OpenRouter credentials are missing. Add an API key to continue.".into()
         }
+        ApiError::UnknownModel(model) => model_unavailable_message(&model),
         ApiError::RequestFailed(message) => format!("Request failed: {message}"),
         ApiError::ParseError(message) => format!("Could not read provider response: {message}"),
     }
+}
+
+fn catalog_fetched_at_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".into())
 }
 
 impl Focusable for ChatView {
@@ -479,6 +771,17 @@ impl Focusable for ChatView {
 
 impl Render for ChatView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.pending_model_select_sync {
+            self.pending_model_select_sync = false;
+            sync_model_select(
+                &self.model_select,
+                &self.state.catalog.models,
+                &self.state.thread_settings.model_id,
+                window,
+                cx,
+            );
+        }
+
         if self.pending_clear_input {
             self.pending_clear_input = false;
             self.input.update(cx, |input, cx| {
@@ -511,8 +814,17 @@ impl Render for ChatView {
         let user_bubble_bg = theme.surface(BackgroundToken::Tertiary);
         let label = theme.label;
         let can_send = self.state.can_send(self.credential_ui.missing);
+        let is_streaming = self.state.is_streaming;
+        let streaming_assistant_id = self.streaming_assistant_id;
         let show_credentials_banner = self.credential_ui.should_show_banner();
         let error = self.state.error.clone();
+        let selected_model = self
+            .state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id);
+        let supports_thinking =
+            selected_model.is_some_and(|model| model.supports_thinking_controls());
+        let catalog_refreshing = self.state.catalog.is_refreshing;
 
         let mut content = v_flex().size_full().min_h_0().bg(background);
 
@@ -556,11 +868,19 @@ impl Render for ChatView {
         let mut thread = v_flex().w_full().gap(px(spacing.md as f32));
 
         for message in &self.state.messages {
+            let stream_status = assistant_stream_status(
+                message,
+                is_streaming,
+                streaming_assistant_id,
+                supports_thinking,
+            );
             thread = thread.child(message_row(
                 message,
+                stream_status,
                 foreground,
                 muted,
                 user_bubble_bg,
+                card_bg,
                 label,
             ));
         }
@@ -575,6 +895,8 @@ impl Render for ChatView {
 
         let message_list = v_flex()
             .w_full()
+            .min_w(px(0.))
+            .overflow_hidden()
             .px(inset)
             .pt(inset)
             .pb(inset)
@@ -585,7 +907,9 @@ impl Render for ChatView {
                 .id("chat-messages-scroll")
                 .flex_1()
                 .min_h_0()
+                .min_w(px(0.))
                 .w_full()
+                .overflow_x_hidden()
                 .track_scroll(&self.message_scroll)
                 .overflow_y_scroll()
                 .child(message_list)
@@ -593,7 +917,7 @@ impl Render for ChatView {
         );
 
         let input = Input::new(&self.input)
-            .h(px(72.))
+            .h(px(64.))
             .appearance(false)
             .disabled(!can_send);
 
@@ -619,37 +943,29 @@ impl Render for ChatView {
                         .border_1()
                         .border_color(border)
                         .bg(card_bg)
+                        .overflow_hidden()
                         .child(
                             div()
                                 .px(px(12.))
-                                .pt(px(12.))
+                                .pt(px(10.))
+                                .pb(px(4.))
                                 .when(!can_send, |this| this.opacity(0.6))
                                 .child(input),
                         )
-                        .child(
-                            h_flex()
-                                .px(px(12.))
-                                .pb(px(12.))
-                                .pt(px(4.))
-                                .gap(px(8.))
-                                .items_center()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_size(px(11.))
-                                        .text_color(muted)
-                                        .child(DEFAULT_MODEL),
-                                )
-                                .child(
-                                    Button::new("send-message")
-                                        .icon(IconName::ArrowUp)
-                                        .primary()
-                                        .small()
-                                        .rounded(ButtonRounded::Size(px(12.)))
-                                        .disabled(!can_send)
-                                        .on_click(cx.listener(Self::on_send_clicked)),
-                                ),
-                        ),
+                        .child(render_composer_toolbar(
+                            ComposerToolbarProps {
+                                model_select: &self.model_select,
+                                model: selected_model,
+                                messages: &self.state.messages,
+                                generation: &self.state.thread_settings.generation,
+                                catalog_refreshing,
+                                is_streaming,
+                                muted,
+                                border,
+                                can_send,
+                            },
+                            cx,
+                        )),
                 ),
         );
 
@@ -677,16 +993,14 @@ fn error_panel(
 
 fn message_row(
     message: &UiMessage,
+    stream_status: super::stream_indicator::AssistantStreamStatus,
     foreground: gpui::Hsla,
     muted: gpui::Hsla,
     user_bubble_bg: gpui::Hsla,
+    assistant_pill_bg: gpui::Hsla,
     label: LegacyTypeRole,
 ) -> impl IntoElement {
     let text_size = px(label.size_px as f32);
-    let body = div()
-        .text_size(text_size)
-        .text_color(foreground)
-        .child(message.content.clone());
 
     match message.role {
         MessageRole::User => div().w_full().flex().justify_end().child(
@@ -696,9 +1010,28 @@ fn message_row(
                 .py(px(10.))
                 .rounded_lg()
                 .bg(user_bubble_bg)
-                .child(body),
+                .child(bounded_message_text(
+                    message.content.clone(),
+                    text_size,
+                    foreground,
+                )),
         ),
-        MessageRole::Assistant => div().w_full().max_w(relative(0.92)).py(px(4.)).child(body),
+        MessageRole::Assistant => div()
+            .w_full()
+            .min_w(px(0.))
+            .overflow_hidden()
+            .py(px(4.))
+            .pr(px(24.))
+            .child(div().w_full().min_w(px(0.)).overflow_hidden().child(
+                render_assistant_stream_body(
+                    message,
+                    stream_status,
+                    foreground,
+                    muted,
+                    assistant_pill_bg,
+                    label.size_px as f32,
+                ),
+            )),
         MessageRole::System => div().w_full().flex().justify_center().py(px(8.)).child(
             div()
                 .text_size(px(11.))
