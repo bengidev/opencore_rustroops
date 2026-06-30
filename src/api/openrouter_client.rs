@@ -8,8 +8,8 @@ use serde::Deserialize;
 use super::chat_provider::{
     ApiError, CancelToken, ChatMessage, GenerationSettings, MessageRole, StreamEvent,
 };
-use super::speed_mode::apply_speed_to_json;
 use super::http_runtime::http_client;
+use super::speed_mode::apply_speed_to_json;
 
 const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -201,8 +201,8 @@ fn parse_sse_line(line: &str) -> Option<Result<StreamEvent, ApiError>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::chat_provider::SpeedMode;
+    use super::*;
 
     #[test]
     fn parse_sse_line_extracts_token_content() {

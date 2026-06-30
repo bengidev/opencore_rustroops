@@ -162,15 +162,16 @@ impl ChatView {
                     if let Some(model) = this.state.catalog.model_for_id(model_id) {
                         model.sanitize_generation(&mut this.state.thread_settings.generation);
                     }
-                    if let Some(thread_id) = this.state.thread_id {
-                        if let Err(error) = persist_model_selection(
+                    if let Some(thread_id) = this.state.thread_id
+                        && let Err(error) = persist_model_selection(
                             &store_for_model,
                             thread_id,
                             &mut this.state.thread_settings,
                             model_id.clone(),
-                        ) {
-                            this.state.set_error(format!("Could not save model selection: {error}"));
-                        }
+                        )
+                    {
+                        this.state
+                            .set_error(format!("Could not save model selection: {error}"));
                     }
                     cx.notify();
                 }
@@ -296,14 +297,13 @@ impl ChatView {
             model_unavailable_message(&previous_model_id)
         ));
 
-        if let Some(thread_id) = self.state.thread_id {
-            if let Err(error) = self
+        if let Some(thread_id) = self.state.thread_id
+            && let Err(error) = self
                 .store
                 .save_thread_settings(thread_id, &self.state.thread_settings)
-            {
-                self.state
-                    .set_error(format!("Could not save model selection: {error}"));
-            }
+        {
+            self.state
+                .set_error(format!("Could not save model selection: {error}"));
         }
     }
 
@@ -323,8 +323,9 @@ impl ChatView {
             let _ = watchdog_view.update(cx, |chat, cx| {
                 if chat.state.catalog.is_refreshing {
                     chat.state.catalog.is_refreshing = false;
-                    chat.state
-                        .set_error("Model catalog refresh timed out. Try again from settings.".into());
+                    chat.state.set_error(
+                        "Model catalog refresh timed out. Try again from settings.".into(),
+                    );
                     cx.notify();
                 }
             });
@@ -732,12 +733,7 @@ impl ComposerActions for ChatView {
         ChatView::set_reasoning_effort(self, effort, cx);
     }
 
-    fn on_send_clicked(
-        &mut self,
-        event: &ClickEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_send_clicked(&mut self, event: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         ChatView::on_send_clicked(self, event, window, cx);
     }
 }

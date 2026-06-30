@@ -18,9 +18,7 @@ use crate::api::{GenerationSettings, ModelInfo, SpeedMode};
 use super::chat_state::UiMessage;
 use super::composer_actions::ComposerActions;
 use super::context_window_ring::render_context_window_indicator;
-use super::generation_ui::{
-    thinking_level_button_label, thinking_level_menu_options,
-};
+use super::generation_ui::{thinking_level_button_label, thinking_level_menu_options};
 use super::model_picker::{ModelSelectEntry, render_composer_model_select};
 
 pub const SPEED_MODE_OPTIONS: &[(SpeedMode, &str)] =
