@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! opencore_rustroops library surface.
 //!
 //! Public modules: [`app`] (composition root), [`api`] (provider boundary),
