@@ -1,4 +1,5 @@
-//! Loading and thinking indicators for assistant streaming states.
+//! Loading and thinking indicators for assistant streaming states, plus
+//! markdown rendering for completed and streaming assistant messages.
 
 use std::time::Duration;
 
@@ -8,6 +9,7 @@ use gpui::{
 };
 use gpui_component::h_flex;
 use gpui_component::spinner::Spinner;
+use super::markdown_render::render_markdown;
 use gpui_component::{Icon, IconName, Sizable, Size};
 
 use crate::api::MessageRole;
@@ -63,10 +65,11 @@ pub fn assistant_stream_status(
 pub fn render_assistant_stream_body(
     message: &UiMessage,
     status: AssistantStreamStatus,
-    foreground: Hsla,
+    _foreground: Hsla,
     muted: Hsla,
     pill_bg: Hsla,
     label_size: f32,
+    is_dark: bool,
 ) -> impl IntoElement {
     match status {
         AssistantStreamStatus::Thinking => div().child(render_status_pill(
@@ -83,25 +86,25 @@ pub fn render_assistant_stream_body(
             pill_bg,
             label_size,
         )),
-        AssistantStreamStatus::Streaming => div().child(
-            h_flex()
-                .w_full()
-                .min_w(px(0.))
-                .overflow_hidden()
-                .items_center()
-                .gap(px(2.))
-                .child(bounded_message_text(
-                    message.content.clone(),
-                    px(label_size),
-                    foreground,
-                ))
-                .child(render_streaming_cursor(muted)),
-        ),
-        AssistantStreamStatus::Idle => div().child(bounded_message_text(
-            message.content.clone(),
-            px(label_size),
-            foreground,
-        )),
+        AssistantStreamStatus::Streaming => div()
+            .w_full()
+            .min_w(px(0.))
+            .overflow_hidden()
+            .child(
+                h_flex()
+                    .w_full()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .items_center()
+                    .gap(px(2.))
+                    .child(render_markdown(&message.content, label_size, is_dark))
+                    .child(render_streaming_cursor(muted)),
+            ),
+        AssistantStreamStatus::Idle => div()
+            .w_full()
+            .min_w(px(0.))
+            .overflow_hidden()
+            .child(render_markdown(&message.content, label_size, is_dark)),
     }
 }
 

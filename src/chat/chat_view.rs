@@ -27,7 +27,7 @@ use crate::api::{
     DEFAULT_MODEL, MessageRole, StreamEvent, filter_generation_for_model,
 };
 use crate::shared::theme::{
-    BackgroundToken, BorderToken, ForegroundToken, LegacyTypeRole, OpenCoreTheme,
+    BackgroundToken, BorderToken, ForegroundToken, LegacyTypeRole, OpenCoreTheme, ThemeMode,
 };
 
 use super::chat_state::{ChatState, UiMessage};
@@ -736,6 +736,10 @@ impl ComposerActions for ChatView {
     fn on_send_clicked(&mut self, event: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         ChatView::on_send_clicked(self, event, window, cx);
     }
+
+    fn on_stop_clicked(&mut self, _event: &ClickEvent, _window: &mut Window, _cx: &mut Context<Self>) {
+        self.cancel_active_stream();
+    }
 }
 
 enum StreamUpdate {
@@ -874,6 +878,7 @@ impl Render for ChatView {
                 streaming_assistant_id,
                 supports_thinking,
             );
+            let is_dark = self.theme.mode == ThemeMode::Dark;
             thread = thread.child(message_row(
                 message,
                 stream_status,
@@ -882,6 +887,7 @@ impl Render for ChatView {
                 user_bubble_bg,
                 card_bg,
                 label,
+                is_dark,
             ));
         }
 
@@ -999,6 +1005,7 @@ fn message_row(
     user_bubble_bg: gpui::Hsla,
     assistant_pill_bg: gpui::Hsla,
     label: LegacyTypeRole,
+    is_dark: bool,
 ) -> impl IntoElement {
     let text_size = px(label.size_px as f32);
 
@@ -1030,6 +1037,7 @@ fn message_row(
                     muted,
                     assistant_pill_bg,
                     label.size_px as f32,
+                    is_dark,
                 ),
             )),
         MessageRole::System => div().w_full().flex().justify_center().py(px(8.)).child(
