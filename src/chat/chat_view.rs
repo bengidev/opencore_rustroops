@@ -14,9 +14,8 @@ use gpui::{
 use gpui_component::Disableable;
 use gpui_component::IconName;
 use gpui_component::Sizable;
-use gpui_component::WindowExt;
+use gpui_component::StyledExt;
 use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
-use gpui_component::dialog::DialogButtonProps;
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
@@ -32,6 +31,9 @@ use crate::shared::theme::{
 
 use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
+use super::credential_dialog::{self, CredentialDialogContext};
+use super::credential_ui::CredentialUiState;
+use super::credentials_banner;
 
 /// In-memory assistant row before the first streamed token is persisted.
 const PENDING_ASSISTANT_ID: i64 = -1;
@@ -51,7 +53,7 @@ pub struct ChatView {
     scroll_anchor: ScrollAnchor,
     pending_scroll_to_bottom: bool,
     scroll_settle_frames: u8,
-    credentials_missing: bool,
+    credential_ui: CredentialUiState,
     active_stream_cancel: Option<CancelToken>,
     streaming_assistant_id: Option<i64>,
 }
@@ -108,7 +110,10 @@ impl ChatView {
         let message_scroll = ScrollHandle::default();
         let scroll_anchor = ScrollAnchor::for_handle(message_scroll.clone());
         let pending_scroll_to_bottom = !state.messages.is_empty();
-        let credentials_missing = matches!(provider.credential_status(), CredentialStatus::Missing);
+        let credential_ui = CredentialUiState {
+            missing: matches!(provider.credential_status(), CredentialStatus::Missing),
+            banner_dismissed: false,
+        };
 
         Self {
             provider,
@@ -124,15 +129,43 @@ impl ChatView {
             scroll_anchor,
             pending_scroll_to_bottom,
             scroll_settle_frames: if pending_scroll_to_bottom { 4 } else { 0 },
-            credentials_missing,
+            credential_ui,
             active_stream_cancel: None,
             streaming_assistant_id: None,
         }
     }
 
     fn refresh_credential_cache(&mut self) {
-        self.credentials_missing =
-            matches!(self.provider.credential_status(), CredentialStatus::Missing);
+        let was_missing = self.credential_ui.missing;
+        let now_missing = matches!(self.provider.credential_status(), CredentialStatus::Missing);
+        self.credential_ui.refresh(was_missing, now_missing);
+    }
+
+    pub(crate) fn on_credentials_changed(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        clear_input: bool,
+    ) {
+        self.state.error = None;
+        self.refresh_credential_cache();
+        if clear_input && let Some(input) = &self.api_key_input {
+            input.update(cx, |state, cx| state.set_value("", window, cx));
+        }
+    }
+
+    pub(crate) fn set_credential_error(&mut self, message: String) {
+        self.state.set_error(message);
+    }
+
+    fn dismiss_credentials_banner(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.credential_ui.dismiss_banner();
+        cx.notify();
     }
 
     fn cancel_active_stream(&mut self) {
@@ -198,65 +231,34 @@ impl ChatView {
         });
     }
 
-    fn open_api_key_dialog(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_credential_settings(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.api_key_input.is_none() {
-            self.api_key_input =
-                Some(cx.new(|cx| InputState::new(window, cx).placeholder("sk-or-v1-…")));
+            self.api_key_input = Some(cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("sk-or-v1-…")
+                    .masked(true)
+            }));
         }
 
         let api_key_input = self
             .api_key_input
             .clone()
             .expect("api key input should exist");
-        let credentials = self.credentials.clone();
-        let view = cx.entity().downgrade();
-        let api_key_input_for_save = api_key_input.clone();
-        let credentials_for_save = credentials.clone();
-        let view_for_save = view.clone();
-        let view_for_success = view.clone();
 
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            dialog
-                .title("OpenRouter API Key")
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .child("Paste your API key from openrouter.ai.")
-                        .child(Input::new(&api_key_input).mask_toggle()),
-                )
-                .button_props(
-                    DialogButtonProps::default()
-                        .show_cancel(true)
-                        .ok_text("Save"),
-                )
-                .on_ok({
-                    let api_key_input_for_save = api_key_input_for_save.clone();
-                    let credentials_for_save = credentials_for_save.clone();
-                    let view_for_save = view_for_save.clone();
-                    let view_for_success = view_for_success.clone();
-                    move |_, _window, cx| {
-                        let key = api_key_input_for_save.read(cx).value().trim().to_string();
-                        if key.is_empty() {
-                            return false;
-                        }
-
-                        if let Err(error) = credentials_for_save.save_api_key(&key) {
-                            let _ = view_for_save.update(cx, |chat, cx| {
-                                chat.state.set_error(error.to_string());
-                                cx.notify();
-                            });
-                            return false;
-                        }
-
-                        let _ = view_for_success.update(cx, |chat, cx| {
-                            chat.state.error = None;
-                            chat.refresh_credential_cache();
-                            cx.notify();
-                        });
-                        true
-                    }
-                })
-        });
+        credential_dialog::open(
+            window,
+            cx,
+            CredentialDialogContext {
+                api_key_input,
+                credentials: self.credentials.clone(),
+                view: cx.entity().downgrade(),
+            },
+        );
     }
 
     pub fn set_theme(&mut self, theme: OpenCoreTheme) {
@@ -275,7 +277,7 @@ impl ChatView {
         view: WeakEntity<Self>,
         cx: &mut Context<Self>,
     ) {
-        if !self.state.can_send(self.credentials_missing) {
+        if !self.state.can_send(self.credential_ui.missing) {
             return;
         }
 
@@ -508,16 +510,37 @@ impl Render for ChatView {
         let card_bg = theme.surface(BackgroundToken::Secondary);
         let user_bubble_bg = theme.surface(BackgroundToken::Tertiary);
         let label = theme.label;
-        let credentials_missing = self.credentials_missing;
-        let can_send = self.state.can_send(credentials_missing);
+        let can_send = self.state.can_send(self.credential_ui.missing);
+        let show_credentials_banner = self.credential_ui.should_show_banner();
         let error = self.state.error.clone();
-        let api_key_label = if credentials_missing {
-            "Add API key"
-        } else {
-            "API key"
-        };
 
         let mut content = v_flex().size_full().min_h_0().bg(background);
+
+        content = content.child(
+            h_flex()
+                .flex_shrink_0()
+                .w_full()
+                .px(inset)
+                .pt(inset)
+                .pb(px(8.))
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .text_size(px(label.size_px as f32))
+                        .font_semibold()
+                        .text_color(foreground)
+                        .child("Chat"),
+                )
+                .child(
+                    Button::new("open-credential-settings")
+                        .icon(IconName::Settings)
+                        .ghost()
+                        .small()
+                        .tooltip("OpenRouter credentials")
+                        .on_click(cx.listener(Self::open_credential_settings)),
+                ),
+        );
 
         if let Some(text) = error {
             content = content.child(div().flex_shrink_0().px(inset).pt(inset).child(error_panel(
@@ -577,53 +600,55 @@ impl Render for ChatView {
         let composer = div().flex_shrink_0().w_full().px(inset).pb(inset).child(
             v_flex()
                 .w_full()
-                .rounded_lg()
-                .border_1()
-                .border_color(border)
-                .bg(card_bg)
+                .gap_2()
+                .when(show_credentials_banner, |this| {
+                    this.child(credentials_banner::credentials_banner(
+                        border,
+                        card_bg,
+                        theme.foreground(ForegroundToken::Accent),
+                        muted,
+                        label,
+                        cx.listener(Self::open_credential_settings),
+                        cx.listener(Self::dismiss_credentials_banner),
+                    ))
+                })
                 .child(
-                    div()
-                        .px(px(12.))
-                        .pt(px(12.))
-                        .when(!can_send, |this| this.opacity(0.6))
-                        .child(input),
-                )
-                .child(
-                    h_flex()
-                        .px(px(12.))
-                        .pb(px(12.))
-                        .pt(px(4.))
-                        .gap(px(8.))
-                        .items_center()
-                        .justify_between()
+                    v_flex()
+                        .w_full()
+                        .rounded_lg()
+                        .border_1()
+                        .border_color(border)
+                        .bg(card_bg)
+                        .child(
+                            div()
+                                .px(px(12.))
+                                .pt(px(12.))
+                                .when(!can_send, |this| this.opacity(0.6))
+                                .child(input),
+                        )
                         .child(
                             h_flex()
+                                .px(px(12.))
+                                .pb(px(12.))
+                                .pt(px(4.))
                                 .gap(px(8.))
                                 .items_center()
-                                .min_w_0()
-                                .flex_1()
-                                .child(
-                                    Button::new("configure-api-key")
-                                        .label(api_key_label)
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(Self::open_api_key_dialog)),
-                                )
+                                .justify_between()
                                 .child(
                                     div()
                                         .text_size(px(11.))
                                         .text_color(muted)
                                         .child(DEFAULT_MODEL),
+                                )
+                                .child(
+                                    Button::new("send-message")
+                                        .icon(IconName::ArrowUp)
+                                        .primary()
+                                        .small()
+                                        .rounded(ButtonRounded::Size(px(12.)))
+                                        .disabled(!can_send)
+                                        .on_click(cx.listener(Self::on_send_clicked)),
                                 ),
-                        )
-                        .child(
-                            Button::new("send-message")
-                                .icon(IconName::ArrowUp)
-                                .primary()
-                                .small()
-                                .rounded(ButtonRounded::Size(px(12.)))
-                                .disabled(!can_send)
-                                .on_click(cx.listener(Self::on_send_clicked)),
                         ),
                 ),
         );
