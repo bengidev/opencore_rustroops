@@ -737,7 +737,12 @@ impl ComposerActions for ChatView {
         ChatView::on_send_clicked(self, event, window, cx);
     }
 
-    fn on_stop_clicked(&mut self, _event: &ClickEvent, _window: &mut Window, _cx: &mut Context<Self>) {
+    fn on_stop_clicked(
+        &mut self,
+        _event: &ClickEvent,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
         self.cancel_active_stream();
     }
 }

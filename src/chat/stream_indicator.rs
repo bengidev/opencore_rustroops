@@ -3,13 +3,13 @@
 
 use std::time::Duration;
 
+use super::markdown_render::render_markdown;
 use gpui::{
     Animation, AnimationExt as _, Hsla, IntoElement, ParentElement, Styled as _, bounce, div,
     ease_in_out, px,
 };
 use gpui_component::h_flex;
 use gpui_component::spinner::Spinner;
-use super::markdown_render::render_markdown;
 use gpui_component::{Icon, IconName, Sizable, Size};
 
 use crate::api::MessageRole;
@@ -86,20 +86,16 @@ pub fn render_assistant_stream_body(
             pill_bg,
             label_size,
         )),
-        AssistantStreamStatus::Streaming => div()
-            .w_full()
-            .min_w(px(0.))
-            .overflow_hidden()
-            .child(
-                h_flex()
-                    .w_full()
-                    .min_w(px(0.))
-                    .overflow_hidden()
-                    .items_center()
-                    .gap(px(2.))
-                    .child(render_markdown(&message.content, label_size, is_dark))
-                    .child(render_streaming_cursor(muted)),
-            ),
+        AssistantStreamStatus::Streaming => div().w_full().min_w(px(0.)).overflow_hidden().child(
+            h_flex()
+                .w_full()
+                .min_w(px(0.))
+                .overflow_hidden()
+                .items_center()
+                .gap(px(2.))
+                .child(render_markdown(&message.content, label_size, is_dark))
+                .child(render_streaming_cursor(muted)),
+        ),
         AssistantStreamStatus::Idle => div()
             .w_full()
             .min_w(px(0.))
