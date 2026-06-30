@@ -6,7 +6,11 @@ mod chat_view;
 mod credential_dialog;
 mod credential_ui;
 mod credentials_banner;
+mod generation_settings;
+mod model_catalog_store;
+mod model_picker;
 
 pub use chat_state::*;
 pub use chat_store::*;
 pub use chat_view::ChatView;
+pub use model_catalog_store::*;
