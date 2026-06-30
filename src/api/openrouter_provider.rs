@@ -15,7 +15,7 @@ use super::openrouter_client::stream_chat_completion;
 
 const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
 
-/// Default model used until a per-thread selector ships in a later slice.
+/// Default model used when a thread has no saved selection.
 pub const DEFAULT_MODEL: &str = "openrouter/auto";
 
 /// OpenRouter-backed [`ChatProvider`].
@@ -55,7 +55,8 @@ impl ChatProvider for OpenRouterProvider {
 
         let model = request.model;
         let messages = request.messages;
-        let stream = stream_chat_completion(&api_key, &model, &messages, cancel);
+        let generation = request.generation;
+        let stream = stream_chat_completion(&api_key, &model, &messages, &generation, cancel);
         Box::pin(stream)
     }
 }
@@ -69,6 +70,34 @@ struct ModelsResponse {
 struct RemoteModel {
     id: String,
     name: Option<String>,
+    context_length: Option<u32>,
+    architecture: Option<RemoteArchitecture>,
+    #[serde(default)]
+    supported_parameters: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteArchitecture {
+    #[serde(default)]
+    input_modalities: Vec<String>,
+    #[serde(default)]
+    output_modalities: Vec<String>,
+}
+
+fn normalize_openrouter_model(model: RemoteModel) -> ModelInfo {
+    let id = model.id.clone();
+    let architecture = model.architecture.unwrap_or(RemoteArchitecture {
+        input_modalities: Vec::new(),
+        output_modalities: Vec::new(),
+    });
+    ModelInfo {
+        id,
+        name: model.name.unwrap_or(model.id),
+        context_length: model.context_length,
+        input_modalities: architecture.input_modalities,
+        output_modalities: architecture.output_modalities,
+        supported_parameters: model.supported_parameters,
+    }
 }
 
 async fn list_models_inner(
@@ -99,12 +128,28 @@ async fn list_models_inner(
     Ok(payload
         .data
         .into_iter()
-        .map(|model| {
-            let id = model.id.clone();
-            ModelInfo {
-                id,
-                name: model.name.unwrap_or(model.id),
-            }
-        })
+        .map(normalize_openrouter_model)
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_openrouter_model_maps_fixture_fields() {
+        let fixture = include_str!("fixtures/openrouter_model.json");
+        let remote: RemoteModel = serde_json::from_str(fixture).expect("parse fixture");
+        let info = normalize_openrouter_model(remote);
+
+        assert_eq!(info.id, "anthropic/claude-3.5-sonnet");
+        assert_eq!(info.name, "Claude 3.5 Sonnet");
+        assert_eq!(info.context_length, Some(200_000));
+        assert_eq!(info.input_modalities, vec!["text", "image"]);
+        assert_eq!(info.output_modalities, vec!["text"]);
+        assert!(info.supports_parameter("temperature"));
+        assert!(info.supports_parameter("max_tokens"));
+        assert!(info.supports_reasoning());
+        assert!(!info.supports_parameter("structured_outputs"));
+    }
 }
