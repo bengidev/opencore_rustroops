@@ -13,7 +13,7 @@ use gpui_component::Root;
 use gpui_component::Theme;
 
 use crate::api::{ChatProvider, CredentialStore, FileCredentialStore, OpenRouterProvider};
-use crate::chat::{ChatStore, ChatView, SqliteChatStore};
+use crate::chat::{ChatStore, ChatView, ModelCatalogStore, SqliteChatStore};
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use crate::shared::theme::{OpenCoreTheme, ThemeMode};
 
@@ -32,6 +32,7 @@ pub struct OpenCoreApp {
     store: Arc<FilePreferencesStore>,
     chat_provider: Arc<dyn ChatProvider>,
     chat_store: Arc<dyn ChatStore>,
+    catalog_store: Arc<dyn ModelCatalogStore>,
     credential_store: Arc<dyn CredentialStore>,
     chat_view: Option<Entity<ChatView>>,
     focus_handle: FocusHandle,
@@ -46,6 +47,7 @@ impl OpenCoreApp {
         store: Arc<FilePreferencesStore>,
         chat_provider: Arc<dyn ChatProvider>,
         chat_store: Arc<dyn ChatStore>,
+        catalog_store: Arc<dyn ModelCatalogStore>,
         credential_store: Arc<dyn CredentialStore>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -59,6 +61,7 @@ impl OpenCoreApp {
             store,
             chat_provider,
             chat_store,
+            catalog_store,
             credential_store,
             chat_view: None,
             focus_handle: cx.focus_handle(),
@@ -84,6 +87,7 @@ impl OpenCoreApp {
                 cx,
                 self.chat_provider.clone(),
                 self.chat_store.clone(),
+                self.catalog_store.clone(),
                 self.credential_store.clone(),
                 self.theme(),
             )
@@ -315,7 +319,10 @@ pub fn run_desktop() -> Result<(), AppError> {
     let credential_store: Arc<dyn CredentialStore> = Arc::new(FileCredentialStore::open()?);
     let chat_provider: Arc<dyn ChatProvider> =
         Arc::new(OpenRouterProvider::new(credential_store.clone()));
-    let chat_store: Arc<dyn ChatStore> = Arc::new(SqliteChatStore::open()?);
+    let sqlite_chat_store =
+        Arc::new(SqliteChatStore::open().map_err(AppError::from)?);
+    let chat_store: Arc<dyn ChatStore> = sqlite_chat_store.clone();
+    let catalog_store: Arc<dyn ModelCatalogStore> = sqlite_chat_store;
 
     gpui_platform::application()
         .with_assets(gpui_component_assets::Assets)
@@ -326,6 +333,7 @@ pub fn run_desktop() -> Result<(), AppError> {
             let store = store.clone();
             let chat_provider = chat_provider.clone();
             let chat_store = chat_store.clone();
+            let catalog_store = catalog_store.clone();
             let credential_store = credential_store.clone();
             cx.spawn(async move |cx| {
                 let bounds = cx.update(|app| window_bounds_for_state(&state, app));
@@ -342,6 +350,7 @@ pub fn run_desktop() -> Result<(), AppError> {
                             store,
                             chat_provider,
                             chat_store,
+                            catalog_store,
                             credential_store,
                             cx,
                         )
