@@ -100,9 +100,8 @@ pub struct ReasoningCapabilities {
 }
 
 /// OpenRouter gateway efforts accepted when a model reports `supported_efforts: null`.
-pub const GATEWAY_REASONING_EFFORTS: &[&str] = &[
-    "max", "xhigh", "high", "medium", "low", "minimal", "none",
-];
+pub const GATEWAY_REASONING_EFFORTS: &[&str] =
+    &["max", "xhigh", "high", "medium", "low", "minimal", "none"];
 
 pub fn effort_display_label(effort: &str) -> String {
     match effort {
@@ -177,9 +176,9 @@ impl ModelInfo {
     }
 
     pub fn is_supported_thinking_effort(&self, effort: &str) -> bool {
-        self.reasoning.as_ref().is_some_and(|caps| {
-            caps.supported_efforts.iter().any(|value| value == effort)
-        })
+        self.reasoning
+            .as_ref()
+            .is_some_and(|caps| caps.supported_efforts.iter().any(|value| value == effort))
     }
 
     pub fn normalize_reasoning_effort(&self, effort: Option<String>) -> Option<String> {
@@ -397,7 +396,10 @@ mod tests {
             reasoning_effort: Some("high".into()),
             speed_mode: SpeedMode::Fast,
         };
-        assert_eq!(router.filter_generation(&generation), GenerationSettings::default());
+        assert_eq!(
+            router.filter_generation(&generation),
+            GenerationSettings::default()
+        );
     }
 
     #[test]
@@ -432,16 +434,18 @@ mod tests {
         assert!(opus.supports_speed_mode_controls());
         assert!(codex.supports_speed_mode_controls());
         assert!(gpt.supports_speed_mode_controls());
-        assert!(!ModelInfo {
-            id: "anthropic/claude-opus-4.8-fast".into(),
-            name: "Opus Fast".into(),
-            context_length: None,
-            input_modalities: Vec::new(),
-            output_modalities: Vec::new(),
-            supported_parameters: Vec::new(),
-            reasoning: None,
-        }
-        .supports_speed_mode_controls());
+        assert!(
+            !ModelInfo {
+                id: "anthropic/claude-opus-4.8-fast".into(),
+                name: "Opus Fast".into(),
+                context_length: None,
+                input_modalities: Vec::new(),
+                output_modalities: Vec::new(),
+                supported_parameters: Vec::new(),
+                reasoning: None,
+            }
+            .supports_speed_mode_controls()
+        );
     }
 
     #[test]
@@ -481,7 +485,10 @@ mod tests {
         };
 
         let options = model.thinking_level_menu_options();
-        assert_eq!(options.first().map(|(value, _)| value.as_str()), Some("default"));
+        assert_eq!(
+            options.first().map(|(value, _)| value.as_str()),
+            Some("default")
+        );
         assert!(options.iter().any(|(value, _)| value == "none"));
         assert!(!options.iter().any(|(value, _)| value == "minimal"));
     }

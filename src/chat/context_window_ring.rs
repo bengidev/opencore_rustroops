@@ -17,7 +17,10 @@ pub fn estimate_context_usage_percent(messages: &[UiMessage], context_length: u3
         return 0;
     }
 
-    let char_count: usize = messages.iter().map(|message| message.content.chars().count()).sum();
+    let char_count: usize = messages
+        .iter()
+        .map(|message| message.content.chars().count())
+        .sum();
     let estimated_tokens = char_count / 4;
     ((estimated_tokens as f64 / context_length as f64) * 100.0)
         .clamp(0.0, 100.0)
@@ -55,31 +58,28 @@ pub fn render_context_window_indicator(
                 .child(center_label),
         );
 
-    div()
-        .flex_shrink_0()
-        .mr(px(4.))
-        .child(
-            Button::new("context-window-indicator")
-                .ghost()
-                .with_size(Size::Size(ring_size))
-                .rounded(ButtonRounded::Size(ring_size * 0.5))
-                .icon(ring)
-                .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
-                    let mut menu = menu;
-                    if let Some(summary) = window_summary.clone() {
-                        menu = menu.item(PopupMenuItem::new(summary).disabled(true));
-                    }
-                    if lines.is_empty() {
-                        menu.item(PopupMenuItem::new("No model metadata").disabled(true))
-                    } else {
-                        lines.iter().fold(menu, |menu, line| {
-                            menu.item(
-                                PopupMenuItem::new(SharedString::from(line.clone())).disabled(true),
-                            )
-                        })
-                    }
-                }),
-        )
+    div().flex_shrink_0().mr(px(4.)).child(
+        Button::new("context-window-indicator")
+            .ghost()
+            .with_size(Size::Size(ring_size))
+            .rounded(ButtonRounded::Size(ring_size * 0.5))
+            .icon(ring)
+            .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
+                let mut menu = menu;
+                if let Some(summary) = window_summary.clone() {
+                    menu = menu.item(PopupMenuItem::new(summary).disabled(true));
+                }
+                if lines.is_empty() {
+                    menu.item(PopupMenuItem::new("No model metadata").disabled(true))
+                } else {
+                    lines.iter().fold(menu, |menu, line| {
+                        menu.item(
+                            PopupMenuItem::new(SharedString::from(line.clone())).disabled(true),
+                        )
+                    })
+                }
+            }),
+    )
 }
 
 #[cfg(test)]

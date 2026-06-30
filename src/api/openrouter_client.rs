@@ -5,7 +5,9 @@ use std::pin::Pin;
 use futures::{Stream, StreamExt};
 use serde::Deserialize;
 
-use super::chat_provider::{ApiError, CancelToken, ChatMessage, GenerationSettings, MessageRole, SpeedMode, StreamEvent};
+use super::chat_provider::{
+    ApiError, CancelToken, ChatMessage, GenerationSettings, MessageRole, SpeedMode, StreamEvent,
+};
 use super::http_runtime::http_client;
 
 const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
@@ -187,7 +189,8 @@ fn apply_speed_mode(body: &mut serde_json::Value, model: &str, speed_mode: Speed
         || model.starts_with("anthropic/claude-opus-4.8")
     {
         body["speed"] = serde_json::json!("fast");
-    } else if model.starts_with("openai/gpt-5") && (model.contains("codex") || model.starts_with("openai/gpt-5.5"))
+    } else if model.starts_with("openai/gpt-5")
+        && (model.contains("codex") || model.starts_with("openai/gpt-5.5"))
     {
         body["service_tier"] = serde_json::json!("priority");
     }

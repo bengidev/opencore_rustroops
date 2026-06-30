@@ -7,9 +7,7 @@ use crate::api::{DEFAULT_MODEL, GenerationSettings, MessageRole, ModelInfo, Spee
 use rusqlite::{Connection, params};
 use thiserror::Error;
 
-use super::model_catalog_store::{
-    CachedModelCatalog, ModelCatalogStore, ModelCatalogStoreError,
-};
+use super::model_catalog_store::{CachedModelCatalog, ModelCatalogStore, ModelCatalogStoreError};
 
 /// A message row loaded from SQLite.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,13 +192,14 @@ impl ModelCatalogStore for SqliteChatStore {
     fn load_catalog(&self) -> Result<CachedModelCatalog, ModelCatalogStoreError> {
         let connection = self.connection.lock().expect("chat db lock");
         let fetched_at: Option<String> = connection
-            .query_row("SELECT fetched_at FROM model_catalog_meta LIMIT 1", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT fetched_at FROM model_catalog_meta LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
             .ok();
 
-        let mut statement =
-            connection.prepare("SELECT data FROM model_catalog ORDER BY id ASC")?;
+        let mut statement = connection.prepare("SELECT data FROM model_catalog ORDER BY id ASC")?;
         let rows = statement.query_map([], |row| {
             let data: String = row.get(0)?;
             serde_json::from_str(&data).map_err(|error| {
@@ -228,9 +227,8 @@ impl ModelCatalogStore for SqliteChatStore {
         transaction.execute("DELETE FROM model_catalog_meta", [])?;
 
         for model in models {
-            let data = serde_json::to_string(model).map_err(|error| {
-                ModelCatalogStoreError::Serialize(error.to_string())
-            })?;
+            let data = serde_json::to_string(model)
+                .map_err(|error| ModelCatalogStoreError::Serialize(error.to_string()))?;
             transaction.execute(
                 "INSERT INTO model_catalog (id, data) VALUES (?1, ?2)",
                 params![model.id, data],
