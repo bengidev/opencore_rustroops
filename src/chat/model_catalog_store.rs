@@ -84,6 +84,7 @@ mod tests {
             input_modalities: vec!["text".into()],
             output_modalities: vec!["text".into()],
             supported_parameters: vec!["temperature".into(), "max_tokens".into()],
+            reasoning: None,
         }
     }
 

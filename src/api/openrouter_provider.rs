@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use super::chat_provider::{
     ApiError, BoxedChatStream, BoxedModelsFuture, CancelToken, ChatProvider, ChatRequest,
-    CredentialStatus, ModelInfo,
+    CredentialStatus, GATEWAY_REASONING_EFFORTS, ModelInfo, ReasoningCapabilities,
 };
 use super::credential_store::CredentialStore;
 use super::credentials::{openrouter_credential_status, resolve_openrouter_api_key};
@@ -74,6 +74,15 @@ struct RemoteModel {
     architecture: Option<RemoteArchitecture>,
     #[serde(default)]
     supported_parameters: Vec<String>,
+    reasoning: Option<RemoteReasoning>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteReasoning {
+    #[serde(default)]
+    mandatory: bool,
+    supported_efforts: Option<Option<Vec<String>>>,
+    default_effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +91,25 @@ struct RemoteArchitecture {
     input_modalities: Vec<String>,
     #[serde(default)]
     output_modalities: Vec<String>,
+}
+
+fn parse_reasoning_capabilities(remote: Option<RemoteReasoning>) -> Option<ReasoningCapabilities> {
+    let remote = remote?;
+    let supported_efforts = match remote.supported_efforts {
+        None => return None,
+        Some(None) => GATEWAY_REASONING_EFFORTS
+            .iter()
+            .map(|effort| (*effort).to_string())
+            .collect(),
+        Some(Some(efforts)) if efforts.is_empty() => return None,
+        Some(Some(efforts)) => efforts,
+    };
+
+    Some(ReasoningCapabilities {
+        supported_efforts,
+        default_effort: remote.default_effort,
+        mandatory: remote.mandatory,
+    })
 }
 
 fn normalize_openrouter_model(model: RemoteModel) -> ModelInfo {
@@ -97,6 +125,7 @@ fn normalize_openrouter_model(model: RemoteModel) -> ModelInfo {
         input_modalities: architecture.input_modalities,
         output_modalities: architecture.output_modalities,
         supported_parameters: model.supported_parameters,
+        reasoning: parse_reasoning_capabilities(model.reasoning),
     }
 }
 
@@ -149,7 +178,34 @@ mod tests {
         assert_eq!(info.output_modalities, vec!["text"]);
         assert!(info.supports_parameter("temperature"));
         assert!(info.supports_parameter("max_tokens"));
-        assert!(info.supports_reasoning());
+        assert!(!info.supports_thinking_controls());
         assert!(!info.supports_parameter("structured_outputs"));
+    }
+
+    #[test]
+    fn normalize_openrouter_model_maps_reasoning_efforts() {
+        let remote: RemoteModel = serde_json::from_str(
+            r#"{
+                "id": "openai/gpt-5.3-codex",
+                "name": "Codex",
+                "supported_parameters": ["reasoning"],
+                "reasoning": {
+                    "mandatory": false,
+                    "supported_efforts": ["xhigh", "high", "medium", "low", "none"],
+                    "default_effort": "medium"
+                }
+            }"#,
+        )
+        .expect("parse model");
+
+        let info = normalize_openrouter_model(remote);
+        assert!(info.supports_thinking_controls());
+        assert_eq!(
+            info.thinking_level_menu_options()
+                .iter()
+                .map(|(value, _)| value.as_str())
+                .collect::<Vec<_>>(),
+            vec!["default", "xhigh", "high", "medium", "low", "none"]
+        );
     }
 }
