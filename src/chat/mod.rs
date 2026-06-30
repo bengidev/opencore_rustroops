@@ -3,10 +3,10 @@
 mod chat_state;
 mod chat_store;
 mod chat_view;
+mod composer_toolbar;
 mod credential_dialog;
 mod credential_ui;
 mod credentials_banner;
-mod generation_settings;
 mod model_catalog_store;
 mod model_picker;
 

@@ -11,16 +11,15 @@ use gpui::{
     IntoElement, ParentElement, Render, ScrollAnchor, ScrollHandle, StatefulInteractiveElement,
     Styled, WeakEntity, Window, div, prelude::FluentBuilder, px, relative,
 };
-use gpui_component::select::{SelectEvent, SelectState};
-use gpui_component::select::SearchableVec;
-use gpui_component::Disableable;
-use gpui_component::IconName;
-use gpui_component::Sizable;
-use gpui_component::StyledExt;
-use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
+use gpui_component::select::{SelectEvent, SelectState};
+use gpui_component::select::SearchableVec;
+use gpui_component::IconName;
+use gpui_component::Sizable;
+use gpui_component::StyledExt;
 use gpui_component::v_flex;
 
 use crate::api::{
@@ -33,13 +32,13 @@ use crate::shared::theme::{
 
 use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
+use super::composer_toolbar::render_composer_toolbar;
 use super::credential_dialog::{self, CredentialDialogContext};
 use super::credential_ui::CredentialUiState;
 use super::credentials_banner;
-use super::generation_settings::{GenerationInputs, render_capability_chips, render_generation_controls};
 use super::model_catalog_store::ModelCatalogStore;
 use super::model_picker::{
-    ModelSelectEntry, entries_from_models, persist_model_selection, render_model_select,
+    ModelSelectEntry, entries_from_models, persist_model_selection,
     selected_index_for_model, sync_model_select,
 };
 
@@ -56,7 +55,6 @@ pub struct ChatView {
     input: Entity<InputState>,
     api_key_input: Option<Entity<InputState>>,
     model_select: Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
-    generation_inputs: GenerationInputs,
     focus_handle: FocusHandle,
     theme: OpenCoreTheme,
     pending_clear_input: bool,
@@ -133,9 +131,6 @@ impl ChatView {
             .searchable(true)
         });
 
-        let generation_inputs =
-            GenerationInputs::new(window, cx, &state.thread_settings.generation);
-
         let view = cx.entity().downgrade();
         cx.subscribe(
             &input,
@@ -184,7 +179,6 @@ impl ChatView {
             input,
             api_key_input: None,
             model_select,
-            generation_inputs,
             focus_handle: cx.focus_handle(),
             theme,
             pending_clear_input: false,
@@ -202,11 +196,10 @@ impl ChatView {
         chat
     }
 
-    fn persist_generation_settings(&mut self, cx: &App) {
+    fn persist_generation_settings(&mut self, _cx: &App) {
         let Some(thread_id) = self.state.thread_id else {
             return;
         };
-        self.state.thread_settings.generation = self.generation_inputs.read_settings(cx);
         if let Err(error) = self
             .store
             .save_thread_settings(thread_id, &self.state.thread_settings)
@@ -214,6 +207,28 @@ impl ChatView {
             self.state
                 .set_error(format!("Could not save generation settings: {error}"));
         }
+    }
+
+    pub(crate) fn set_temperature(&mut self, value: Option<f32>, cx: &mut Context<Self>) {
+        self.state.thread_settings.generation.temperature = value;
+        self.persist_generation_settings(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_max_tokens(&mut self, value: Option<u32>, cx: &mut Context<Self>) {
+        self.state.thread_settings.generation.max_tokens = value;
+        self.persist_generation_settings(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_reasoning_effort(&mut self, value: &str, cx: &mut Context<Self>) {
+        self.state.thread_settings.generation.reasoning_effort = if value == "default" {
+            None
+        } else {
+            Some(value.to_string())
+        };
+        self.persist_generation_settings(cx);
+        cx.notify();
     }
 
     fn refresh_catalog_in_background(&mut self, cx: &mut Context<Self>) {
@@ -388,7 +403,7 @@ impl ChatView {
         self.theme = theme;
     }
 
-    fn on_send_clicked(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn on_send_clicked(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         let input = self.input.clone();
         let view = cx.entity().downgrade();
         self.try_send_message(input, view, cx);
@@ -679,9 +694,7 @@ impl Render for ChatView {
         let selected_model = self
             .state
             .catalog
-            .model_for_id(&self.state.thread_settings.model_id)
-            .cloned();
-        let chip_bg = theme.surface(BackgroundToken::Tertiary);
+            .model_for_id(&self.state.thread_settings.model_id);
         let catalog_refreshing = self.state.catalog.is_refreshing;
 
         let mut content = v_flex().size_full().min_h_0().bg(background);
@@ -695,21 +708,12 @@ impl Render for ChatView {
                 .pb(px(8.))
                 .items_center()
                 .justify_between()
-                .gap(px(8.))
                 .child(
-                    h_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(
-                            div()
-                                .text_size(px(label.size_px as f32))
-                                .font_semibold()
-                                .text_color(foreground)
-                                .child("Chat"),
-                        )
-                        .child(render_model_select(&self.model_select)),
+                    div()
+                        .text_size(px(label.size_px as f32))
+                        .font_semibold()
+                        .text_color(foreground)
+                        .child("Chat"),
                 )
                 .child(
                     Button::new("open-credential-settings")
@@ -720,43 +724,6 @@ impl Render for ChatView {
                         .on_click(cx.listener(Self::open_credential_settings)),
                 ),
         );
-
-        if let Some(model) = &selected_model {
-            content = content.child(
-                div()
-                    .flex_shrink_0()
-                    .px(inset)
-                    .pb(px(8.))
-                    .child(render_capability_chips(
-                        model,
-                        chip_bg,
-                        muted,
-                        label,
-                    )),
-            );
-            content = content.child(
-                div()
-                    .flex_shrink_0()
-                    .px(inset)
-                    .pb(px(8.))
-                    .child(render_generation_controls(
-                        model,
-                        &self.generation_inputs,
-                        muted,
-                        label,
-                    )),
-            );
-        } else if catalog_refreshing {
-            content = content.child(
-                div()
-                    .flex_shrink_0()
-                    .px(inset)
-                    .pb(px(8.))
-                    .text_size(px(11.))
-                    .text_color(muted)
-                    .child("Refreshing model catalog…"),
-            );
-        }
 
         if let Some(text) = error {
             content = content.child(div().flex_shrink_0().px(inset).pt(inset).child(error_panel(
@@ -843,22 +810,16 @@ impl Render for ChatView {
                                 .child(input),
                         )
                         .child(
-                            h_flex()
-                                .px(px(12.))
-                                .pb(px(12.))
-                                .pt(px(4.))
-                                .gap(px(8.))
-                                .items_center()
-                                .justify_end()
-                                .child(
-                                    Button::new("send-message")
-                                        .icon(IconName::ArrowUp)
-                                        .primary()
-                                        .small()
-                                        .rounded(ButtonRounded::Size(px(12.)))
-                                        .disabled(!can_send)
-                                        .on_click(cx.listener(Self::on_send_clicked)),
-                                ),
+                            render_composer_toolbar(
+                                selected_model,
+                                &self.state.thread_settings.generation,
+                                &self.model_select,
+                                catalog_refreshing,
+                                muted,
+                                border,
+                                can_send,
+                                cx,
+                            ),
                         ),
                 ),
         );
