@@ -14,12 +14,10 @@ use gpui_component::text::{TextView, TextViewStyle};
 ///
 /// `base_size` controls the heading base font size; text inherits from
 /// the parent styling. Safe to call every frame during streaming.
-pub fn render_markdown(content: &str, base_size: f32, is_dark: bool) -> impl IntoElement {
-    let id = if content.len() <= 40 {
-        SharedString::from(content)
-    } else {
-        SharedString::from(format!("md_{:016x}", fxhash(content)))
-    };
+/// `message_id` is the unique `UiMessage.id` — used as the GPUI element ID
+/// to guarantee distinct identity in the view tree.
+pub fn render_markdown(content: &str, base_size: f32, is_dark: bool, message_id: i64) -> impl IntoElement {
+    let id = SharedString::from(format!("md_{}", message_id));
     let style = TextViewStyle {
         heading_base_font_size: gpui::px(base_size),
         is_dark,
@@ -33,47 +31,18 @@ pub fn render_markdown(content: &str, base_size: f32, is_dark: bool) -> impl Int
         .child(TextView::markdown(id, content).style(style))
 }
 
-fn fxhash(s: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    s.hash(&mut h);
-    h.finish()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn fxhash_is_deterministic() {
-        assert_eq!(fxhash("hello"), fxhash("hello"));
+    fn render_markdown_returns_element() {
+        let _ = render_markdown("hello", 14.0, false, 42);
     }
 
     #[test]
-    fn fxhash_differs_for_different_inputs() {
-        assert_ne!(fxhash("hello"), fxhash("world"));
-    }
-
-    #[test]
-    fn short_content_uses_raw_text_as_id() {
-        let content = "short";
-        let id = if content.len() <= 40 {
-            SharedString::from(content)
-        } else {
-            SharedString::from(format!("md_{:016x}", fxhash(content)))
-        };
-        assert_eq!(id.as_ref(), "short");
-    }
-
-    #[test]
-    fn long_content_uses_prefixed_hash() {
-        let content = "a".repeat(41);
-        let id = if content.len() <= 40 {
-            SharedString::from(content.as_str())
-        } else {
-            SharedString::from(format!("md_{:016x}", fxhash(&content)))
-        };
-        assert!(id.as_ref().starts_with("md_"));
-        assert_eq!(id.len(), "md_".len() + 16);
+    fn element_id_uses_message_id() {
+        let id = SharedString::from(format!("md_{}", 12345));
+        assert_eq!(id.as_ref(), "md_12345");
     }
 }

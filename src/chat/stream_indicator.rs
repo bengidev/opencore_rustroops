@@ -16,19 +16,6 @@ use crate::api::MessageRole;
 
 use super::chat_state::UiMessage;
 
-pub fn bounded_message_text(
-    content: String,
-    text_size: gpui::Pixels,
-    foreground: Hsla,
-) -> impl IntoElement {
-    div()
-        .w_full()
-        .min_w(px(0.))
-        .overflow_hidden()
-        .text_size(text_size)
-        .text_color(foreground)
-        .child(content)
-}
 
 /// Visual state for an in-flight assistant reply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +52,6 @@ pub fn assistant_stream_status(
 pub fn render_assistant_stream_body(
     message: &UiMessage,
     status: AssistantStreamStatus,
-    _foreground: Hsla,
     muted: Hsla,
     pill_bg: Hsla,
     label_size: f32,
@@ -93,14 +79,14 @@ pub fn render_assistant_stream_body(
                 .overflow_hidden()
                 .items_center()
                 .gap(px(2.))
-                .child(render_markdown(&message.content, label_size, is_dark))
+                .child(render_markdown(&message.content, label_size, is_dark, message.id))
                 .child(render_streaming_cursor(muted)),
         ),
         AssistantStreamStatus::Idle => div()
             .w_full()
             .min_w(px(0.))
             .overflow_hidden()
-            .child(render_markdown(&message.content, label_size, is_dark)),
+            .child(render_markdown(&message.content, label_size, is_dark, message.id)),
     }
 }
 
