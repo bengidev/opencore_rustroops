@@ -1002,6 +1002,7 @@ fn error_panel(
         .child(text.to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn message_row(
     message: &UiMessage,
     stream_status: super::stream_indicator::AssistantStreamStatus,
