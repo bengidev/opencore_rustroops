@@ -57,7 +57,8 @@ impl ChatProvider for OpenRouterProvider {
         let model = request.model;
         let messages = request.messages;
         let generation = request.generation;
-        let stream = stream_chat_completion(&api_key, &model, &messages, &generation, cancel);
+        let system_prompt = request.system_prompt;
+        let stream = stream_chat_completion(&api_key, &model, &messages, &generation, system_prompt, cancel);
         Box::pin(stream)
     }
 }
