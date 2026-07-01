@@ -48,6 +48,10 @@ use super::stream_indicator::{assistant_stream_status, render_assistant_stream_b
 /// In-memory assistant row before the first streamed token is persisted.
 const PENDING_ASSISTANT_ID: i64 = -1;
 
+/// Error message produced when the cancel token fires mid-stream.
+/// `format_provider_error(ApiError::RequestFailed("cancelled".into()))`.
+const CANCEL_ERROR_MESSAGE: &str = "Request failed: cancelled";
+
 /// GPUI entity for the single-thread chat experience.
 pub struct ChatView {
     provider: Arc<dyn ChatProvider>,
@@ -429,6 +433,34 @@ impl ChatView {
         }
     }
 
+    /// Persist the in-memory content of a streaming assistant message to the store.
+    /// Shared by the `Error` arm (user-cancelled stop) and the `Done` arm (natural completion).
+    fn persist_streaming_assistant(
+        &mut self,
+        assistant_id: i64,
+        thread_id: i64,
+        store: &Arc<dyn ChatStore>,
+    ) {
+        if let Some(message) = self
+            .state
+            .messages
+            .iter()
+            .find(|msg| msg.id == assistant_id)
+        {
+            let content = message.content.clone();
+            if assistant_id == PENDING_ASSISTANT_ID {
+                if !content.trim().is_empty() && !self.pending_assistant_insert_failed {
+                    let inserted_id = self.insert_pending_assistant(thread_id, &content, store);
+                    if inserted_id == PENDING_ASSISTANT_ID {
+                        self.pending_assistant_insert_failed = true;
+                    }
+                }
+            } else {
+                self.persist_assistant_content(assistant_id, &content, store);
+            }
+        }
+    }
+
     fn persist_assistant_content(
         &mut self,
         assistant_id: i64,
@@ -651,6 +683,7 @@ impl ChatView {
                 chat.cleanup_inflight_assistant(&store);
                 chat.streaming_assistant_id = None;
                 chat.pending_assistant_insert_failed = false;
+                chat.stream_cancelled_by_user = false;
             });
         })
         .detach();
@@ -659,9 +692,17 @@ impl ChatView {
     fn apply_stream_update(&mut self, store: &Arc<dyn ChatStore>, update: StreamUpdate) {
         match update {
             StreamUpdate::Error(message) => {
+                // When the user stopped generation, persist whatever content arrived
+                // before the stream was cancelled.
+                if self.stream_cancelled_by_user
+                    && let Some(assistant_id) = self.streaming_assistant_id
+                    && let Some(thread_id) = self.state.thread_id
+                {
+                    self.persist_streaming_assistant(assistant_id, thread_id, store);
+                }
                 self.cleanup_inflight_assistant(store);
                 self.streaming_assistant_id = None;
-                if !self.stream_cancelled_by_user {
+                if !self.stream_cancelled_by_user || message != CANCEL_ERROR_MESSAGE {
                     self.state.set_error(message);
                 }
                 self.stream_cancelled_by_user = false;
@@ -701,28 +742,20 @@ impl ChatView {
                     None => return,
                 };
                 self.state.finish_streaming();
-                if let Some(message) = self
-                    .state
-                    .messages
-                    .iter()
-                    .find(|message| message.id == assistant_id)
+                // Pop empty pending assistant — the helper skips empty content.
+                if assistant_id == PENDING_ASSISTANT_ID
+                    && self
+                        .state
+                        .messages
+                        .iter()
+                        .any(|m| m.id == PENDING_ASSISTANT_ID && m.content.trim().is_empty())
                 {
-                    let content = message.content.clone();
-                    if assistant_id == PENDING_ASSISTANT_ID {
-                        if content.trim().is_empty() {
-                            self.state.messages.pop();
-                        } else if !self.pending_assistant_insert_failed {
-                            let inserted_id =
-                                self.insert_pending_assistant(thread_id, &content, store);
-                            if inserted_id == PENDING_ASSISTANT_ID {
-                                self.pending_assistant_insert_failed = true;
-                            }
-                        }
-                    } else {
-                        self.persist_assistant_content(assistant_id, &content, store);
-                    }
+                    self.state.messages.pop();
+                } else {
+                    self.persist_streaming_assistant(assistant_id, thread_id, store);
                 }
                 self.streaming_assistant_id = None;
+                self.stream_cancelled_by_user = false;
                 self.mark_scroll_to_latest();
             }
         }
@@ -748,7 +781,9 @@ impl ComposerActions for ChatView {
         cx: &mut Context<Self>,
     ) {
         self.stream_cancelled_by_user = true;
-        self.cancel_active_stream();
+        if let Some(token) = self.active_stream_cancel.take() {
+            token.cancel();
+        }
         cx.notify();
     }
 }

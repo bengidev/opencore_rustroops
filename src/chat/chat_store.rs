@@ -543,4 +543,33 @@ mod tests {
             .expect("load settings");
         assert_eq!(loaded, settings);
     }
+
+    #[test]
+    fn stop_persists_partial_accumulated_content() {
+        let store = InMemoryChatStore::new();
+        let thread_id = store.ensure_thread().expect("thread");
+        let _user_id = store
+            .insert_message(thread_id, MessageRole::User, "hello")
+            .expect("user msg");
+
+        // Assistant starts streaming — first token "Hel" arrives and is persisted
+        let assistant_id = store
+            .insert_message(thread_id, MessageRole::Assistant, "Hel")
+            .expect("assistant msg");
+
+        // More content arrives in-memory before stop is clicked.
+        // Production path: Error arm calls persist_streaming_assistant →
+        // update_message_content with the accumulated content.
+        store
+            .update_message_content(assistant_id, "Hello, world!")
+            .expect("update with accumulated content");
+
+        // Verify persisted content reflects the accumulated state
+        let messages = store.load_messages(thread_id).expect("load");
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .expect("assistant message");
+        assert_eq!(assistant_msg.content, "Hello, world!");
+    }
 }
