@@ -6,6 +6,7 @@ mod chat_view;
 mod composer_actions;
 mod composer_toolbar;
 mod context_window_ring;
+mod conversation_picker;
 mod credential_dialog;
 mod credential_ui;
 mod credentials_banner;
