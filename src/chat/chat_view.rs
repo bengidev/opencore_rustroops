@@ -13,7 +13,7 @@ use gpui::{
 };
 use gpui_component::IconName;
 use gpui_component::Sizable;
-use gpui_component::StyledExt;
+use gpui_component::WindowExt;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -34,6 +34,10 @@ use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
 use super::composer_actions::ComposerActions;
 use super::composer_toolbar::{ComposerToolbarProps, render_composer_toolbar};
+use super::conversation_picker::{
+    ThreadSelectEntry, entries_from_threads, render_thread_select, selected_index_for_thread,
+    sync_thread_select,
+};
 use super::credential_dialog::{self, CredentialDialogContext};
 use super::credential_ui::CredentialUiState;
 use super::credentials_banner;
@@ -52,7 +56,7 @@ const PENDING_ASSISTANT_ID: i64 = -1;
 /// `format_provider_error(ApiError::RequestFailed("cancelled".into()))`.
 const CANCEL_ERROR_MESSAGE: &str = "Request failed: cancelled";
 
-/// GPUI entity for the single-thread chat experience.
+/// GPUI entity for multi-thread conversation management.
 pub struct ChatView {
     provider: Arc<dyn ChatProvider>,
     store: Arc<dyn ChatStore>,
@@ -75,6 +79,8 @@ pub struct ChatView {
     stream_cancelled_by_user: bool,
     pending_model_select_sync: bool,
     pending_assistant_insert_failed: bool,
+    thread_select: Entity<SelectState<SearchableVec<ThreadSelectEntry>>>,
+    pending_thread_select_sync: bool,
 }
 
 impl ChatView {
@@ -124,6 +130,24 @@ impl ChatView {
         if let Some(model) = state.catalog.model_for_id(&state.thread_settings.model_id) {
             model.sanitize_generation(&mut state.thread_settings.generation);
         }
+
+        // Load thread list
+        match store.list_threads() {
+            Ok(threads) => state.threads = threads,
+            Err(error) => state.set_error(error.to_string()),
+        }
+
+        let thread_select = cx.new(|cx| {
+            SelectState::new(
+                entries_from_threads(&state.threads),
+                state
+                    .thread_id
+                    .and_then(|id| selected_index_for_thread(&state.threads, id)),
+                window,
+                cx,
+            )
+            .searchable(true)
+        });
 
         let input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -183,6 +207,22 @@ impl ChatView {
         )
         .detach();
 
+        let view_for_thread = cx.entity().downgrade();
+        cx.subscribe(
+            &thread_select,
+            move |this, _, event: &SelectEvent<SearchableVec<ThreadSelectEntry>>, cx| {
+                if let SelectEvent::Confirm(Some(thread_id)) = event {
+                    if this.state.thread_id == Some(*thread_id) {
+                        return;
+                    }
+                    this.cancel_active_stream();
+                    this.switch_to_thread(*thread_id, cx);
+                    let _ = view_for_thread.clone();
+                }
+            },
+        )
+        .detach();
+
         let message_scroll = ScrollHandle::default();
         let scroll_anchor = ScrollAnchor::for_handle(message_scroll.clone());
         let pending_scroll_to_bottom = !state.messages.is_empty();
@@ -200,6 +240,7 @@ impl ChatView {
             input,
             api_key_input: None,
             model_select,
+            thread_select,
             focus_handle: cx.focus_handle(),
             theme,
             pending_clear_input: false,
@@ -213,6 +254,7 @@ impl ChatView {
             stream_cancelled_by_user: false,
             pending_model_select_sync: false,
             pending_assistant_insert_failed: false,
+            pending_thread_select_sync: false,
         };
 
         chat.refresh_catalog_in_background(cx);
@@ -309,6 +351,139 @@ impl ChatView {
             self.state
                 .set_error(format!("Could not save model selection: {error}"));
         }
+    }
+
+    fn switch_to_thread(&mut self, thread_id: i64, cx: &mut Context<Self>) {
+        self.cancel_active_stream();
+        self.state.thread_id = Some(thread_id);
+        self.state.messages.clear();
+
+        match self.store.load_messages(thread_id) {
+            Ok(messages) => {
+                self.state.messages = messages
+                    .into_iter()
+                    .filter(|message| !message.content.trim().is_empty())
+                    .map(|message| UiMessage {
+                        id: message.id,
+                        role: message.role,
+                        content: message.content,
+                    })
+                    .collect();
+            }
+            Err(error) => {
+                self.state.set_error(error.to_string());
+            }
+        }
+
+        match self.store.load_thread_settings(thread_id) {
+            Ok(settings) => {
+                self.state.thread_settings = settings;
+            }
+            Err(error) => {
+                self.state.set_error(error.to_string());
+            }
+        }
+
+        if let Some(model) = self
+            .state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
+        {
+            model.sanitize_generation(&mut self.state.thread_settings.generation);
+        }
+
+        self.pending_model_select_sync = true;
+        self.pending_thread_select_sync = true;
+        self.state.error = None;
+        cx.notify();
+    }
+
+    fn on_create_thread(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_active_stream();
+
+        let settings = self.state.thread_settings.clone();
+        let thread_id = match self.store.create_thread(&settings) {
+            Ok(id) => id,
+            Err(error) => {
+                self.state
+                    .set_error(format!("Could not create thread: {error}"));
+                cx.notify();
+                return;
+            }
+        };
+
+        self.state.thread_id = Some(thread_id);
+        self.state.messages.clear();
+        self.state.error = None;
+
+        // Reload thread list
+        if let Ok(threads) = self.store.list_threads() {
+            self.state.threads = threads;
+        }
+        self.pending_thread_select_sync = true;
+
+        cx.notify();
+    }
+
+    fn on_delete_thread(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(thread_id) = self.state.thread_id else {
+            return;
+        };
+
+        let store = self.store.clone();
+        let view = cx.entity().downgrade();
+
+        window.open_dialog(cx, move |dialog, _, _cx| {
+            let store = store.clone();
+            let view = view.clone();
+            dialog
+                .title("Delete conversation?")
+                .child(
+                    div().child("This will permanently delete the conversation and its messages."),
+                )
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_between()
+                        .child(Button::new("cancel-delete").label("Cancel").on_click(
+                            move |_, window, cx| {
+                                window.close_dialog(cx);
+                            },
+                        ))
+                        .child(
+                            Button::new("confirm-delete")
+                                .label("Delete")
+                                .primary()
+                                .on_click(move |_, window, cx| {
+                                    let _ = store.delete_thread(thread_id);
+                                    let _ = view.update(cx, |chat, cx| {
+                                        chat.cancel_active_stream();
+                                        chat.state.thread_id = None;
+                                        chat.state.messages.clear();
+                                        if let Ok(threads) = chat.store.list_threads() {
+                                            chat.state.threads = threads;
+                                            // Switch to the first available thread, or create a new one
+                                            if let Some(first) = chat.state.threads.first() {
+                                                chat.switch_to_thread(first.id, cx);
+                                            } else {
+                                                // No threads left — create a default one
+                                                if let Ok(new_id) = chat
+                                                    .store
+                                                    .create_thread(&chat.state.thread_settings)
+                                                {
+                                                    chat.state.thread_id = Some(new_id);
+                                                    chat.pending_thread_select_sync = true;
+                                                    cx.notify();
+                                                }
+                                            }
+                                        }
+                                    });
+                                    window.close_dialog(cx);
+                                }),
+                        ),
+                )
+        });
     }
 
     fn refresh_catalog_in_background(&mut self, cx: &mut Context<Self>) {
@@ -608,7 +783,24 @@ impl ChatView {
             .store
             .insert_message(thread_id, MessageRole::User, &content)
         {
-            Ok(id) => id,
+            Ok(id) => {
+                // Auto-title thread from first user message
+                let current_title = self
+                    .state
+                    .threads
+                    .iter()
+                    .find(|t| t.id == thread_id)
+                    .and_then(|t| t.title.as_deref());
+                if current_title.is_none_or(|t| t.is_empty()) {
+                    let title = truncate_title(&content);
+                    let _ = self.store.set_thread_title(thread_id, &title);
+                    if let Ok(threads) = self.store.list_threads() {
+                        self.state.threads = threads;
+                    }
+                    self.pending_thread_select_sync = true;
+                }
+                id
+            }
             Err(error) => {
                 self.state.set_error(error.to_string());
                 cx.notify();
@@ -831,6 +1023,19 @@ impl Render for ChatView {
             );
         }
 
+        if self.pending_thread_select_sync {
+            self.pending_thread_select_sync = false;
+            if let Some(thread_id) = self.state.thread_id {
+                sync_thread_select(
+                    &self.thread_select,
+                    &self.state.threads,
+                    thread_id,
+                    window,
+                    cx,
+                );
+            }
+        }
+
         if self.pending_clear_input {
             self.pending_clear_input = false;
             self.input.update(cx, |input, cx| {
@@ -886,12 +1091,28 @@ impl Render for ChatView {
                 .pb(px(8.))
                 .items_center()
                 .justify_between()
+                .gap_1()
                 .child(
-                    div()
-                        .text_size(px(label.size_px as f32))
-                        .font_semibold()
-                        .text_color(foreground)
-                        .child("Chat"),
+                    h_flex()
+                        .gap_1()
+                        .items_center()
+                        .child(render_thread_select(&self.thread_select))
+                        .child(
+                            Button::new("new-thread")
+                                .icon(IconName::Plus)
+                                .ghost()
+                                .small()
+                                .tooltip("New conversation")
+                                .on_click(cx.listener(Self::on_create_thread)),
+                        )
+                        .child(
+                            Button::new("delete-thread")
+                                .icon(IconName::Delete)
+                                .ghost()
+                                .small()
+                                .tooltip("Delete conversation")
+                                .on_click(cx.listener(Self::on_delete_thread)),
+                        ),
                 )
                 .child(
                     Button::new("open-credential-settings")
@@ -1021,6 +1242,16 @@ impl Render for ChatView {
         );
 
         content.child(composer)
+    }
+}
+
+fn truncate_title(content: &str) -> String {
+    let trimmed = content.trim();
+    let max_len = 80;
+    if trimmed.chars().count() <= max_len {
+        trimmed.to_string()
+    } else {
+        trimmed.chars().take(max_len).collect::<String>() + "…"
     }
 }
 
