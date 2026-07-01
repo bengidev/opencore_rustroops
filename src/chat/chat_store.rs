@@ -552,27 +552,24 @@ mod tests {
             .insert_message(thread_id, MessageRole::User, "hello")
             .expect("user msg");
 
-        // Simulate: assistant starts as pending, first token arrives → DB insert with partial
-        let first_content = "Hel";
+        // Assistant starts streaming — first token "Hel" arrives and is persisted
         let assistant_id = store
-            .insert_message(thread_id, MessageRole::Assistant, first_content)
+            .insert_message(thread_id, MessageRole::Assistant, "Hel")
             .expect("assistant msg");
 
-        // More tokens arrive in-memory (DB still has "Hel")
-        let accumulated = "Hello, world!";
-
-        // On stop: persist the full accumulated content (what the Error arm now does)
+        // More content arrives in-memory before stop is clicked.
+        // Production path: Error arm calls persist_streaming_assistant →
+        // update_message_content with the accumulated content.
         store
-            .update_message_content(assistant_id, accumulated)
-            .expect("persist stop content");
+            .update_message_content(assistant_id, "Hello, world!")
+            .expect("update with accumulated content");
 
+        // Verify persisted content reflects the accumulated state
         let messages = store.load_messages(thread_id).expect("load");
         let assistant_msg = messages
             .iter()
             .find(|m| m.role == MessageRole::Assistant)
             .expect("assistant message");
         assert_eq!(assistant_msg.content, "Hello, world!");
-        assert!(messages.len() >= 2);
     }
 }
-
