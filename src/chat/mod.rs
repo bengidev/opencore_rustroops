@@ -11,6 +11,7 @@ mod credential_dialog;
 mod credential_ui;
 mod credentials_banner;
 mod generation_ui;
+mod instructions_dialog;
 mod markdown_render;
 mod model_catalog_store;
 mod model_picker;
