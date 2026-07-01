@@ -659,6 +659,32 @@ impl ChatView {
     fn apply_stream_update(&mut self, store: &Arc<dyn ChatStore>, update: StreamUpdate) {
         match update {
             StreamUpdate::Error(message) => {
+                // When the user stopped generation, persist whatever content arrived
+                // before the stream was cancelled.
+                if self.stream_cancelled_by_user {
+                    if let Some(assistant_id) = self.streaming_assistant_id {
+                        if let Some(thread_id) = self.state.thread_id {
+                            if let Some(message) = self
+                                .state
+                                .messages
+                                .iter()
+                                .find(|msg| msg.id == assistant_id)
+                            {
+                                let content = message.content.clone();
+                                if assistant_id == PENDING_ASSISTANT_ID {
+                                    if !content.trim().is_empty()
+                                        && !self.pending_assistant_insert_failed
+                                    {
+                                        let _ = self
+                                            .insert_pending_assistant(thread_id, &content, store);
+                                    }
+                                } else {
+                                    self.persist_assistant_content(assistant_id, &content, store);
+                                }
+                            }
+                        }
+                    }
+                }
                 self.cleanup_inflight_assistant(store);
                 self.streaming_assistant_id = None;
                 if !self.stream_cancelled_by_user {
@@ -748,7 +774,9 @@ impl ComposerActions for ChatView {
         cx: &mut Context<Self>,
     ) {
         self.stream_cancelled_by_user = true;
-        self.cancel_active_stream();
+        if let Some(token) = self.active_stream_cancel.take() {
+            token.cancel();
+        }
         cx.notify();
     }
 }
