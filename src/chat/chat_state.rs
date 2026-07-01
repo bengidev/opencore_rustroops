@@ -3,6 +3,7 @@
 use crate::api::{ChatMessage, DEFAULT_MODEL, MessageRole, ModelInfo};
 
 use super::chat_store::ThreadSettings;
+use super::chat_store::ThreadInfo;
 use super::generation_ui::{catalog_loading_message, model_unavailable_message};
 
 /// Cached model catalog available to the chat UI.
@@ -55,6 +56,7 @@ pub struct ChatState {
     pub is_streaming: bool,
     pub error: Option<String>,
     pub thread_settings: ThreadSettings,
+    pub threads: Vec<ThreadInfo>,
     pub catalog: ModelCatalogState,
 }
 
@@ -124,6 +126,17 @@ impl ChatState {
                 break;
             }
         }
+    }
+
+    pub fn thread_title(&self) -> String {
+        let Some(thread_id) = self.thread_id else {
+            return "New Chat".into();
+        };
+        self.threads
+            .iter()
+            .find(|t| t.id == thread_id)
+            .and_then(|t| t.title.clone())
+            .unwrap_or_else(|| "New Chat".into())
     }
 }
 
