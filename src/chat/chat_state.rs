@@ -2,8 +2,8 @@
 
 use crate::api::{ChatMessage, DEFAULT_MODEL, MessageRole, ModelInfo};
 
-use super::chat_store::ThreadSettings;
 use super::chat_store::ThreadInfo;
+use super::chat_store::ThreadSettings;
 use super::generation_ui::{catalog_loading_message, model_unavailable_message};
 
 /// Cached model catalog available to the chat UI.

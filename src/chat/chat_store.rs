@@ -1,8 +1,8 @@
 //! SQLite persistence for the multi-thread conversation history.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::collections::HashMap;
 
 use crate::api::{DEFAULT_MODEL, GenerationSettings, MessageRole, ModelInfo, SpeedMode};
 use rusqlite::{Connection, params};
@@ -265,9 +265,11 @@ impl ChatStore for SqliteChatStore {
     fn ensure_thread(&self) -> Result<i64, ChatStoreError> {
         let connection = self.connection.lock().expect("chat db lock");
         let existing: Option<i64> = connection
-            .query_row("SELECT id FROM threads ORDER BY id DESC LIMIT 1", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT id FROM threads ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
             .ok();
 
         if let Some(thread_id) = existing {
@@ -377,18 +379,20 @@ impl ChatStore for SqliteChatStore {
     }
     fn list_threads(&self) -> Result<Vec<ThreadInfo>, ChatStoreError> {
         let connection = self.connection.lock().expect("chat db lock");
-        let mut statement = connection.prepare(
-            "SELECT id, title, created_at, model_id FROM threads ORDER BY id DESC",
-        )?;
+        let mut statement = connection
+            .prepare("SELECT id, title, created_at, model_id FROM threads ORDER BY id DESC")?;
         let rows = statement.query_map([], |row| {
             Ok(ThreadInfo {
                 id: row.get(0)?,
                 title: row.get(1)?,
                 created_at: row.get(2)?,
-                model_id: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+                model_id: row
+                    .get::<_, Option<String>>(3)?
+                    .unwrap_or_else(|| DEFAULT_MODEL.to_string()),
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(ChatStoreError::from)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(ChatStoreError::from)
     }
 
     fn create_thread(&self, settings: &ThreadSettings) -> Result<i64, ChatStoreError> {
@@ -409,7 +413,10 @@ impl ChatStore for SqliteChatStore {
 
     fn delete_thread(&self, thread_id: i64) -> Result<(), ChatStoreError> {
         let connection = self.connection.lock().expect("chat db lock");
-        connection.execute("DELETE FROM messages WHERE thread_id = ?1", params![thread_id])?;
+        connection.execute(
+            "DELETE FROM messages WHERE thread_id = ?1",
+            params![thread_id],
+        )?;
         connection.execute("DELETE FROM threads WHERE id = ?1", params![thread_id])?;
         Ok(())
     }
@@ -434,8 +441,8 @@ pub struct InMemoryChatStore {
     thread_settings: Mutex<HashMap<i64, ThreadSettings>>,
 }
 
-impl InMemoryChatStore {
-    pub fn new() -> Self {
+impl Default for InMemoryChatStore {
+    fn default() -> Self {
         Self {
             messages: Mutex::new(HashMap::new()),
             threads: Mutex::new(Vec::new()),
@@ -443,6 +450,12 @@ impl InMemoryChatStore {
             next_message_id: Mutex::new(1),
             thread_settings: Mutex::new(HashMap::new()),
         }
+    }
+}
+
+impl InMemoryChatStore {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -767,7 +780,10 @@ mod tests {
         assert_eq!(ids.len(), unique_ids.len(), "ids must be unique");
 
         for thread in &threads {
-            assert!(!thread.created_at.is_empty(), "created_at must not be empty");
+            assert!(
+                !thread.created_at.is_empty(),
+                "created_at must not be empty"
+            );
         }
 
         // Verify model_ids
@@ -791,7 +807,9 @@ mod tests {
                 speed_mode: SpeedMode::Fast,
             },
         };
-        let _source_id = store.create_thread(&source_settings).expect("create source");
+        let _source_id = store
+            .create_thread(&source_settings)
+            .expect("create source");
         let new_id = store.create_thread(&source_settings).expect("create new");
 
         let loaded = store.load_thread_settings(new_id).expect("load settings");
@@ -820,10 +838,17 @@ mod tests {
         store.delete_thread(thread_id).expect("delete thread");
 
         let threads = store.list_threads().expect("list threads");
-        assert!(!threads.iter().any(|t| t.id == thread_id), "deleted thread must not appear");
+        assert!(
+            !threads.iter().any(|t| t.id == thread_id),
+            "deleted thread must not appear"
+        );
 
         let remaining = store.load_messages(thread_id).expect("load after delete");
-        assert_eq!(remaining.len(), 0, "messages must be cascaded on thread delete");
+        assert_eq!(
+            remaining.len(),
+            0,
+            "messages must be cascaded on thread delete"
+        );
     }
 
     #[test]
@@ -835,14 +860,24 @@ mod tests {
         let settings = ThreadSettings::default();
         let thread_id = store.create_thread(&settings).expect("create thread");
 
-        store.set_thread_title(thread_id, "My Chat").expect("set title");
+        store
+            .set_thread_title(thread_id, "My Chat")
+            .expect("set title");
         let threads = store.list_threads().expect("list threads");
-        let thread = threads.iter().find(|t| t.id == thread_id).expect("find thread");
+        let thread = threads
+            .iter()
+            .find(|t| t.id == thread_id)
+            .expect("find thread");
         assert_eq!(thread.title.as_deref(), Some("My Chat"));
 
-        store.set_thread_title(thread_id, "Updated Chat").expect("update title");
+        store
+            .set_thread_title(thread_id, "Updated Chat")
+            .expect("update title");
         let threads = store.list_threads().expect("list threads");
-        let thread = threads.iter().find(|t| t.id == thread_id).expect("find thread");
+        let thread = threads
+            .iter()
+            .find(|t| t.id == thread_id)
+            .expect("find thread");
         assert_eq!(thread.title.as_deref(), Some("Updated Chat"));
     }
 
@@ -887,12 +922,23 @@ mod tests {
             .save_thread_settings(thread_a, &custom_settings)
             .expect("save custom settings");
 
-        let loaded_a = store.load_thread_settings(thread_a).expect("load a settings");
-        assert_eq!(loaded_a, custom_settings, "thread A must have custom settings");
+        let loaded_a = store
+            .load_thread_settings(thread_a)
+            .expect("load a settings");
+        assert_eq!(
+            loaded_a, custom_settings,
+            "thread A must have custom settings"
+        );
 
         // Thread B should still have default settings
-        let loaded_b = store.load_thread_settings(thread_b).expect("load b settings");
-        assert_eq!(loaded_b, ThreadSettings::default(), "thread B must have default settings");
+        let loaded_b = store
+            .load_thread_settings(thread_b)
+            .expect("load b settings");
+        assert_eq!(
+            loaded_b,
+            ThreadSettings::default(),
+            "thread B must have default settings"
+        );
     }
 
     #[test]
@@ -920,9 +966,18 @@ mod tests {
         assert_eq!(threads.len(), 3);
 
         // InMemoryChatStore returns threads in insertion order (ascending id)
-        assert_eq!(threads[0].id, id_a, "in-memory: first inserted thread first");
-        assert_eq!(threads[1].id, id_b, "in-memory: second inserted thread second");
-        assert_eq!(threads[2].id, id_c, "in-memory: third inserted thread third");
+        assert_eq!(
+            threads[0].id, id_a,
+            "in-memory: first inserted thread first"
+        );
+        assert_eq!(
+            threads[1].id, id_b,
+            "in-memory: second inserted thread second"
+        );
+        assert_eq!(
+            threads[2].id, id_c,
+            "in-memory: third inserted thread third"
+        );
 
         // Each thread has a unique id and a non-empty timestamp
         let ids: Vec<i64> = threads.iter().map(|t| t.id).collect();
@@ -931,7 +986,10 @@ mod tests {
         assert_eq!(ids.len(), unique_ids.len(), "ids must be unique");
 
         for thread in &threads {
-            assert!(!thread.created_at.is_empty(), "created_at must not be empty");
+            assert!(
+                !thread.created_at.is_empty(),
+                "created_at must not be empty"
+            );
         }
 
         // Model IDs stored correctly

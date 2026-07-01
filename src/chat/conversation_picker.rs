@@ -1,8 +1,6 @@
 //! Header conversation picker backed by persisted thread list.
 
-use gpui::{
-    App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
-};
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::Sizable;
 use gpui_component::select::{SearchableVec, Select, SelectState};
 
@@ -18,12 +16,7 @@ impl gpui_component::select::SelectItem for ThreadSelectEntry {
     type Value = i64;
 
     fn title(&self) -> SharedString {
-        SharedString::from(
-            self.info
-                .title
-                .as_deref()
-                .unwrap_or("New Chat"),
-        )
+        SharedString::from(self.info.title.as_deref().unwrap_or("New Chat"))
     }
 
     fn value(&self) -> &Self::Value {
@@ -78,15 +71,11 @@ pub fn sync_thread_select(
 pub fn render_thread_select(
     select: &Entity<SelectState<SearchableVec<ThreadSelectEntry>>>,
 ) -> impl IntoElement {
-    div()
-        .flex_shrink_0()
-        .min_w(px(120.))
-        .max_w(px(240.))
-        .child(
-            Select::new(select)
-                .placeholder("New Chat")
-                .appearance(false)
-                .small()
-                .menu_width(px(320.)),
-        )
+    div().flex_shrink_0().min_w(px(120.)).max_w(px(240.)).child(
+        Select::new(select)
+            .placeholder("New Chat")
+            .appearance(false)
+            .small()
+            .menu_width(px(320.)),
+    )
 }

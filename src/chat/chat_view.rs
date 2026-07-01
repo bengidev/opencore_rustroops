@@ -13,6 +13,7 @@ use gpui::{
 };
 use gpui_component::IconName;
 use gpui_component::Sizable;
+use gpui_component::WindowExt;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -20,7 +21,6 @@ use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::SearchableVec;
 use gpui_component::select::{SelectEvent, SelectState};
 use gpui_component::v_flex;
-use gpui_component::WindowExt;
 
 use crate::api::{
     ApiError, CancelToken, ChatProvider, ChatRequest, CredentialStatus, CredentialStore,
@@ -34,6 +34,10 @@ use super::chat_state::{ChatState, UiMessage};
 use super::chat_store::ChatStore;
 use super::composer_actions::ComposerActions;
 use super::composer_toolbar::{ComposerToolbarProps, render_composer_toolbar};
+use super::conversation_picker::{
+    ThreadSelectEntry, entries_from_threads, render_thread_select, selected_index_for_thread,
+    sync_thread_select,
+};
 use super::credential_dialog::{self, CredentialDialogContext};
 use super::credential_ui::CredentialUiState;
 use super::credentials_banner;
@@ -42,10 +46,6 @@ use super::model_catalog_store::ModelCatalogStore;
 use super::model_picker::{
     ModelSelectEntry, entries_from_models, persist_model_selection, selected_index_for_model,
     sync_model_select,
-};
-use super::conversation_picker::{
-    ThreadSelectEntry, entries_from_threads, selected_index_for_thread, render_thread_select,
-    sync_thread_select,
 };
 use super::stream_indicator::{assistant_stream_status, render_assistant_stream_body};
 
@@ -140,7 +140,9 @@ impl ChatView {
         let thread_select = cx.new(|cx| {
             SelectState::new(
                 entries_from_threads(&state.threads),
-                state.thread_id.and_then(|id| selected_index_for_thread(&state.threads, id)),
+                state
+                    .thread_id
+                    .and_then(|id| selected_index_for_thread(&state.threads, id)),
                 window,
                 cx,
             )
@@ -382,7 +384,10 @@ impl ChatView {
             }
         }
 
-        if let Some(model) = self.state.catalog.model_for_id(&self.state.thread_settings.model_id)
+        if let Some(model) = self
+            .state
+            .catalog
+            .model_for_id(&self.state.thread_settings.model_id)
         {
             model.sanitize_generation(&mut self.state.thread_settings.generation);
         }
@@ -400,7 +405,8 @@ impl ChatView {
         let thread_id = match self.store.create_thread(&settings) {
             Ok(id) => id,
             Err(error) => {
-                self.state.set_error(format!("Could not create thread: {error}"));
+                self.state
+                    .set_error(format!("Could not create thread: {error}"));
                 cx.notify();
                 return;
             }
@@ -440,13 +446,11 @@ impl ChatView {
                         .w_full()
                         .gap_2()
                         .justify_between()
-                        .child(
-                            Button::new("cancel-delete")
-                                .label("Cancel")
-                                .on_click(move |_, window, cx| {
-                                    window.close_dialog(cx);
-                                }),
-                        )
+                        .child(Button::new("cancel-delete").label("Cancel").on_click(
+                            move |_, window, cx| {
+                                window.close_dialog(cx);
+                            },
+                        ))
                         .child(
                             Button::new("confirm-delete")
                                 .label("Delete")
@@ -464,7 +468,10 @@ impl ChatView {
                                                 chat.switch_to_thread(first.id, cx);
                                             } else {
                                                 // No threads left — create a default one
-                                                if let Ok(new_id) = chat.store.create_thread(&chat.state.thread_settings) {
+                                                if let Ok(new_id) = chat
+                                                    .store
+                                                    .create_thread(&chat.state.thread_settings)
+                                                {
                                                     chat.state.thread_id = Some(new_id);
                                                     chat.pending_thread_select_sync = true;
                                                     cx.notify();
@@ -778,7 +785,9 @@ impl ChatView {
         {
             Ok(id) => {
                 // Auto-title thread from first user message
-                let current_title = self.state.threads
+                let current_title = self
+                    .state
+                    .threads
                     .iter()
                     .find(|t| t.id == thread_id)
                     .and_then(|t| t.title.as_deref());
