@@ -42,6 +42,7 @@ use super::credential_dialog::{self, CredentialDialogContext};
 use super::credential_ui::CredentialUiState;
 use super::credentials_banner;
 use super::generation_ui::model_unavailable_message;
+use super::instructions_dialog;
 use super::model_catalog_store::ModelCatalogStore;
 use super::model_picker::{
     ModelSelectEntry, entries_from_models, persist_model_selection, selected_index_for_model,
@@ -395,6 +396,7 @@ impl ChatView {
         self.pending_model_select_sync = true;
         self.pending_thread_select_sync = true;
         self.state.error = None;
+        self.mark_scroll_to_latest();
         cx.notify();
     }
 
@@ -837,6 +839,8 @@ impl ChatView {
                     .model_for_id(&self.state.thread_settings.model_id),
                 &self.state.thread_settings.generation,
             ),
+            system_prompt: Some(self.state.thread_settings.system_prompt.clone())
+                .filter(|s| !s.trim().is_empty()),
         };
 
         spawn_http_task({
@@ -951,6 +955,42 @@ impl ChatView {
                 self.mark_scroll_to_latest();
             }
         }
+    }
+
+    pub(crate) fn set_custom_instructions(&mut self, value: String, cx: &mut Context<Self>) {
+        self.state.thread_settings.system_prompt = value;
+        if let Some(thread_id) = self.state.thread_id
+            && let Err(e) = self
+                .store
+                .save_thread_settings(thread_id, &self.state.thread_settings)
+        {
+            self.state.set_error(e.to_string());
+        }
+        cx.notify();
+    }
+
+    fn open_instructions_dialog(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .placeholder("Instructions for this conversation…")
+        });
+        input.update(cx, |input, cx| {
+            input.set_value(&self.state.thread_settings.system_prompt, window, cx);
+        });
+        instructions_dialog::open(
+            window,
+            cx,
+            instructions_dialog::InstructionsDialogContext {
+                input,
+                view: cx.entity().downgrade(),
+            },
+        );
     }
 }
 impl ComposerActions for ChatView {
@@ -1113,6 +1153,14 @@ impl Render for ChatView {
                                 .tooltip("Delete conversation")
                                 .on_click(cx.listener(Self::on_delete_thread)),
                         ),
+                )
+                .child(
+                    Button::new("open-instructions")
+                        .icon(IconName::BookOpen)
+                        .ghost()
+                        .small()
+                        .tooltip("Custom instructions")
+                        .on_click(cx.listener(Self::open_instructions_dialog)),
                 )
                 .child(
                     Button::new("open-credential-settings")

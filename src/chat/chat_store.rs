@@ -34,6 +34,7 @@ pub enum ChatStoreError {
 pub struct ThreadSettings {
     pub model_id: String,
     pub generation: GenerationSettings,
+    pub system_prompt: String,
 }
 /// A thread row loaded from SQLite for the picker list.
 #[derive(Debug, Clone)]
@@ -49,6 +50,7 @@ impl Default for ThreadSettings {
         Self {
             model_id: DEFAULT_MODEL.to_string(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         }
     }
 }
@@ -164,6 +166,13 @@ impl SqliteChatStore {
         }
         if !columns.iter().any(|column| column == "speed_mode") {
             connection.execute("ALTER TABLE threads ADD COLUMN speed_mode TEXT", [])?;
+            columns.push("speed_mode".into());
+        }
+        if !columns.iter().any(|column| column == "system_prompt") {
+            connection.execute(
+                "ALTER TABLE threads ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
         }
 
         connection.execute(
@@ -307,7 +316,7 @@ impl ChatStore for SqliteChatStore {
         let connection = self.connection.lock().expect("chat db lock");
         connection
             .query_row(
-                "SELECT model_id, temperature, max_tokens, reasoning_effort, speed_mode FROM threads WHERE id = ?1",
+                "SELECT model_id, temperature, max_tokens, reasoning_effort, speed_mode, system_prompt FROM threads WHERE id = ?1",
                 params![thread_id],
                 |row| {
                     let model_id: Option<String> = row.get(0)?;
@@ -315,6 +324,7 @@ impl ChatStore for SqliteChatStore {
                     let max_tokens: Option<i64> = row.get(2)?;
                     let reasoning_effort: Option<String> = row.get(3)?;
                     let speed_mode: Option<String> = row.get(4)?;
+                    let system_prompt: String = row.get::<_, String>(5)?;
                     Ok(ThreadSettings {
                         model_id: model_id.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
                         generation: GenerationSettings {
@@ -323,6 +333,7 @@ impl ChatStore for SqliteChatStore {
                             reasoning_effort,
                             speed_mode: SpeedMode::from_persisted(speed_mode.as_deref()),
                         },
+                        system_prompt,
                     })
                 },
             )
@@ -336,13 +347,14 @@ impl ChatStore for SqliteChatStore {
     ) -> Result<(), ChatStoreError> {
         let connection = self.connection.lock().expect("chat db lock");
         connection.execute(
-            "UPDATE threads SET model_id = ?1, temperature = ?2, max_tokens = ?3, reasoning_effort = ?4, speed_mode = ?5 WHERE id = ?6",
+            "UPDATE threads SET model_id = ?1, temperature = ?2, max_tokens = ?3, reasoning_effort = ?4, speed_mode = ?5, system_prompt = ?6 WHERE id = ?7",
             params![
                 settings.model_id,
                 settings.generation.temperature.map(f64::from),
                 settings.generation.max_tokens.map(i64::from),
                 settings.generation.reasoning_effort,
                 settings.generation.speed_mode.as_str(),
+                settings.system_prompt,
                 thread_id,
             ],
         )?;
@@ -398,7 +410,7 @@ impl ChatStore for SqliteChatStore {
     fn create_thread(&self, settings: &ThreadSettings) -> Result<i64, ChatStoreError> {
         let connection = self.connection.lock().expect("chat db lock");
         connection.execute(
-            "INSERT INTO threads (created_at, model_id, temperature, max_tokens, reasoning_effort, speed_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO threads (created_at, model_id, temperature, max_tokens, reasoning_effort, speed_mode, system_prompt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 timestamp_now(),
                 settings.model_id,
@@ -406,6 +418,7 @@ impl ChatStore for SqliteChatStore {
                 settings.generation.max_tokens.map(i64::from),
                 settings.generation.reasoning_effort,
                 settings.generation.speed_mode.as_str(),
+                settings.system_prompt,
             ],
         )?;
         Ok(connection.last_insert_rowid())
@@ -703,6 +716,7 @@ mod tests {
                 reasoning_effort: Some("high".into()),
                 speed_mode: SpeedMode::Fast,
             },
+            system_prompt: String::new(),
         };
         store
             .save_thread_settings(thread_id, &settings)
@@ -751,14 +765,17 @@ mod tests {
         let settings_a = ThreadSettings {
             model_id: "openai/gpt-4o".into(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
         let settings_b = ThreadSettings {
             model_id: "anthropic/claude-3.5-sonnet".into(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
         let settings_c = ThreadSettings {
             model_id: "google/gemini-pro".into(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
 
         let id_a = store.create_thread(&settings_a).expect("create thread a");
@@ -806,6 +823,7 @@ mod tests {
                 reasoning_effort: Some("high".into()),
                 speed_mode: SpeedMode::Fast,
             },
+            system_prompt: String::new(),
         };
         let _source_id = store
             .create_thread(&source_settings)
@@ -814,6 +832,71 @@ mod tests {
 
         let loaded = store.load_thread_settings(new_id).expect("load settings");
         assert_eq!(loaded, source_settings);
+    }
+
+    #[test]
+    fn sqlite_store_round_trips_system_prompt() {
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("chat.db");
+        let store = SqliteChatStore::at(&path).expect("open store");
+
+        let settings = ThreadSettings {
+            model_id: "openai/gpt-4o".into(),
+            generation: GenerationSettings::default(),
+            system_prompt: "You are a helpful assistant specialized in Rust programming.".into(),
+        };
+        let thread_id = store.create_thread(&settings).expect("create thread");
+
+        let loaded = store
+            .load_thread_settings(thread_id)
+            .expect("load settings");
+        assert_eq!(loaded.system_prompt, settings.system_prompt);
+
+        // Update system_prompt and verify
+        let updated = ThreadSettings {
+            system_prompt: "Be concise and provide code examples.".into(),
+            ..settings.clone()
+        };
+        store
+            .save_thread_settings(thread_id, &updated)
+            .expect("save updated prompt");
+        let reloaded = store
+            .load_thread_settings(thread_id)
+            .expect("reload settings");
+        assert_eq!(reloaded.system_prompt, updated.system_prompt);
+
+        // Close and reopen
+        let store = SqliteChatStore::at(&path).expect("reopen store");
+        let reopened = store
+            .load_thread_settings(thread_id)
+            .expect("load after reopen");
+        assert_eq!(reopened.system_prompt, updated.system_prompt);
+    }
+
+    #[test]
+    fn sqlite_store_inherits_system_prompt_on_create() {
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("chat.db");
+        let store = SqliteChatStore::at(&path).expect("open store");
+
+        let source_settings = ThreadSettings {
+            model_id: "anthropic/claude-3.5-sonnet".into(),
+            generation: GenerationSettings::default(),
+            system_prompt: "You are a terse assistant.".into(),
+        };
+        let source_id = store
+            .create_thread(&source_settings)
+            .expect("create source");
+
+        // Create a new thread inheriting the same settings
+        let child_id = store.create_thread(&source_settings).expect("create child");
+        assert_ne!(source_id, child_id, "must be distinct threads");
+
+        let loaded = store
+            .load_thread_settings(child_id)
+            .expect("load child settings");
+        assert_eq!(loaded.system_prompt, source_settings.system_prompt);
+        assert_eq!(loaded.model_id, source_settings.model_id);
     }
 
     #[test]
@@ -917,6 +1000,7 @@ mod tests {
                 reasoning_effort: Some("low".into()),
                 speed_mode: SpeedMode::Normal,
             },
+            system_prompt: String::new(),
         };
         store
             .save_thread_settings(thread_a, &custom_settings)
@@ -948,14 +1032,17 @@ mod tests {
         let settings_a = ThreadSettings {
             model_id: "openai/gpt-4o".into(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
         let settings_b = ThreadSettings {
             model_id: "anthropic/claude-3.5-sonnet".into(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
         let settings_c = ThreadSettings {
             model_id: "google/gemini-pro".into(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
 
         let id_a = store.create_thread(&settings_a).expect("create thread a");

@@ -35,6 +35,7 @@ pub fn stream_chat_completion(
     model: &str,
     messages: &[ChatMessage],
     generation: &GenerationSettings,
+    system_prompt: Option<String>,
     cancel: CancelToken,
 ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ApiError>> + Send>> {
     let api_key = api_key.to_string();
@@ -49,7 +50,7 @@ pub fn stream_chat_completion(
             return;
         }
 
-        let body = build_request_body(&model, messages.as_slice(), &generation);
+        let body = build_request_body(&model, messages.as_slice(), &generation, system_prompt.as_deref());
 
         let response = match client
             .post(OPENROUTER_CHAT_URL)
@@ -155,6 +156,7 @@ fn build_request_body(
     model: &str,
     messages: &[ChatMessage],
     generation: &GenerationSettings,
+    system_prompt: Option<&str>,
 ) -> serde_json::Value {
     let mut body = serde_json::json!({
         "model": model,
@@ -165,6 +167,15 @@ fn build_request_body(
             .map(openrouter_message)
             .collect::<Vec<_>>(),
     });
+
+    if let Some(system_prompt) = system_prompt
+        && !system_prompt.trim().is_empty()
+    {
+        body["messages"].as_array_mut().unwrap().insert(
+            0,
+            serde_json::json!({"role": "system", "content": system_prompt}),
+        );
+    }
 
     if let Some(temperature) = generation.temperature {
         body["temperature"] = serde_json::json!(temperature);
@@ -228,6 +239,7 @@ mod tests {
                 reasoning_effort: Some("medium".into()),
                 speed_mode: SpeedMode::Normal,
             },
+            None,
         );
         assert!(body.get("temperature").is_some());
         assert_eq!(body["max_tokens"], 1024);
@@ -236,7 +248,7 @@ mod tests {
 
     #[test]
     fn build_request_body_omits_unset_generation_fields() {
-        let body = build_request_body("openai/gpt-4", &[], &GenerationSettings::default());
+        let body = build_request_body("openai/gpt-4", &[], &GenerationSettings::default(), None);
         assert!(body.get("temperature").is_none());
         assert!(body.get("max_tokens").is_none());
         assert!(body.get("reasoning").is_none());
@@ -253,6 +265,7 @@ mod tests {
                 speed_mode: SpeedMode::Fast,
                 ..GenerationSettings::default()
             },
+            None,
         );
         assert_eq!(body["speed"], "fast");
     }
@@ -266,6 +279,7 @@ mod tests {
                 speed_mode: SpeedMode::Fast,
                 ..GenerationSettings::default()
             },
+            None,
         );
         assert_eq!(body["service_tier"], "priority");
     }
@@ -285,10 +299,78 @@ mod tests {
                 },
             ],
             &GenerationSettings::default(),
+            None,
         );
         let messages = body["messages"].as_array().expect("messages");
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0]["content"], "hello");
+    }
+
+    #[test]
+    fn build_request_body_prepends_system_prompt() {
+        let body = build_request_body(
+            "openai/gpt-4",
+            &[ChatMessage {
+                role: MessageRole::User,
+                content: "hello".into(),
+            }],
+            &GenerationSettings::default(),
+            Some("You are a helpful assistant."),
+        );
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[0]["content"], "You are a helpful assistant.");
+        assert_eq!(messages[1]["role"], "user");
+        assert_eq!(messages[1]["content"], "hello");
+    }
+
+    #[test]
+    fn build_request_body_skips_system_prompt_when_none() {
+        let body = build_request_body(
+            "openai/gpt-4",
+            &[ChatMessage {
+                role: MessageRole::User,
+                content: "hi".into(),
+            }],
+            &GenerationSettings::default(),
+            None,
+        );
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
+    }
+
+    #[test]
+    fn build_request_body_skips_empty_system_prompt() {
+        let body = build_request_body(
+            "openai/gpt-4",
+            &[ChatMessage {
+                role: MessageRole::User,
+                content: "hi".into(),
+            }],
+            &GenerationSettings::default(),
+            Some(""),
+        );
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
+    }
+
+    #[test]
+    fn build_request_body_skips_whitespace_only_system_prompt() {
+        let body = build_request_body(
+            "openai/gpt-4",
+            &[ChatMessage {
+                role: MessageRole::User,
+                content: "hi".into(),
+            }],
+            &GenerationSettings::default(),
+            Some("   "),
+        );
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
     }
 
     #[test]
