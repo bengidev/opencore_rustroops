@@ -43,7 +43,6 @@ pub fn speed_mode_button_label(mode: SpeedMode) -> SharedString {
     })
 }
 
-
 pub const TEMPERATURE_PRESETS: &[(Option<f32>, &str)] = &[
     (None, "Default"),
     (Some(0.0), "0.0"),
@@ -178,11 +177,7 @@ pub fn render_composer_toolbar<H: ComposerActions + 'static>(
                 bar = bar.child(toolbar_divider(border));
             }
 
-            bar = bar.child(max_tokens_menu(
-                weak.clone(),
-                generation.max_tokens,
-                muted,
-            ));
+            bar = bar.child(max_tokens_menu(weak.clone(), generation.max_tokens, muted));
         }
     }
 
