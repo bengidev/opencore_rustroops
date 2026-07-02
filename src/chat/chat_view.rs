@@ -839,7 +839,7 @@ impl ChatView {
                     .model_for_id(&self.state.thread_settings.model_id),
                 &self.state.thread_settings.generation,
             ),
-            system_prompt: Some(self.state.thread_settings.system_prompt.clone()).filter(|s| !s.is_empty()),
+            system_prompt: Some(self.state.thread_settings.system_prompt.clone()).filter(|s| !s.trim().is_empty()),
         };
 
         spawn_http_task({
@@ -959,9 +959,12 @@ impl ChatView {
     pub(crate) fn set_custom_instructions(&mut self, value: String, cx: &mut Context<Self>) {
         self.state.thread_settings.system_prompt = value;
         if let Some(thread_id) = self.state.thread_id {
-            let _ = self
+            if let Err(e) = self
                 .store
-                .save_thread_settings(thread_id, &self.state.thread_settings);
+                .save_thread_settings(thread_id, &self.state.thread_settings)
+            {
+                self.state.set_error(e.to_string());
+            }
         }
         cx.notify();
     }

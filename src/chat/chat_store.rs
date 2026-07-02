@@ -33,8 +33,8 @@ pub enum ChatStoreError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThreadSettings {
     pub model_id: String,
-    pub system_prompt: String,
     pub generation: GenerationSettings,
+    pub system_prompt: String,
 }
 /// A thread row loaded from SQLite for the picker list.
 #[derive(Debug, Clone)]
@@ -49,8 +49,8 @@ impl Default for ThreadSettings {
     fn default() -> Self {
         Self {
             model_id: DEFAULT_MODEL.to_string(),
-            system_prompt: String::new(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         }
     }
 }
@@ -166,6 +166,7 @@ impl SqliteChatStore {
         }
         if !columns.iter().any(|column| column == "speed_mode") {
             connection.execute("ALTER TABLE threads ADD COLUMN speed_mode TEXT", [])?;
+            columns.push("speed_mode".into());
         }
         if !columns.iter().any(|column| column == "system_prompt") {
             connection.execute("ALTER TABLE threads ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''", [])?;
@@ -320,16 +321,16 @@ impl ChatStore for SqliteChatStore {
                     let max_tokens: Option<i64> = row.get(2)?;
                     let reasoning_effort: Option<String> = row.get(3)?;
                     let speed_mode: Option<String> = row.get(4)?;
-                    let system_prompt: String = row.get::<_, String>(5).unwrap_or_default();
+                    let system_prompt: String = row.get::<_, String>(5)?;
                     Ok(ThreadSettings {
                         model_id: model_id.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
-                        system_prompt,
                         generation: GenerationSettings {
                             temperature: temperature.map(|value| value as f32),
                             max_tokens: max_tokens.and_then(|value| u32::try_from(value).ok()),
                             reasoning_effort,
                             speed_mode: SpeedMode::from_persisted(speed_mode.as_deref()),
                         },
+                        system_prompt,
                     })
                 },
             )
@@ -706,13 +707,13 @@ mod tests {
         let thread_id = store.ensure_thread().expect("thread");
         let settings = ThreadSettings {
             model_id: "anthropic/claude-3.5-sonnet".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings {
                 temperature: Some(0.7),
                 max_tokens: Some(4096),
                 reasoning_effort: Some("high".into()),
                 speed_mode: SpeedMode::Fast,
             },
+            system_prompt: String::new(),
         };
         store
             .save_thread_settings(thread_id, &settings)
@@ -760,18 +761,18 @@ mod tests {
 
         let settings_a = ThreadSettings {
             model_id: "openai/gpt-4o".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
         let settings_b = ThreadSettings {
             model_id: "anthropic/claude-3.5-sonnet".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
         let settings_c = ThreadSettings {
             model_id: "google/gemini-pro".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
 
         let id_a = store.create_thread(&settings_a).expect("create thread a");
@@ -813,13 +814,13 @@ mod tests {
 
         let source_settings = ThreadSettings {
             model_id: "anthropic/claude-3.5-sonnet".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings {
                 temperature: Some(0.7),
                 max_tokens: Some(4096),
                 reasoning_effort: Some("high".into()),
                 speed_mode: SpeedMode::Fast,
             },
+            system_prompt: String::new(),
         };
         let _source_id = store
             .create_thread(&source_settings)
@@ -838,8 +839,8 @@ mod tests {
 
         let settings = ThreadSettings {
             model_id: "openai/gpt-4o".into(),
-            system_prompt: "You are a helpful assistant specialized in Rust programming.".into(),
             generation: GenerationSettings::default(),
+            system_prompt: "You are a helpful assistant specialized in Rust programming.".into(),
         };
         let thread_id = store.create_thread(&settings).expect("create thread");
 
@@ -875,8 +876,8 @@ mod tests {
 
         let source_settings = ThreadSettings {
             model_id: "anthropic/claude-3.5-sonnet".into(),
-            system_prompt: "You are a terse assistant.".into(),
             generation: GenerationSettings::default(),
+            system_prompt: "You are a terse assistant.".into(),
         };
         let source_id = store.create_thread(&source_settings).expect("create source");
 
@@ -984,13 +985,13 @@ mod tests {
         // Save non-default settings on thread A and verify they round-trip
         let custom_settings = ThreadSettings {
             model_id: "anthropic/claude-opus-4".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings {
                 temperature: Some(0.3),
                 max_tokens: Some(8192),
                 reasoning_effort: Some("low".into()),
                 speed_mode: SpeedMode::Normal,
             },
+            system_prompt: String::new(),
         };
         store
             .save_thread_settings(thread_a, &custom_settings)
@@ -1021,18 +1022,18 @@ mod tests {
 
         let settings_a = ThreadSettings {
             model_id: "openai/gpt-4o".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
         let settings_b = ThreadSettings {
             model_id: "anthropic/claude-3.5-sonnet".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
         let settings_c = ThreadSettings {
             model_id: "google/gemini-pro".into(),
-            system_prompt: String::new(),
             generation: GenerationSettings::default(),
+            system_prompt: String::new(),
         };
 
         let id_a = store.create_thread(&settings_a).expect("create thread a");
