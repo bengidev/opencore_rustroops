@@ -839,7 +839,8 @@ impl ChatView {
                     .model_for_id(&self.state.thread_settings.model_id),
                 &self.state.thread_settings.generation,
             ),
-            system_prompt: Some(self.state.thread_settings.system_prompt.clone()).filter(|s| !s.trim().is_empty()),
+            system_prompt: Some(self.state.thread_settings.system_prompt.clone())
+                .filter(|s| !s.trim().is_empty()),
         };
 
         spawn_http_task({
@@ -958,18 +959,22 @@ impl ChatView {
 
     pub(crate) fn set_custom_instructions(&mut self, value: String, cx: &mut Context<Self>) {
         self.state.thread_settings.system_prompt = value;
-        if let Some(thread_id) = self.state.thread_id {
-            if let Err(e) = self
+        if let Some(thread_id) = self.state.thread_id
+            && let Err(e) = self
                 .store
                 .save_thread_settings(thread_id, &self.state.thread_settings)
-            {
-                self.state.set_error(e.to_string());
-            }
+        {
+            self.state.set_error(e.to_string());
         }
         cx.notify();
     }
 
-    fn open_instructions_dialog(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_instructions_dialog(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)

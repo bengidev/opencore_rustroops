@@ -168,8 +168,13 @@ fn build_request_body(
             .collect::<Vec<_>>(),
     });
 
-    if let Some(system_prompt) = system_prompt && !system_prompt.trim().is_empty() {
-        body["messages"].as_array_mut().unwrap().insert(0, serde_json::json!({"role": "system", "content": system_prompt}));
+    if let Some(system_prompt) = system_prompt
+        && !system_prompt.trim().is_empty()
+    {
+        body["messages"].as_array_mut().unwrap().insert(
+            0,
+            serde_json::json!({"role": "system", "content": system_prompt}),
+        );
     }
 
     if let Some(temperature) = generation.temperature {

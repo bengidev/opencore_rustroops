@@ -31,9 +31,7 @@ pub(crate) fn open(
                 v_flex()
                     .gap_2()
                     .min_w(px(320.0))
-                    .child(
-                        "Instructions are prepended as a system prompt for this conversation.",
-                    )
+                    .child("Instructions are prepended as a system prompt for this conversation.")
                     .child(Input::new(&input).min_h(px(120.0))),
             )
             .footer(
@@ -41,27 +39,23 @@ pub(crate) fn open(
                     .w_full()
                     .gap_2()
                     .justify_between()
+                    .child(Button::new("cancel-instructions").label("Cancel").on_click(
+                        |_, window, cx| {
+                            window.close_dialog(cx);
+                        },
+                    ))
                     .child(
-                        Button::new("cancel-instructions")
-                            .label("Cancel")
-                            .on_click(|_, window, cx| {
-                                window.close_dialog(cx);
-                            }),
-                    )
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(
-                                Button::new("save-instructions")
-                                    .label("Save")
-                                    .primary()
-                                    .on_click({
-                                        let save = save.clone();
-                                        move |_, window, cx| {
-                                            save(window, cx);
-                                        }
-                                    }),
-                            ),
+                        h_flex().gap_2().child(
+                            Button::new("save-instructions")
+                                .label("Save")
+                                .primary()
+                                .on_click({
+                                    let save = save.clone();
+                                    move |_, window, cx| {
+                                        save(window, cx);
+                                    }
+                                }),
+                        ),
                     ),
             )
     });

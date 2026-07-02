@@ -169,7 +169,10 @@ impl SqliteChatStore {
             columns.push("speed_mode".into());
         }
         if !columns.iter().any(|column| column == "system_prompt") {
-            connection.execute("ALTER TABLE threads ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''", [])?;
+            connection.execute(
+                "ALTER TABLE threads ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
         }
 
         connection.execute(
@@ -844,7 +847,9 @@ mod tests {
         };
         let thread_id = store.create_thread(&settings).expect("create thread");
 
-        let loaded = store.load_thread_settings(thread_id).expect("load settings");
+        let loaded = store
+            .load_thread_settings(thread_id)
+            .expect("load settings");
         assert_eq!(loaded.system_prompt, settings.system_prompt);
 
         // Update system_prompt and verify
@@ -879,13 +884,17 @@ mod tests {
             generation: GenerationSettings::default(),
             system_prompt: "You are a terse assistant.".into(),
         };
-        let source_id = store.create_thread(&source_settings).expect("create source");
+        let source_id = store
+            .create_thread(&source_settings)
+            .expect("create source");
 
         // Create a new thread inheriting the same settings
         let child_id = store.create_thread(&source_settings).expect("create child");
         assert_ne!(source_id, child_id, "must be distinct threads");
 
-        let loaded = store.load_thread_settings(child_id).expect("load child settings");
+        let loaded = store
+            .load_thread_settings(child_id)
+            .expect("load child settings");
         assert_eq!(loaded.system_prompt, source_settings.system_prompt);
         assert_eq!(loaded.model_id, source_settings.model_id);
     }
