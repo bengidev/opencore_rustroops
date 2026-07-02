@@ -78,6 +78,7 @@ pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
     pub generation: GenerationSettings,
+    pub system_prompt: Option<String>,
 }
 
 /// Events emitted while streaming an assistant reply.
@@ -206,11 +207,44 @@ mod tests {
                     model: "test".into(),
                     messages: vec![],
                     generation: GenerationSettings::default(),
+                    system_prompt: None,
                 },
                 CancelToken::new(),
             );
             let content = accumulate_stream(stream).await.expect("accumulate");
             assert_eq!(content, "Hello, world");
         });
+    }
+
+    #[test]
+    fn chat_request_includes_system_prompt() {
+        let request = ChatRequest {
+            model: "test".into(),
+            messages: vec![ChatMessage {
+                role: MessageRole::User,
+                content: "hello".into(),
+            }],
+            generation: GenerationSettings::default(),
+            system_prompt: Some("You are a helpful assistant.".into()),
+        };
+
+        assert_eq!(request.model, "test");
+        assert_eq!(request.messages.len(), 1);
+        assert_eq!(
+            request.system_prompt.as_deref(),
+            Some("You are a helpful assistant.")
+        );
+    }
+
+    #[test]
+    fn chat_request_system_prompt_omitted_when_none() {
+        let request = ChatRequest {
+            model: "test".into(),
+            messages: vec![],
+            generation: GenerationSettings::default(),
+            system_prompt: None,
+        };
+
+        assert!(request.system_prompt.is_none());
     }
 }
