@@ -756,12 +756,12 @@ impl ChatView {
 
         self.persist_generation_settings(cx);
 
-        if let Err(message) = self
+        if let Err(error) = self
             .state
             .catalog
             .validate_model_id(&self.state.thread_settings.model_id)
         {
-            self.state.set_error(message);
+            self.state.set_error(format_provider_error(error));
             cx.notify();
             return;
         }
@@ -1000,6 +1000,24 @@ impl ComposerActions for ChatView {
 
     fn set_reasoning_effort(&mut self, effort: &str, cx: &mut Context<Self>) {
         ChatView::set_reasoning_effort(self, effort, cx);
+    }
+
+    fn set_temperature(&mut self, value: Option<f32>, cx: &mut Context<Self>) {
+        if !self.current_model_supports(|model| model.supports_temperature_controls()) {
+            return;
+        }
+        self.state.thread_settings.generation.temperature = value;
+        self.persist_generation_settings(cx);
+        cx.notify();
+    }
+
+    fn set_max_tokens(&mut self, value: Option<u32>, cx: &mut Context<Self>) {
+        if !self.current_model_supports(|model| model.supports_max_tokens_controls()) {
+            return;
+        }
+        self.state.thread_settings.generation.max_tokens = value;
+        self.persist_generation_settings(cx);
+        cx.notify();
     }
 
     fn on_send_clicked(&mut self, event: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
