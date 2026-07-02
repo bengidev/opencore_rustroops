@@ -43,6 +43,50 @@ pub fn speed_mode_button_label(mode: SpeedMode) -> SharedString {
     })
 }
 
+
+pub const TEMPERATURE_PRESETS: &[(Option<f32>, &str)] = &[
+    (None, "Default"),
+    (Some(0.0), "0.0"),
+    (Some(0.3), "0.3"),
+    (Some(0.5), "0.5"),
+    (Some(0.7), "0.7"),
+    (Some(0.8), "0.8"),
+    (Some(1.0), "1.0"),
+    (Some(1.5), "1.5"),
+    (Some(2.0), "2.0"),
+];
+
+pub const MAX_TOKENS_PRESETS: &[(Option<u32>, &str)] = &[
+    (None, "Default"),
+    (Some(256), "256"),
+    (Some(512), "512"),
+    (Some(1024), "1k"),
+    (Some(2048), "2k"),
+    (Some(4096), "4k"),
+    (Some(8192), "8k"),
+    (Some(16384), "16k"),
+    (Some(32768), "32k"),
+];
+
+pub fn temperature_button_label(value: &Option<f32>) -> SharedString {
+    SharedString::from(match value {
+        Some(t) => format!("{t:.1}"),
+        None => "Default".to_string(),
+    })
+}
+
+pub fn max_tokens_button_label(value: &Option<u32>) -> SharedString {
+    SharedString::from(match value {
+        Some(n) => {
+            if *n >= 1024 && *n % 1024 == 0 {
+                format!("{}k", n / 1024)
+            } else {
+                n.to_string()
+            }
+        }
+        None => "Default".to_string(),
+    })
+}
 pub struct ComposerToolbarProps<'a> {
     pub model_select: &'a Entity<SelectState<SearchableVec<ModelSelectEntry>>>,
     pub model: Option<&'a ModelInfo>,
@@ -117,6 +161,28 @@ pub fn render_composer_toolbar<H: ComposerActions + 'static>(
                 bar = bar.child(toolbar_divider(border));
             }
             bar = bar.child(speed_mode_menu(weak.clone(), generation.speed_mode, muted));
+        }
+        if model.supports_temperature_controls() {
+            if needs_divider {
+                bar = bar.child(toolbar_divider(border));
+            }
+            needs_divider = true;
+            bar = bar.child(temperature_menu(
+                weak.clone(),
+                generation.temperature,
+                muted,
+            ));
+        }
+        if model.supports_max_tokens_controls() {
+            if needs_divider {
+                bar = bar.child(toolbar_divider(border));
+            }
+
+            bar = bar.child(max_tokens_menu(
+                weak.clone(),
+                generation.max_tokens,
+                muted,
+            ));
         }
     }
 
@@ -228,6 +294,62 @@ fn thinking_level_menu<H: ComposerActions + 'static>(
                         }),
                 )
             })
+        })
+        .into_any_element()
+}
+
+fn temperature_menu<H: ComposerActions + 'static>(
+    view: WeakEntity<H>,
+    current: Option<f32>,
+    muted: Hsla,
+) -> impl IntoElement {
+    let label = temperature_button_label(&current);
+    compact_menu_button("temperature-menu", label, muted)
+        .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
+            TEMPERATURE_PRESETS
+                .iter()
+                .fold(menu, |menu, (value, title)| {
+                    let checked = *value == current;
+                    let view = view.clone();
+                    let selected = *value;
+                    menu.item(
+                        PopupMenuItem::new(SharedString::from(*title))
+                            .checked(checked)
+                            .on_click(move |_, _, cx| {
+                                let _ = view.update(cx, |host, cx| {
+                                    host.set_temperature(selected, cx);
+                                });
+                            }),
+                    )
+                })
+        })
+        .into_any_element()
+}
+
+fn max_tokens_menu<H: ComposerActions + 'static>(
+    view: WeakEntity<H>,
+    current: Option<u32>,
+    muted: Hsla,
+) -> impl IntoElement {
+    let label = max_tokens_button_label(&current);
+    compact_menu_button("max-tokens-menu", label, muted)
+        .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
+            MAX_TOKENS_PRESETS
+                .iter()
+                .fold(menu, |menu, (value, title)| {
+                    let checked = *value == current;
+                    let view = view.clone();
+                    let selected = *value;
+                    menu.item(
+                        PopupMenuItem::new(SharedString::from(*title))
+                            .checked(checked)
+                            .on_click(move |_, _, cx| {
+                                let _ = view.update(cx, |host, cx| {
+                                    host.set_max_tokens(selected, cx);
+                                });
+                            }),
+                    )
+                })
         })
         .into_any_element()
 }

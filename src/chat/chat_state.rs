@@ -1,10 +1,9 @@
 //! In-memory chat state for the single implicit thread.
 
-use crate::api::{ChatMessage, DEFAULT_MODEL, MessageRole, ModelInfo};
+use crate::api::{ApiError, ChatMessage, DEFAULT_MODEL, MessageRole, ModelInfo};
 
-use super::chat_store::ThreadInfo;
-use super::chat_store::ThreadSettings;
-use super::generation_ui::{catalog_loading_message, model_unavailable_message};
+use super::chat_store::{ThreadInfo, ThreadSettings};
+use super::generation_ui::catalog_loading_message;
 
 /// Cached model catalog available to the chat UI.
 #[derive(Debug, Clone, Default)]
@@ -25,17 +24,17 @@ impl ModelCatalogState {
         self.models.iter().find(|model| model.id == model_id)
     }
 
-    pub fn validate_model_id(&self, model_id: &str) -> Result<(), String> {
+    pub fn validate_model_id(&self, model_id: &str) -> Result<(), ApiError> {
         if self.models.is_empty() {
             if model_id == DEFAULT_MODEL {
                 return Ok(());
             }
-            return Err(catalog_loading_message().into());
+            return Err(ApiError::RequestFailed(catalog_loading_message().into()));
         }
         if self.models.iter().any(|model| model.id == model_id) {
             Ok(())
         } else {
-            Err(model_unavailable_message(model_id))
+            Err(ApiError::UnknownModel(model_id.to_string()))
         }
     }
 }
