@@ -6,7 +6,7 @@ mod app_desktop;
 mod app_state;
 mod gpui_callbacks;
 mod onboarding;
-mod shell;
+pub mod shell;
 mod window_placement;
 
 pub use app_boot::boot_screen;
@@ -15,6 +15,7 @@ pub use app_state::{
     SHELL_WINDOW_WIDTH, WindowResizeIntent,
 };
 pub use onboarding::{OnboardingCommand, OnboardingOutcome, reduce_onboarding};
+pub use shell::{ShellChatAction, ShellChatHandle};
 
 use crate::api::CredentialStoreError;
 use crate::chat::{ChatStoreError, ModelCatalogStoreError};
