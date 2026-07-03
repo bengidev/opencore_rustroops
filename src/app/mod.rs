@@ -6,7 +6,7 @@ mod app_desktop;
 mod app_state;
 mod gpui_callbacks;
 mod onboarding;
-pub mod shell;
+mod shell;
 mod window_placement;
 
 pub use app_boot::boot_screen;
