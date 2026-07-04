@@ -1,8 +1,16 @@
-//! Shell mount point — fullscreen chat plus shell-ready action seam.
+//! Workspace shell mount point — top bar, left sidebar slot, and mode routing.
 
-use gpui::{Entity, IntoElement, ParentElement, Styled, Window, div};
+mod shell_helpers;
+mod shell_placeholders;
+mod shell_state;
+mod shell_view;
 
-use crate::chat::{ChatShellContext, ChatView};
+pub use shell_state::WorkspaceMode;
+pub use shell_view::ShellView;
+
+use gpui::Entity;
+
+use crate::chat::ChatView;
 
 /// Workspace-owned commands that delegate to the chat child for now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,11 +34,15 @@ impl ShellChatHandle {
         Self { chat_view }
     }
 
-    pub fn context(&self, cx: &gpui::App) -> ChatShellContext {
+    pub fn chat_view(&self) -> Entity<ChatView> {
+        self.chat_view.clone()
+    }
+
+    pub fn context(&self, cx: &gpui::App) -> crate::chat::ChatShellContext {
         self.chat_view.read(cx).shell_context()
     }
 
-    pub fn dispatch(&self, action: ShellChatAction, window: &mut Window, cx: &mut gpui::App) {
+    pub fn dispatch(&self, action: ShellChatAction, window: &mut gpui::Window, cx: &mut gpui::App) {
         self.chat_view.update(cx, |chat, cx| match action {
             ShellChatAction::FocusComposer => chat.focus_composer(window, cx),
             ShellChatAction::SwitchThread(thread_id) => chat.switch_to_thread(thread_id, cx),
@@ -41,11 +53,3 @@ impl ShellChatHandle {
         });
     }
 }
-
-/// Mounts the fullscreen chat surface in the shell.
-pub fn shell_screen(chat_view: Entity<ChatView>) -> impl IntoElement {
-    let handle = ShellChatHandle::new(chat_view);
-    div().size_full().child(handle.chat_view)
-}
-
-mod shell_helpers;
