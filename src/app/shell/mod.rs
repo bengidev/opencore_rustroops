@@ -4,6 +4,9 @@ mod workspace_mode;
 
 pub use workspace_mode::WorkspaceMode;
 
+mod shell_state;
+pub use shell_state::ShellState;
+
 use gpui::{Entity, IntoElement, ParentElement, Styled, Window, div};
 
 use crate::chat::{ChatShellContext, ChatView};
