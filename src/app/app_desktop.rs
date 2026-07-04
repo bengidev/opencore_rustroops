@@ -23,7 +23,7 @@ use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
-use super::shell::shell_screen;
+use super::shell::{ShellView, shell_screen};
 use super::window_placement::center_window;
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
@@ -35,6 +35,7 @@ pub struct OpenCoreApp {
     catalog_store: Arc<dyn ModelCatalogStore>,
     credential_store: Arc<dyn CredentialStore>,
     chat_view: Option<Entity<ChatView>>,
+    shell_view: Option<Entity<ShellView>>,
     focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
     animation_scheduled: bool,
@@ -64,6 +65,7 @@ impl OpenCoreApp {
             catalog_store,
             credential_store,
             chat_view: None,
+            shell_view: None,
             focus_handle: cx.focus_handle(),
             onboarding_ui,
             animation_scheduled: false,
@@ -94,6 +96,23 @@ impl OpenCoreApp {
         });
         self.chat_view = Some(chat_view.clone());
         chat_view
+    }
+
+    fn ensure_shell_view(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<ShellView> {
+        if let Some(view) = &self.shell_view {
+            let theme = self.theme();
+            view.update(cx, |shell, _| shell.set_theme(theme));
+            return view.clone();
+        }
+
+        let chat_view = self.ensure_chat_view(window, cx);
+        let shell_view = shell_screen(self.theme(), chat_view, cx);
+        self.shell_view = Some(shell_view.clone());
+        shell_view
     }
 
     fn theme(&self) -> OpenCoreTheme {
@@ -162,6 +181,10 @@ impl OpenCoreApp {
                 if let Some(chat_view) = &self.chat_view {
                     let theme = self.theme();
                     chat_view.update(cx, |chat, _| chat.set_theme(theme));
+                }
+                if let Some(shell_view) = &self.shell_view {
+                    let theme = self.theme();
+                    shell_view.update(cx, |shell, _| shell.set_theme(theme));
                 }
                 cx.notify();
             }
@@ -279,11 +302,8 @@ impl Render for OpenCoreApp {
                     .into_any_element()
             }
             ActiveScreen::Shell => {
-                let chat_view = self.ensure_chat_view(window, cx);
-                div()
-                    .size_full()
-                    .child(shell_screen(chat_view))
-                    .into_any_element()
+                let shell_view = self.ensure_shell_view(window, cx);
+                div().size_full().child(shell_view).into_any_element()
             }
         };
 
