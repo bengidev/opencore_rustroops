@@ -47,3 +47,5 @@ pub fn shell_screen(chat_view: Entity<ChatView>) -> impl IntoElement {
     let handle = ShellChatHandle::new(chat_view);
     div().size_full().child(handle.chat_view)
 }
+
+mod shell_helpers;
