@@ -15,7 +15,7 @@ pub use app_state::{
     SHELL_WINDOW_WIDTH, WindowResizeIntent,
 };
 pub use onboarding::{OnboardingCommand, OnboardingOutcome, reduce_onboarding};
-pub use shell::{ShellChatAction, ShellChatHandle};
+pub use shell::{ShellChatAction, ShellChatHandle, ShellView, WorkspaceMode};
 
 use crate::api::CredentialStoreError;
 use crate::chat::{ChatStoreError, ModelCatalogStoreError};
