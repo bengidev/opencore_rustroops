@@ -29,10 +29,7 @@ pub fn mode_placeholder_copy(mode: WorkspaceMode) -> Option<ModePlaceholderCopy>
     }
 }
 
-pub fn render_mode_placeholder(
-    mode: WorkspaceMode,
-    theme: OpenCoreTheme,
-) -> impl IntoElement {
+pub fn render_mode_placeholder(mode: WorkspaceMode, theme: OpenCoreTheme) -> impl IntoElement {
     let copy = mode_placeholder_copy(mode).expect("chat mode has no placeholder");
     let foreground = theme.foreground(ForegroundToken::Primary);
     let muted = theme.foreground(ForegroundToken::Muted);

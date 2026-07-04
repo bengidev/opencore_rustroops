@@ -1,5 +1,8 @@
 //! In-memory chat state for the single implicit thread.
 
+/// Default title for a thread with no persisted name yet.
+pub const DEFAULT_THREAD_TITLE: &str = "New Chat";
+
 use crate::api::{ApiError, ChatMessage, DEFAULT_MODEL, MessageRole, ModelInfo};
 
 use super::chat_store::{ThreadInfo, ThreadSettings};
@@ -129,13 +132,13 @@ impl ChatState {
 
     pub fn thread_title(&self) -> String {
         let Some(thread_id) = self.thread_id else {
-            return "New Chat".into();
+            return DEFAULT_THREAD_TITLE.into();
         };
         self.threads
             .iter()
             .find(|t| t.id == thread_id)
             .and_then(|t| t.title.clone())
-            .unwrap_or_else(|| "New Chat".into())
+            .unwrap_or_else(|| DEFAULT_THREAD_TITLE.into())
     }
 }
 

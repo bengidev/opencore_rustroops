@@ -96,6 +96,10 @@ impl OpenCoreApp {
                 self.theme(),
             )
         });
+        self.shell_subscriptions
+            .push(cx.observe(&chat_view, move |_, _, cx| {
+                cx.notify();
+            }));
         self.chat_view = Some(chat_view.clone());
         chat_view
     }
@@ -114,9 +118,10 @@ impl OpenCoreApp {
         let chat_view = self.ensure_chat_view(window, cx);
         let theme = self.theme();
         let shell_view = cx.new(|_| ShellView::new(chat_view, theme));
-        self.shell_subscriptions.push(cx.observe(&shell_view, move |_, _, cx| {
-            cx.notify();
-        }));
+        self.shell_subscriptions
+            .push(cx.observe(&shell_view, move |_, _, cx| {
+                cx.notify();
+            }));
         self.shell_view = Some(shell_view.clone());
         shell_view
     }
@@ -309,15 +314,9 @@ impl Render for OpenCoreApp {
             }
             ActiveScreen::Shell => {
                 let shell_view = self.ensure_shell_view(window, cx);
-                let chat_view = self.ensure_chat_view(window, cx);
                 div()
                     .size_full()
-                    .child(render_workspace_shell(
-                        shell_view,
-                        chat_view,
-                        window,
-                        cx,
-                    ))
+                    .child(render_workspace_shell(shell_view, window, cx))
                     .into_any_element()
             }
         };

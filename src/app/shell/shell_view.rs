@@ -40,7 +40,12 @@ impl ShellView {
         &self.chat
     }
 
-    pub fn apply_command(&mut self, command: ShellCommand, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn apply_command(
+        &mut self,
+        command: ShellCommand,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state = reduce_shell(&self.state, command);
         if matches!(command, ShellCommand::SelectMode(WorkspaceMode::Chat)) {
             self.chat

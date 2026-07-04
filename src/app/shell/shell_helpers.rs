@@ -1,6 +1,6 @@
 //! Pure shell helpers (**Strategy** inputs for workspace chrome).
 
-use crate::chat::ChatShellContext;
+use crate::chat::{ChatShellContext, DEFAULT_THREAD_TITLE};
 
 /// Fallback label when a conversation has no title.
 pub const UNTITLED_CONVERSATION_LABEL: &str = "New conversation";
@@ -25,7 +25,7 @@ pub fn context_label_from_shell_context(ctx: &ChatShellContext) -> &str {
     }
 
     let fallback = ctx.active_thread_title.as_str();
-    if fallback == "New Chat" {
+    if fallback == DEFAULT_THREAD_TITLE {
         thread_context_label(None)
     } else {
         thread_context_label(Some(fallback))
@@ -96,7 +96,7 @@ mod tests {
     fn context_label_from_shell_context_falls_back_when_untitled() {
         let ctx = ChatShellContext {
             active_thread_id: Some(1),
-            active_thread_title: "New Chat".into(),
+            active_thread_title: DEFAULT_THREAD_TITLE.into(),
             threads: vec![ThreadInfo {
                 id: 1,
                 title: None,

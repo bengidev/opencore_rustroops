@@ -4,23 +4,21 @@
 //! (flex-nested entities were producing corrupted scroll layout).
 
 use gpui::{
-    App, ClickEvent, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::FluentBuilder, px,
+    App, ClickEvent, Entity, IntoElement, ParentElement, Styled, Window, div,
+    prelude::FluentBuilder, px,
 };
 use gpui_component::IconName;
 use gpui_component::Sizable;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::h_flex;
 
-use crate::chat::ChatView;
-use crate::shared::theme::{
-    BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme,
-};
+use crate::shared::theme::{BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme};
 
+use super::ShellChatAction;
 use super::shell_helpers::context_label_from_shell_context;
 use super::shell_placeholders::render_mode_placeholder;
 use super::shell_state::{ShellCommand, WorkspaceMode};
 use super::shell_view::ShellView;
-use super::{ShellChatAction, ShellChatHandle};
 
 const TOP_BAR_HEIGHT: f32 = 35.0;
 const SIDEBAR_STUB_WIDTH: f32 = 235.0;
@@ -28,14 +26,13 @@ const SIDEBAR_STUB_WIDTH: f32 = 235.0;
 /// Renders the workspace shell with chat mounted as a sibling entity, not nested.
 pub fn render_workspace_shell(
     shell: Entity<ShellView>,
-    chat: Entity<ChatView>,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
     let theme = shell.read(cx).theme();
     let state = shell.read(cx).state().clone();
-    let chat_handle = ShellChatHandle::new(chat.clone());
-    let context = chat_handle.context(cx);
+    let chat = shell.read(cx).chat_handle().chat_view();
+    let context = shell.read(cx).chat_handle().context(cx);
     let context_label = context_label_from_shell_context(&context);
 
     let background = theme.surface(BackgroundToken::Primary);
@@ -135,7 +132,11 @@ fn render_top_bar(
                                     let shell = shell.clone();
                                     move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                                         let _ = shell.update(cx, |shell, cx| {
-                                            shell.apply_command(ShellCommand::ToggleSidebar, window, cx);
+                                            shell.apply_command(
+                                                ShellCommand::ToggleSidebar,
+                                                window,
+                                                cx,
+                                            );
                                         });
                                     }
                                 }),
@@ -150,7 +151,12 @@ fn render_top_bar(
                                 .child(context_label.to_string()),
                         ),
                 )
-                .child(render_mode_tabs(shell.clone(), active_mode, muted, foreground))
+                .child(render_mode_tabs(
+                    shell.clone(),
+                    active_mode,
+                    muted,
+                    foreground,
+                ))
                 .child(
                     h_flex()
                         .flex_1()
@@ -212,14 +218,13 @@ fn render_mode_tabs(
         let label = mode.label();
         let id = format!("shell-mode-{}", label.to_lowercase());
         let shell = shell.clone();
-        let mut button = Button::new(id)
-            .label(label)
-            .small()
-            .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+        let mut button = Button::new(id).label(label).small().on_click(
+            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                 let _ = shell.update(cx, |shell, cx| {
                     shell.apply_command(ShellCommand::SelectMode(mode), window, cx);
                 });
-            });
+            },
+        );
         button = if is_active {
             button.ghost().text_color(foreground)
         } else {
@@ -231,23 +236,29 @@ fn render_mode_tabs(
 }
 
 fn render_center_panel(
-    chat: Entity<ChatView>,
+    chat: Entity<crate::chat::ChatView>,
     active_mode: WorkspaceMode,
     theme: OpenCoreTheme,
     sidebar_left: gpui::Pixels,
 ) -> impl IntoElement {
-    let panel = div()
+    div()
         .absolute()
         .top(px(TOP_BAR_HEIGHT))
         .left(sidebar_left)
         .right_0()
         .bottom_0()
-        .overflow_hidden();
-
-    match active_mode {
-        WorkspaceMode::Chat => panel.child(chat),
-        WorkspaceMode::Editor | WorkspaceMode::Terminal => {
-            panel.child(render_mode_placeholder(active_mode, theme))
-        }
-    }
+        .overflow_hidden()
+        .child(chat)
+        .when(active_mode != WorkspaceMode::Chat, |layer| {
+            layer.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .overflow_hidden()
+                    .child(render_mode_placeholder(active_mode, theme)),
+            )
+        })
 }

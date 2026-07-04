@@ -1054,15 +1054,6 @@ impl ChatView {
             },
         );
     }
-
-    fn on_open_instructions_dialog(
-        &mut self,
-        _: &ClickEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.open_instructions_dialog(window, cx);
-    }
 }
 impl ComposerActions for ChatView {
     fn set_speed_mode(&mut self, mode: crate::api::SpeedMode, cx: &mut Context<Self>) {
@@ -1219,7 +1210,6 @@ impl Render for ChatView {
                 .pt(inset)
                 .pb(px(8.))
                 .items_center()
-                .justify_between()
                 .gap_1()
                 .child(
                     h_flex()
@@ -1242,22 +1232,6 @@ impl Render for ChatView {
                                 .tooltip("Delete conversation")
                                 .on_click(cx.listener(Self::on_delete_thread)),
                         ),
-                )
-                .child(
-                    Button::new("open-instructions")
-                        .icon(IconName::BookOpen)
-                        .ghost()
-                        .small()
-                        .tooltip("Custom instructions")
-                        .on_click(cx.listener(Self::on_open_instructions_dialog)),
-                )
-                .child(
-                    Button::new("open-credential-settings")
-                        .icon(IconName::Settings)
-                        .ghost()
-                        .small()
-                        .tooltip("OpenRouter credentials")
-                        .on_click(cx.listener(Self::on_open_credential_settings)),
                 ),
         );
 
