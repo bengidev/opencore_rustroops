@@ -19,5 +19,5 @@ mod stream_indicator;
 
 pub use chat_state::*;
 pub use chat_store::*;
-pub use chat_view::ChatView;
+pub use chat_view::{ChatShellContext, ChatView};
 pub use model_catalog_store::*;

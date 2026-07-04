@@ -31,7 +31,7 @@ use crate::shared::theme::{
 };
 
 use super::chat_state::{ChatState, UiMessage};
-use super::chat_store::ChatStore;
+use super::chat_store::{ChatStore, ThreadInfo, ThreadSettings};
 use super::composer_actions::ComposerActions;
 use super::composer_toolbar::{ComposerToolbarProps, render_composer_toolbar};
 use super::conversation_picker::{
@@ -56,6 +56,17 @@ const PENDING_ASSISTANT_ID: i64 = -1;
 /// Error message produced when the cancel token fires mid-stream.
 /// `format_provider_error(ApiError::RequestFailed("cancelled".into()))`.
 const CANCEL_ERROR_MESSAGE: &str = "Request failed: cancelled";
+
+/// Shell-readable chat context without exposing persistence internals.
+#[derive(Debug, Clone)]
+pub struct ChatShellContext {
+    pub active_thread_id: Option<i64>,
+    pub active_thread_title: String,
+    pub threads: Vec<ThreadInfo>,
+    pub thread_settings: ThreadSettings,
+    pub is_streaming: bool,
+    pub credentials_missing: bool,
+}
 
 /// GPUI entity for multi-thread conversation management.
 pub struct ChatView {
@@ -85,6 +96,21 @@ pub struct ChatView {
 }
 
 impl ChatView {
+    pub fn shell_context(&self) -> ChatShellContext {
+        ChatShellContext {
+            active_thread_id: self.state.thread_id,
+            active_thread_title: self.state.thread_title(),
+            threads: self.state.threads.clone(),
+            thread_settings: self.state.thread_settings.clone(),
+            is_streaming: self.state.is_streaming,
+            credentials_missing: self.credential_ui.missing,
+        }
+    }
+
+    pub fn focus_composer(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.input.update(cx, |input, cx| input.focus(window, cx));
+    }
+
     pub fn new(
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -354,45 +380,52 @@ impl ChatView {
         }
     }
 
-    fn switch_to_thread(&mut self, thread_id: i64, cx: &mut Context<Self>) {
+    pub fn switch_to_thread(&mut self, thread_id: i64, cx: &mut Context<Self>) {
+        if !self
+            .state
+            .threads
+            .iter()
+            .any(|thread| thread.id == thread_id)
+        {
+            self.state.set_error(format!("Unknown thread: {thread_id}"));
+            cx.notify();
+            return;
+        }
+
+        let messages = match self.store.load_messages(thread_id) {
+            Ok(messages) => messages
+                .into_iter()
+                .filter(|message| !message.content.trim().is_empty())
+                .map(|message| UiMessage {
+                    id: message.id,
+                    role: message.role,
+                    content: message.content,
+                })
+                .collect(),
+            Err(error) => {
+                self.state.set_error(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
+
+        let mut settings = match self.store.load_thread_settings(thread_id) {
+            Ok(settings) => settings,
+            Err(error) => {
+                self.state.set_error(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
+
+        if let Some(model) = self.state.catalog.model_for_id(&settings.model_id) {
+            model.sanitize_generation(&mut settings.generation);
+        }
+
         self.cancel_active_stream();
         self.state.thread_id = Some(thread_id);
-        self.state.messages.clear();
-
-        match self.store.load_messages(thread_id) {
-            Ok(messages) => {
-                self.state.messages = messages
-                    .into_iter()
-                    .filter(|message| !message.content.trim().is_empty())
-                    .map(|message| UiMessage {
-                        id: message.id,
-                        role: message.role,
-                        content: message.content,
-                    })
-                    .collect();
-            }
-            Err(error) => {
-                self.state.set_error(error.to_string());
-            }
-        }
-
-        match self.store.load_thread_settings(thread_id) {
-            Ok(settings) => {
-                self.state.thread_settings = settings;
-            }
-            Err(error) => {
-                self.state.set_error(error.to_string());
-            }
-        }
-
-        if let Some(model) = self
-            .state
-            .catalog
-            .model_for_id(&self.state.thread_settings.model_id)
-        {
-            model.sanitize_generation(&mut self.state.thread_settings.generation);
-        }
-
+        self.state.messages = messages;
+        self.state.thread_settings = settings;
         self.pending_model_select_sync = true;
         self.pending_thread_select_sync = true;
         self.state.error = None;
@@ -400,7 +433,7 @@ impl ChatView {
         cx.notify();
     }
 
-    fn on_create_thread(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn create_thread(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.cancel_active_stream();
 
         let settings = self.state.thread_settings.clone();
@@ -418,16 +451,18 @@ impl ChatView {
         self.state.messages.clear();
         self.state.error = None;
 
-        // Reload thread list
         if let Ok(threads) = self.store.list_threads() {
             self.state.threads = threads;
         }
         self.pending_thread_select_sync = true;
-
         cx.notify();
     }
 
-    fn on_delete_thread(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_create_thread(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.create_thread(window, cx);
+    }
+
+    pub fn delete_active_thread(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(thread_id) = self.state.thread_id else {
             return;
         };
@@ -463,21 +498,45 @@ impl ChatView {
                                         chat.cancel_active_stream();
                                         chat.state.thread_id = None;
                                         chat.state.messages.clear();
-                                        if let Ok(threads) = chat.store.list_threads() {
-                                            chat.state.threads = threads;
-                                            // Switch to the first available thread, or create a new one
-                                            if let Some(first) = chat.state.threads.first() {
-                                                chat.switch_to_thread(first.id, cx);
-                                            } else {
-                                                // No threads left — create a default one
-                                                if let Ok(new_id) = chat
-                                                    .store
-                                                    .create_thread(&chat.state.thread_settings)
-                                                {
-                                                    chat.state.thread_id = Some(new_id);
-                                                    chat.pending_thread_select_sync = true;
-                                                    cx.notify();
+                                        match chat.store.list_threads() {
+                                            Ok(threads) => {
+                                                chat.state.threads = threads;
+                                                // Switch to the first available thread, or create a new one.
+                                                if let Some(first) = chat.state.threads.first() {
+                                                    chat.switch_to_thread(first.id, cx);
+                                                } else {
+                                                    match chat
+                                                        .store
+                                                        .create_thread(&chat.state.thread_settings)
+                                                    {
+                                                        Ok(new_id) => {
+                                                            chat.state.thread_id = Some(new_id);
+                                                            chat.state.messages.clear();
+                                                            match chat.store.list_threads() {
+                                                                Ok(threads) => {
+                                                                    chat.state.threads = threads;
+                                                                }
+                                                                Err(error) => {
+                                                                    chat.state.set_error(
+                                                                        error.to_string(),
+                                                                    );
+                                                                }
+                                                            }
+                                                            chat.pending_thread_select_sync = true;
+                                                            cx.notify();
+                                                        }
+                                                        Err(error) => {
+                                                            chat.state.set_error(format!(
+                                                                "Could not create thread: {error}"
+                                                            ));
+                                                            cx.notify();
+                                                        }
+                                                    }
                                                 }
+                                            }
+                                            Err(error) => {
+                                                chat.state.set_error(error.to_string());
+                                                cx.notify();
                                             }
                                         }
                                     });
@@ -486,6 +545,10 @@ impl ChatView {
                         ),
                 )
         });
+    }
+
+    fn on_delete_thread(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.delete_active_thread(window, cx);
     }
 
     fn refresh_catalog_in_background(&mut self, cx: &mut Context<Self>) {
@@ -694,12 +757,7 @@ impl ChatView {
         });
     }
 
-    fn open_credential_settings(
-        &mut self,
-        _: &ClickEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn open_credential_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.api_key_input.is_none() {
             self.api_key_input = Some(cx.new(|cx| {
                 InputState::new(window, cx)
@@ -722,6 +780,15 @@ impl ChatView {
                 view: cx.entity().downgrade(),
             },
         );
+    }
+
+    fn on_open_credential_settings(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_credential_settings(window, cx);
     }
 
     pub fn set_theme(&mut self, theme: OpenCoreTheme) {
@@ -969,12 +1036,7 @@ impl ChatView {
         cx.notify();
     }
 
-    fn open_instructions_dialog(
-        &mut self,
-        _: &ClickEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn open_instructions_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
@@ -991,6 +1053,15 @@ impl ChatView {
                 view: cx.entity().downgrade(),
             },
         );
+    }
+
+    fn on_open_instructions_dialog(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_instructions_dialog(window, cx);
     }
 }
 impl ComposerActions for ChatView {
@@ -1178,7 +1249,7 @@ impl Render for ChatView {
                         .ghost()
                         .small()
                         .tooltip("Custom instructions")
-                        .on_click(cx.listener(Self::open_instructions_dialog)),
+                        .on_click(cx.listener(Self::on_open_instructions_dialog)),
                 )
                 .child(
                     Button::new("open-credential-settings")
@@ -1186,7 +1257,7 @@ impl Render for ChatView {
                         .ghost()
                         .small()
                         .tooltip("OpenRouter credentials")
-                        .on_click(cx.listener(Self::open_credential_settings)),
+                        .on_click(cx.listener(Self::on_open_credential_settings)),
                 ),
         );
 
@@ -1270,7 +1341,7 @@ impl Render for ChatView {
                         theme.foreground(ForegroundToken::Accent),
                         muted,
                         label,
-                        cx.listener(Self::open_credential_settings),
+                        cx.listener(Self::on_open_credential_settings),
                         cx.listener(Self::dismiss_credentials_banner),
                     ))
                 })
