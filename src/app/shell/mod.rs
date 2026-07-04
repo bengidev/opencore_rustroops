@@ -1,5 +1,9 @@
 //! Shell mount point — fullscreen chat plus shell-ready action seam.
 
+mod workspace_mode;
+
+pub use workspace_mode::WorkspaceMode;
+
 use gpui::{Entity, IntoElement, ParentElement, Styled, Window, div};
 
 use crate::chat::{ChatShellContext, ChatView};
