@@ -7,6 +7,11 @@ pub use workspace_mode::WorkspaceMode;
 mod shell_state;
 pub use shell_state::ShellState;
 
+mod context_label;
+mod mode_placeholder;
+mod placeholder_view;
+mod top_bar;
+
 use gpui::{Entity, IntoElement, ParentElement, Styled, Window, div};
 
 use crate::chat::{ChatShellContext, ChatView};
