@@ -4,9 +4,11 @@ mod shell_helpers;
 mod shell_placeholders;
 mod shell_state;
 mod shell_view;
+mod workspace_layout;
 
 pub use shell_state::WorkspaceMode;
 pub use shell_view::ShellView;
+pub use workspace_layout::render_workspace_shell;
 
 use gpui::Entity;
 
