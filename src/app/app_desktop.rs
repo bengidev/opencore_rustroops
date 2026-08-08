@@ -9,6 +9,8 @@ use gpui::{
     App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
     Window, WindowBounds, WindowOptions, div, px, size,
 };
+#[cfg(debug_assertions)]
+use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point};
 use gpui_component::Root;
 use gpui_component::Theme;
 
@@ -17,6 +19,8 @@ use crate::shared::theme::{OpenCoreTheme, ThemeMode};
 
 use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
+#[cfg(debug_assertions)]
+use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
 use super::home::home_screen;
 use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
@@ -32,6 +36,8 @@ pub struct OpenCoreApp {
     onboarding_ui: Option<OnboardingUiState>,
     animation_scheduled: bool,
     persistence_error: Option<String>,
+    #[cfg(debug_assertions)]
+    dev_reset_state: DevResetState,
 }
 
 impl OpenCoreApp {
@@ -48,6 +54,8 @@ impl OpenCoreApp {
             onboarding_ui,
             animation_scheduled: false,
             persistence_error: None,
+            #[cfg(debug_assertions)]
+            dev_reset_state: DevResetState::default(),
         }
     }
 
@@ -125,9 +133,8 @@ impl OpenCoreApp {
 
     /// Resets persisted preferences to defaults and routes back to onboarding.
     ///
-    /// Called by the debug reset overlay (Task 4). Retained while the overlay
-    /// is being wired up.
-    #[allow(dead_code)]
+    /// Called by the debug reset overlay.
+    #[cfg(debug_assertions)]
     fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.state.reset_persistent_data(self.store.as_ref()) {
             Ok(()) => {
@@ -226,11 +233,127 @@ impl OnboardingCallbacks {
     }
 }
 
+#[cfg(debug_assertions)]
+impl DevResetCallbacks {
+    /// Constructs overlay callbacks that drive `OpenCoreApp`'s `DevResetState`.
+    ///
+    /// - `on_activate` (click without drag) calls `reset_dev_data`.
+    /// - `on_drag_start` records the mouse-down position and current FAB origin.
+    /// - `on_drag_move` updates the FAB origin using `damp_translation`.
+    /// - `on_drag_end` checks click-vs-drag; if click, calls `on_activate`.
+    pub fn from_app(view: WeakEntity<OpenCoreApp>, bounds: (f32, f32)) -> Self {
+        let on_activate = {
+            let view = view.clone();
+            Rc::new(move |window: &mut Window, cx: &mut App| {
+                let _ = view.update(cx, |app, cx| {
+                    app.reset_dev_data(window, cx);
+                });
+            })
+        };
+
+        let on_drag_start = {
+            let view = view.clone();
+            Rc::new(
+                move |event: &MouseDownEvent, _window: &mut Window, cx: &mut App| {
+                    let _ = view.update(cx, |app, cx| {
+                        app.dev_reset_state.dragging = true;
+                        app.dev_reset_state.pointer_start = Some(event.position);
+                        app.dev_reset_state.origin_at_drag_start = Some(app.dev_reset_state.origin);
+                        cx.notify();
+                    });
+                },
+            )
+        };
+
+        let (win_w, win_h) = bounds;
+        let on_drag_move = {
+            let view = view.clone();
+            Rc::new(
+                move |event: &MouseMoveEvent, _window: &mut Window, cx: &mut App| {
+                    let _ = view.update(cx, |app, cx| {
+                        let st = &mut app.dev_reset_state;
+                        if !st.dragging {
+                            return;
+                        }
+                        let (start, origin0) = match (st.pointer_start, st.origin_at_drag_start) {
+                            (Some(s), Some(o)) => (s, o),
+                            _ => return,
+                        };
+                        let dx = event.position.x.as_f32() - start.x.as_f32();
+                        let dy = event.position.y.as_f32() - start.y.as_f32();
+                        let proposed_x = origin0.x.as_f32() + dx;
+                        let proposed_y = origin0.y.as_f32() + dy;
+                        // Clamp with damping: FAB stays fully inside the window.
+                        let min_x = 0.0;
+                        let max_x = (win_w - super::dev_reset::FAB_WIDTH).max(0.0);
+                        let min_y = 0.0;
+                        let max_y = (win_h - super::dev_reset::FAB_HEIGHT).max(0.0);
+                        st.origin = Point {
+                            x: px(super::dev_reset::damp_translation(
+                                origin0.x.as_f32(),
+                                min_x,
+                                max_x,
+                                proposed_x,
+                            )),
+                            y: px(super::dev_reset::damp_translation(
+                                origin0.y.as_f32(),
+                                min_y,
+                                max_y,
+                                proposed_y,
+                            )),
+                        };
+                        cx.notify();
+                    });
+                },
+            )
+        };
+
+        let on_drag_end = {
+            let view = view.clone();
+            Rc::new(
+                move |event: &MouseUpEvent, window: &mut Window, cx: &mut App| {
+                    let _ = view.update(cx, |app, cx| {
+                        let st = &mut app.dev_reset_state;
+                        let was_dragging = st.dragging;
+                        st.dragging = false;
+                        let is_click = match st.pointer_start {
+                            Some(start) => {
+                                let dx = event.position.x.as_f32() - start.x.as_f32();
+                                let dy = event.position.y.as_f32() - start.y.as_f32();
+                                super::dev_reset::is_click_not_drag(
+                                    dx,
+                                    dy,
+                                    super::dev_reset::CLICK_THRESHOLD,
+                                )
+                            }
+                            None => false,
+                        };
+                        st.pointer_start = None;
+                        st.origin_at_drag_start = None;
+                        cx.notify();
+                        // Only activate on a click that started a drag (mouse down on FAB).
+                        if was_dragging && is_click {
+                            app.reset_dev_data(window, cx);
+                        }
+                    });
+                },
+            )
+        };
+
+        Self {
+            on_activate,
+            on_drag_start,
+            on_drag_move,
+            on_drag_end,
+        }
+    }
+}
+
 impl Render for OpenCoreApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_resize_intent(window, cx);
 
-        match self.state.active_screen {
+        let content = match self.state.active_screen {
             ActiveScreen::Onboarding => {
                 self.schedule_animation(cx);
                 let theme = self.theme();
@@ -248,6 +371,39 @@ impl Render for OpenCoreApp {
                 ))
             }
             ActiveScreen::Home => div().size_full().child(home_screen(self.theme())),
+        };
+
+        #[cfg(debug_assertions)]
+        {
+            // Update FAB bounds for edge damping to the current window size.
+            let (win_w, win_h) = self.state.initial_window_size();
+            let bounds = (win_w as f32, win_h as f32);
+            let callbacks = DevResetCallbacks::from_app(cx.entity().downgrade(), bounds);
+            let theme = self.theme();
+            // Snapshot the state so the element borrows don't clash with `&mut self`.
+            let state_snapshot = self.dev_reset_state.clone();
+            let on_drag_move = callbacks.on_drag_move.clone();
+            let on_drag_end = callbacks.on_drag_end.clone();
+
+            div()
+                .size_full()
+                .relative()
+                .child(content)
+                .child(dev_reset_fab(theme, &state_snapshot, &callbacks))
+                .on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
+                    (on_drag_move)(event, window, cx);
+                })
+                .on_mouse_up(
+                    MouseButton::Left,
+                    move |event: &MouseUpEvent, window, cx| {
+                        (on_drag_end)(event, window, cx);
+                    },
+                )
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            content
         }
     }
 }

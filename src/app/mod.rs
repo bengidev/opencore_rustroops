@@ -4,6 +4,8 @@
 mod app_boot;
 mod app_desktop;
 mod app_state;
+#[cfg(debug_assertions)]
+mod dev_reset;
 mod gpui_callbacks;
 mod home;
 mod onboarding;
