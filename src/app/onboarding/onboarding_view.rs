@@ -59,7 +59,7 @@ pub fn onboarding_screen(
     persistence_error: Option<&str>,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
-    let backdrop = SceneBackdrop::new(theme, ui.started_at, ui.now);
+    let backdrop = SceneBackdrop::new(theme);
 
     div()
         .size_full()
