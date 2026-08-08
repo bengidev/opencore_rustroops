@@ -541,7 +541,8 @@ fn paint_galactic_halo(
 
         let p = Point2 {
             x: center.x + angle.cos() * DISC_RADIUS * particle.radial + particle.jitter_x,
-            y: center.y + angle.sin() * DISC_RADIUS * particle.radial * DISC_TILT
+            y: center.y
+                + angle.sin() * DISC_RADIUS * particle.radial * DISC_TILT
                 + particle.jitter_y,
         };
 
@@ -728,8 +729,7 @@ fn paint_disc(
         let alpha = (base_alpha * (0.78 + shimmer)).clamp(0.05, 1.0);
 
         let pulse = (t * 1.0 + particle.pulse_phase).sin() * 0.5 + 0.5;
-        let block_size =
-            (2.6 + particle.energy * 4.2 + pulse * 0.7).clamp(2.0, 8.0);
+        let block_size = (2.6 + particle.energy * 4.2 + pulse * 0.7).clamp(2.0, 8.0);
 
         let projected = project(Point2 {
             x: block_x,

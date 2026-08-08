@@ -175,12 +175,8 @@ fn hero_block(
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let mono = SharedString::from("Menlo");
-    let orb = GalaxyOrb::with_dynamics(
-        ui.started_at,
-        ui.now,
-        ui.displayed_speed,
-        ui.displayed_zoom,
-    );
+    let orb =
+        GalaxyOrb::with_dynamics(ui.started_at, ui.now, ui.displayed_speed, ui.displayed_zoom);
     let on_pressed = callbacks.on_orb_pressed.clone();
     let on_released = callbacks.on_orb_released.clone();
     let spacing = theme.spacing;
