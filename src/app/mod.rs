@@ -11,8 +11,8 @@ mod window_placement;
 
 pub use app_boot::boot_screen;
 pub use app_state::{
-    ActiveScreen, AppState, ONBOARDING_WINDOW_HEIGHT, ONBOARDING_WINDOW_WIDTH, SHELL_WINDOW_HEIGHT,
-    SHELL_WINDOW_WIDTH, WindowResizeIntent,
+    ActiveScreen, AppState, HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH, ONBOARDING_WINDOW_HEIGHT,
+    ONBOARDING_WINDOW_WIDTH, WindowResizeIntent,
 };
 pub use onboarding::{OnboardingCommand, OnboardingOutcome, reduce_onboarding};
 
@@ -58,12 +58,12 @@ mod tests {
     }
 
     #[test]
-    fn boot_screen_shows_shell_when_onboarding_complete() {
+    fn boot_screen_shows_home_when_onboarding_complete() {
         let prefs = AppPreferences {
             theme_mode: ThemeMode::Dark,
             onboarding_completed: true,
         };
-        assert_eq!(boot_screen(&prefs), ActiveScreen::Shell);
+        assert_eq!(boot_screen(&prefs), ActiveScreen::Home);
     }
 
     #[test]
@@ -79,7 +79,7 @@ mod tests {
                 theme_mode: theme,
                 onboarding_completed: true,
             };
-            assert_eq!(boot_screen(&complete), ActiveScreen::Shell);
+            assert_eq!(boot_screen(&complete), ActiveScreen::Home);
         }
     }
 
@@ -95,7 +95,7 @@ mod tests {
     }
 
     #[test]
-    fn completing_onboarding_persists_and_routes_to_shell() {
+    fn completing_onboarding_persists_and_routes_to_home() {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
         state
@@ -103,7 +103,7 @@ mod tests {
             .expect("complete onboarding");
 
         assert!(state.preferences.onboarding_completed);
-        assert_eq!(state.active_screen, ActiveScreen::Shell);
+        assert_eq!(state.active_screen, ActiveScreen::Home);
         let loaded = store.load().expect("load");
         assert!(loaded.onboarding_completed);
     }
@@ -117,8 +117,8 @@ mod tests {
             .expect("complete onboarding");
 
         let intent = state.pending_window_resize.expect("resize intent recorded");
-        assert_eq!(intent.width, SHELL_WINDOW_WIDTH);
-        assert_eq!(intent.height, SHELL_WINDOW_HEIGHT);
+        assert_eq!(intent.width, HOME_WINDOW_WIDTH);
+        assert_eq!(intent.height, HOME_WINDOW_HEIGHT);
     }
 
     #[test]
@@ -135,7 +135,7 @@ mod tests {
         });
         assert_eq!(
             complete.initial_window_size(),
-            (SHELL_WINDOW_WIDTH, SHELL_WINDOW_HEIGHT)
+            (HOME_WINDOW_WIDTH, HOME_WINDOW_HEIGHT)
         );
     }
 
@@ -179,7 +179,7 @@ mod tests {
             .apply_onboarding_outcome(outcome, &store)
             .expect("apply outcome");
 
-        assert_eq!(state.active_screen, ActiveScreen::Shell);
+        assert_eq!(state.active_screen, ActiveScreen::Home);
         let saved = store.load().expect("load");
         assert!(saved.onboarding_completed);
     }

@@ -6,7 +6,7 @@ use crate::shared::preferences::AppPreferences;
 /// Selects the initial screen based on onboarding completion.
 pub fn boot_screen(preferences: &AppPreferences) -> ActiveScreen {
     if preferences.onboarding_completed {
-        ActiveScreen::Shell
+        ActiveScreen::Home
     } else {
         ActiveScreen::Onboarding
     }

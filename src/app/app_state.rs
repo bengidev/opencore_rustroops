@@ -11,17 +11,17 @@ pub const ONBOARDING_WINDOW_WIDTH: u32 = 960;
 /// Onboarding window height.
 pub const ONBOARDING_WINDOW_HEIGHT: u32 = 680;
 
-/// Shell window width after onboarding (960×680 → 1280×800).
-pub const SHELL_WINDOW_WIDTH: u32 = 1280;
+/// Home window width after onboarding (960×680 → 1280×800).
+pub const HOME_WINDOW_WIDTH: u32 = 1280;
 
-/// Shell window height after onboarding.
-pub const SHELL_WINDOW_HEIGHT: u32 = 800;
+/// Home window height after onboarding.
+pub const HOME_WINDOW_HEIGHT: u32 = 800;
 
 /// Top-level screen routing enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveScreen {
     Onboarding,
-    Shell,
+    Home,
 }
 
 /// Window dimensions to apply when onboarding completes (GPUI layer applies in PRD #2).
@@ -58,7 +58,7 @@ impl AppState {
     pub fn initial_window_size(&self) -> (u32, u32) {
         match self.active_screen {
             ActiveScreen::Onboarding => (ONBOARDING_WINDOW_WIDTH, ONBOARDING_WINDOW_HEIGHT),
-            ActiveScreen::Shell => (SHELL_WINDOW_WIDTH, SHELL_WINDOW_HEIGHT),
+            ActiveScreen::Home => (HOME_WINDOW_WIDTH, HOME_WINDOW_HEIGHT),
         }
     }
 
@@ -67,7 +67,7 @@ impl AppState {
         self.pending_window_resize.take()
     }
 
-    /// Marks onboarding complete, persists preferences, and routes to shell.
+    /// Marks onboarding complete, persists preferences, and routes to home.
     pub fn complete_onboarding<S: PreferencesStore>(
         &mut self,
         store: &S,
@@ -101,10 +101,10 @@ impl AppState {
                 updated.onboarding_completed = true;
                 store.save(&updated)?;
                 self.preferences = updated;
-                self.active_screen = ActiveScreen::Shell;
+                self.active_screen = ActiveScreen::Home;
                 self.pending_window_resize = Some(WindowResizeIntent {
-                    width: SHELL_WINDOW_WIDTH,
-                    height: SHELL_WINDOW_HEIGHT,
+                    width: HOME_WINDOW_WIDTH,
+                    height: HOME_WINDOW_HEIGHT,
                 });
             }
         }

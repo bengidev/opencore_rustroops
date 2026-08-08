@@ -242,7 +242,7 @@ impl Render for OpenCoreApp {
                     onboarding_screen(theme, ui, callbacks, persistence_error),
                 ))
             }
-            ActiveScreen::Shell => {
+            ActiveScreen::Home => {
                 let view = cx.entity().downgrade();
                 let mut callbacks = ShellCallbacks::new();
                 #[cfg(debug_assertions)]
@@ -322,7 +322,7 @@ pub fn run_desktop() -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::app::app_state::{
-        ONBOARDING_WINDOW_HEIGHT, ONBOARDING_WINDOW_WIDTH, SHELL_WINDOW_HEIGHT, SHELL_WINDOW_WIDTH,
+        HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH, ONBOARDING_WINDOW_HEIGHT, ONBOARDING_WINDOW_WIDTH,
     };
     use crate::shared::preferences::{AppPreferences, InMemoryPreferencesStore};
     use crate::shared::theme::ThemeMode;
@@ -337,14 +337,14 @@ mod tests {
     }
 
     #[test]
-    fn initial_window_size_is_shell_dimensions_when_complete() {
+    fn initial_window_size_is_home_dimensions_when_complete() {
         let state = AppState::from_preferences(AppPreferences {
             theme_mode: ThemeMode::Dark,
             onboarding_completed: true,
         });
         assert_eq!(
             state.initial_window_size(),
-            (SHELL_WINDOW_WIDTH, SHELL_WINDOW_HEIGHT)
+            (HOME_WINDOW_WIDTH, HOME_WINDOW_HEIGHT)
         );
     }
 
@@ -355,7 +355,7 @@ mod tests {
         state.complete_onboarding(&store).expect("complete");
         assert!(state.pending_window_resize.is_some());
         let intent = state.take_pending_window_resize().expect("intent");
-        assert_eq!(intent.width, SHELL_WINDOW_WIDTH);
+        assert_eq!(intent.width, HOME_WINDOW_WIDTH);
         assert!(state.pending_window_resize.is_none());
     }
 }
