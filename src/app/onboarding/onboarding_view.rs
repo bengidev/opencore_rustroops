@@ -254,7 +254,12 @@ fn action_row(
         .items_center()
         .justify_center()
         .pb(px(spacing.sm as f32))
-        .child(primary_button(theme, "Enter OpenCore", ui.cta_pressed, callbacks))
+        .child(primary_button(
+            theme,
+            "Enter OpenCore",
+            ui.cta_pressed,
+            callbacks,
+        ))
 }
 
 fn primary_button(
