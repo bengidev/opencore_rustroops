@@ -28,13 +28,17 @@ use super::onboarding::{
 };
 use super::window_placement::center_window;
 
+/// Returns true when onboarding UI is active and the render path should request the next frame.
+fn should_request_onboarding_animation(onboarding_ui: &Option<OnboardingUiState>) -> bool {
+    onboarding_ui.is_some()
+}
+
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
 pub struct OpenCoreApp {
     state: AppState,
     store: Arc<FilePreferencesStore>,
     focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
-    animation_scheduled: bool,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
     dev_reset_state: DevResetState,
@@ -52,7 +56,6 @@ impl OpenCoreApp {
             store,
             focus_handle: cx.focus_handle(),
             onboarding_ui,
-            animation_scheduled: false,
             persistence_error: None,
             #[cfg(debug_assertions)]
             dev_reset_state: DevResetState::default(),
@@ -139,7 +142,6 @@ impl OpenCoreApp {
         match self.state.reset_persistent_data(self.store.as_ref()) {
             Ok(()) => {
                 self.onboarding_ui = Some(OnboardingUiState::new());
-                self.animation_scheduled = false;
                 self.persistence_error = None;
                 self.ensure_onboarding_focus(window, cx);
                 self.finish_screen_transition(window, cx);
@@ -151,36 +153,6 @@ impl OpenCoreApp {
         }
     }
 
-    fn schedule_animation(&mut self, cx: &mut Context<Self>) {
-        if self.animation_scheduled || self.onboarding_ui.is_none() {
-            return;
-        }
-        self.animation_scheduled = true;
-        let entity = cx.entity().downgrade();
-        cx.spawn(async move |_, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(16))
-                    .await;
-                let still_onboarding = entity
-                    .update(cx, |app, cx| {
-                        if let Some(ui) = app.onboarding_ui.as_mut() {
-                            ui.tick(Instant::now());
-                            cx.notify();
-                            true
-                        } else {
-                            app.animation_scheduled = false;
-                            false
-                        }
-                    })
-                    .unwrap_or(false);
-                if !still_onboarding {
-                    break;
-                }
-            }
-        })
-        .detach();
-    }
 }
 
 impl OnboardingCallbacks {
@@ -379,11 +351,18 @@ impl Render for OpenCoreApp {
 
         let content = match self.state.active_screen {
             ActiveScreen::Onboarding => {
-                self.schedule_animation(cx);
                 let theme = self.theme();
+                let request_animation = should_request_onboarding_animation(&self.onboarding_ui);
                 let ui = self
                     .onboarding_ui
                     .get_or_insert_with(OnboardingUiState::new);
+                ui.ensure_particle_cache(theme);
+                // Wall-clock dt: extra cx.notify() renders (e.g. theme toggle) advance by
+                // elapsed time since the last tick, not per-notify, so animation stays smooth.
+                ui.tick(Instant::now());
+                if request_animation {
+                    window.request_animation_frame();
+                }
                 let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
@@ -514,6 +493,12 @@ mod tests {
             state.initial_window_size(),
             (HOME_WINDOW_WIDTH, HOME_WINDOW_HEIGHT)
         );
+    }
+
+    #[test]
+    fn onboarding_animation_gate_follows_ui_presence() {
+        assert!(should_request_onboarding_animation(&Some(OnboardingUiState::new())));
+        assert!(!should_request_onboarding_animation(&None));
     }
 
     #[test]
