@@ -128,6 +128,8 @@ pub struct SpacingScale {
     pub md: u16,
     pub lg: u16,
     pub xl: u16,
+    pub xxl: u16,
+    pub xxxl: u16,
 }
 
 /// Resolved design tokens for the active [`ThemeMode`].
@@ -149,15 +151,15 @@ impl OpenCoreTheme {
     pub fn foreground(&self, token: ForegroundToken) -> Hsla {
         rgba_to_hsla(match self.mode {
             ThemeMode::Light => match token {
-                ForegroundToken::Primary => rgbf(0.04, 0.04, 0.04),
-                ForegroundToken::Secondary => rgbf(0.32, 0.32, 0.32),
-                ForegroundToken::Muted => rgbf(0.64, 0.64, 0.64),
+                ForegroundToken::Primary => rgbf(26.0 / 255.0, 26.0 / 255.0, 26.0 / 255.0),
+                ForegroundToken::Secondary => rgbf(102.0 / 255.0, 102.0 / 255.0, 102.0 / 255.0),
+                ForegroundToken::Muted => rgbf(153.0 / 255.0, 153.0 / 255.0, 153.0 / 255.0),
                 ForegroundToken::Accent => rgbf(0.09, 0.09, 0.09),
             },
             ThemeMode::Dark => match token {
-                ForegroundToken::Primary => rgbf(0.98, 0.98, 0.98),
-                ForegroundToken::Secondary => rgbf(0.64, 0.64, 0.64),
-                ForegroundToken::Muted => rgbf(0.45, 0.45, 0.45),
+                ForegroundToken::Primary => rgbf(232.0 / 255.0, 232.0 / 255.0, 232.0 / 255.0),
+                ForegroundToken::Secondary => rgbf(153.0 / 255.0, 153.0 / 255.0, 153.0 / 255.0),
+                ForegroundToken::Muted => rgbf(102.0 / 255.0, 102.0 / 255.0, 102.0 / 255.0),
                 ForegroundToken::Accent => rgbf(0.90, 0.90, 0.90),
             },
         })
@@ -166,14 +168,14 @@ impl OpenCoreTheme {
     pub fn surface(&self, token: BackgroundToken) -> Hsla {
         rgba_to_hsla(match self.mode {
             ThemeMode::Light => match token {
-                BackgroundToken::Primary => rgbf(0.98, 0.98, 0.98),
-                BackgroundToken::Secondary => rgbf(0.96, 0.96, 0.96),
-                BackgroundToken::Tertiary => rgbf(0.94, 0.94, 0.94),
+                BackgroundToken::Primary => rgbf(245.0 / 255.0, 245.0 / 255.0, 245.0 / 255.0),
+                BackgroundToken::Secondary => rgbf(1.0, 1.0, 1.0),
+                BackgroundToken::Tertiary => rgbf(240.0 / 255.0, 240.0 / 255.0, 240.0 / 255.0),
             },
             ThemeMode::Dark => match token {
                 BackgroundToken::Primary => rgbf(0.0, 0.0, 0.0),
-                BackgroundToken::Secondary => rgbf(0.04, 0.04, 0.04),
-                BackgroundToken::Tertiary => rgbf(0.10, 0.10, 0.10),
+                BackgroundToken::Secondary => rgbf(17.0 / 255.0, 17.0 / 255.0, 17.0 / 255.0),
+                BackgroundToken::Tertiary => rgbf(26.0 / 255.0, 26.0 / 255.0, 26.0 / 255.0),
             },
         })
     }
@@ -181,12 +183,12 @@ impl OpenCoreTheme {
     pub fn border_token(&self, token: BorderToken) -> Hsla {
         rgba_to_hsla(match self.mode {
             ThemeMode::Light => match token {
-                BorderToken::Default => rgbf(0.90, 0.90, 0.90),
-                BorderToken::Strong => rgbf(0.83, 0.83, 0.83),
+                BorderToken::Default => rgbf(232.0 / 255.0, 232.0 / 255.0, 232.0 / 255.0),
+                BorderToken::Strong => rgbf(204.0 / 255.0, 204.0 / 255.0, 204.0 / 255.0),
             },
             ThemeMode::Dark => match token {
-                BorderToken::Default => rgbf(0.15, 0.15, 0.15),
-                BorderToken::Strong => rgbf(0.25, 0.25, 0.25),
+                BorderToken::Default => rgbf(34.0 / 255.0, 34.0 / 255.0, 34.0 / 255.0),
+                BorderToken::Strong => rgbf(51.0 / 255.0, 51.0 / 255.0, 51.0 / 255.0),
             },
         })
     }
@@ -231,6 +233,8 @@ const SPACING: SpacingScale = SpacingScale {
     md: 16,
     lg: 24,
     xl: 32,
+    xxl: 48,
+    xxxl: 64,
 };
 
 const LABEL: LegacyTypeRole = LegacyTypeRole {
@@ -272,10 +276,41 @@ mod tests {
     }
 
     #[test]
+    fn nothing_dark_page_is_oled_black() {
+        let theme = OpenCoreTheme::resolve(ThemeMode::Dark);
+        assert_eq!(
+            theme.surface(BackgroundToken::Primary),
+            rgba_to_hsla(rgbf(0.0, 0.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn nothing_light_page_is_off_white() {
+        let theme = OpenCoreTheme::resolve(ThemeMode::Light);
+        // #F5F5F5
+        assert_eq!(
+            theme.surface(BackgroundToken::Primary),
+            rgba_to_hsla(rgbf(245.0 / 255.0, 245.0 / 255.0, 245.0 / 255.0))
+        );
+    }
+
+    #[test]
+    fn nothing_dark_text_primary_near_e8() {
+        let theme = OpenCoreTheme::resolve(ThemeMode::Dark);
+        assert_eq!(
+            theme.foreground(ForegroundToken::Primary),
+            rgba_to_hsla(rgbf(232.0 / 255.0, 232.0 / 255.0, 232.0 / 255.0))
+        );
+    }
+
+    #[test]
     fn light_theme_uses_light_background() {
         let theme = OpenCoreTheme::resolve(ThemeMode::Light);
         let bg = theme.surface(BackgroundToken::Primary);
-        assert_eq!(bg, rgba_to_hsla(rgbf(0.98, 0.98, 0.98)));
+        assert_eq!(
+            bg,
+            rgba_to_hsla(rgbf(245.0 / 255.0, 245.0 / 255.0, 245.0 / 255.0))
+        );
     }
 
     #[test]

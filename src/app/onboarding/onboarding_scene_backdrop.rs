@@ -1,6 +1,4 @@
-//! Animated scene backdrop — subtle dot grid.
-
-use std::time::Instant;
+//! Static scene backdrop — subtle dot grid.
 
 use gpui::{Bounds, Hsla, Pixels};
 
@@ -11,23 +9,11 @@ use super::onboarding_draw::{Painter, Point2, Size2};
 #[derive(Debug, Clone, Copy)]
 pub struct SceneBackdrop {
     theme: OpenCoreTheme,
-    started_at: Instant,
-    now: Instant,
 }
 
 impl SceneBackdrop {
-    pub fn new(theme: OpenCoreTheme, started_at: Instant, now: Instant) -> Self {
-        Self {
-            theme,
-            started_at,
-            now,
-        }
-    }
-
-    fn elapsed(&self) -> f32 {
-        self.now
-            .saturating_duration_since(self.started_at)
-            .as_secs_f32()
+    pub fn new(theme: OpenCoreTheme) -> Self {
+        Self { theme }
     }
 
     pub fn paint(&self, painter: &mut Painter<'_>, bounds: Bounds<Pixels>) {
@@ -42,9 +28,13 @@ impl SceneBackdrop {
             origin_x,
             origin_y,
             dot_color,
-            self.elapsed(),
         );
     }
+}
+
+/// Grid horizontal offset — intentionally static (no per-frame sin) for backdrop perf.
+fn grid_drift(_t: f32) -> f32 {
+    0.0
 }
 
 fn draw_dot_grid(
@@ -53,10 +43,9 @@ fn draw_dot_grid(
     origin_x: f32,
     origin_y: f32,
     color: Hsla,
-    t: f32,
 ) {
     let spacing = 28.0;
-    let drift = (t * 0.08).sin() * 2.0;
+    let drift = grid_drift(0.0);
     let cols = (size.width / spacing).ceil() as i32 + 1;
     let rows = (size.height / spacing).ceil() as i32 + 1;
 
@@ -90,4 +79,14 @@ fn edge_fade(x: f32, y: f32, size: Size2) -> f32 {
     let ny = (y / size.height - 0.5).abs() * 2.0;
     let edge = nx.max(ny);
     (1.0 - (edge - 0.55).max(0.0) * 2.2).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::grid_drift;
+
+    #[test]
+    fn backdrop_drift_is_stable_across_time() {
+        assert_eq!(grid_drift(0.0), grid_drift(10.0));
+    }
 }

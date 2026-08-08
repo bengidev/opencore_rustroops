@@ -86,9 +86,346 @@ impl GalaxyPalette {
     }
 }
 
+#[derive(Debug, Clone)]
+struct DiscParticle {
+    r: f32,
+    theta0: f32,
+    energy: f32,
+    phase: f32,
+    shimmer_phase: f32,
+    pulse_phase: f32,
+    base_colour: Rgba,
+    has_highlight: bool,
+}
+
+#[derive(Debug, Clone)]
+struct HaloParticle {
+    seed: f32,
+    radial: f32,
+    jitter_x: f32,
+    jitter_y: f32,
+    rotation_rate: f32,
+    angle_offset: f32,
+    phase: f32,
+}
+
+#[derive(Debug, Clone)]
+struct StarfieldParticle {
+    seed: f32,
+    x: f32,
+    y: f32,
+}
+
+#[derive(Debug, Clone)]
+struct GlobularParticle {
+    seed: f32,
+    angle_offset: f32,
+    orbit_radius: f32,
+    plane: f32,
+    phase: f32,
+    omega: f32,
+}
+
+#[derive(Debug, Clone)]
+struct ArmSatelliteParticle {
+    r: f32,
+    arm_index: f32,
+    arm_jitter: f32,
+    omega: f32,
+    phase: f32,
+    base_colour: Rgba,
+}
+
+#[derive(Debug, Clone)]
+struct BulgeParticle {
+    nx: f32,
+    ny: f32,
+    density: f32,
+    phase: f32,
+    shimmer_phase: f32,
+}
+
+#[derive(Debug, Clone)]
+struct NucleusParticle {
+    nx: f32,
+    ny: f32,
+    density: f32,
+    phase: f32,
+    shimmer_phase: f32,
+}
+
+/// Baked galaxy particle placements — rejection sampling runs once at bake time.
+#[derive(Debug, Clone)]
+pub struct GalaxyParticleCache {
+    theme: OpenCoreTheme,
+    disc: Vec<DiscParticle>,
+    halo: Vec<HaloParticle>,
+    starfield: Vec<StarfieldParticle>,
+    globular: Vec<GlobularParticle>,
+    satellites: Vec<ArmSatelliteParticle>,
+    bulge: Vec<BulgeParticle>,
+    nucleus: Vec<NucleusParticle>,
+}
+
+impl GalaxyParticleCache {
+    pub fn bake(theme: OpenCoreTheme) -> Self {
+        let pal = GalaxyPalette::from_theme(&theme);
+        Self {
+            theme,
+            disc: bake_disc(&pal),
+            halo: bake_halo(),
+            starfield: bake_starfield(),
+            globular: bake_globular(),
+            satellites: bake_arm_satellites(&pal),
+            bulge: bake_bulge(),
+            nucleus: bake_nucleus(),
+        }
+    }
+
+    pub fn theme(&self) -> OpenCoreTheme {
+        self.theme
+    }
+}
+
+#[cfg(test)]
+impl GalaxyParticleCache {
+    fn disc_len(&self) -> usize {
+        self.disc.len()
+    }
+
+    fn halo_len(&self) -> usize {
+        self.halo.len()
+    }
+
+    fn fingerprint(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        match self.theme.mode {
+            crate::shared::theme::ThemeMode::Dark => 0u8.hash(&mut hasher),
+            crate::shared::theme::ThemeMode::Light => 1u8.hash(&mut hasher),
+        }
+        for particle in self.disc.iter().take(32) {
+            particle.r.to_bits().hash(&mut hasher);
+            particle.base_colour.r.to_bits().hash(&mut hasher);
+            particle.base_colour.g.to_bits().hash(&mut hasher);
+            particle.base_colour.b.to_bits().hash(&mut hasher);
+        }
+        for particle in self.halo.iter().take(16) {
+            particle.seed.to_bits().hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+}
+
+fn bake_disc(pal: &GalaxyPalette) -> Vec<DiscParticle> {
+    let t = 0.0;
+    let mut disc = Vec::with_capacity(DISC_STAR_COUNT);
+    let mut placed = 0usize;
+    let mut attempt = 0usize;
+    // Rejection sampling may need many tries to fill the disc; cap avoids infinite loops.
+    let max_attempts = DISC_STAR_COUNT * 24;
+
+    while placed < DISC_STAR_COUNT && attempt < max_attempts {
+        let seed = 2_400.0 + attempt as f32;
+        let nx = noise(seed, 3.0) * 2.0 - 1.0;
+        let ny = noise(seed, 9.0) * 2.0 - 1.0;
+        let r = (nx * nx + ny * ny).sqrt();
+
+        if !(0.04..=1.0).contains(&r) {
+            attempt += 1;
+            continue;
+        }
+
+        let (density, arm_distance) = arm_density(nx, ny, t);
+        if noise(seed, 15.0) > density {
+            attempt += 1;
+            continue;
+        }
+
+        let energy = (density * (1.0 - arm_distance * 0.4)).clamp(0.0, 1.0);
+
+        let base_colour = if energy > 0.7 {
+            let hii_blend = noise(seed, 97.0);
+            if hii_blend > 0.85 {
+                blend(pal.arm_young, pal.hii_region, (hii_blend - 0.85) * 6.67)
+            } else {
+                pal.arm_young
+            }
+        } else if energy > 0.3 {
+            let interm = (energy - 0.3) / 0.4;
+            blend(pal.arm_old, pal.arm_young, interm)
+        } else if arm_distance < 0.2 {
+            pal.dust
+        } else {
+            blend(pal.arm_old, pal.dust, 0.3)
+        };
+
+        let theta0 = ny.atan2(nx);
+        disc.push(DiscParticle {
+            r,
+            theta0,
+            energy,
+            phase: noise(seed, 53.0) * std::f32::consts::TAU,
+            shimmer_phase: noise(seed, 71.0) * std::f32::consts::TAU,
+            pulse_phase: noise(seed, 89.0) * std::f32::consts::TAU,
+            base_colour,
+            has_highlight: energy > 0.55,
+        });
+
+        placed += 1;
+        attempt += 1;
+    }
+
+    disc
+}
+
+fn bake_halo() -> Vec<HaloParticle> {
+    let mut halo = Vec::with_capacity(HALO_STAR_COUNT);
+    for i in 0..HALO_STAR_COUNT {
+        let seed = 2_900.0 + i as f32;
+        halo.push(HaloParticle {
+            seed,
+            radial: 0.92 + noise(seed, 3.0).powf(0.65) * 0.55,
+            jitter_x: (noise(seed, 29.0) - 0.5) * 12.0,
+            jitter_y: (noise(seed, 37.0) - 0.5) * 9.0,
+            rotation_rate: 0.04 + noise(seed, 19.0) * 0.03,
+            angle_offset: noise(seed, 11.0) * std::f32::consts::TAU,
+            phase: noise(seed, 47.0) * std::f32::consts::TAU,
+        });
+    }
+    halo
+}
+
+fn bake_starfield() -> Vec<StarfieldParticle> {
+    let mut starfield = Vec::with_capacity(STARFIELD_COUNT);
+    for i in 0..STARFIELD_COUNT {
+        let seed = 13_700.0 + i as f32;
+        let x = noise(seed, 3.0) * LOGICAL_SIZE.width;
+        let y = noise(seed, 7.0) * LOGICAL_SIZE.height;
+
+        let dx = x - LOGICAL_SIZE.width * 0.5;
+        let dy = (y - LOGICAL_SIZE.height * 0.5) / DISC_TILT;
+        if (dx * dx + dy * dy).sqrt() < DISC_RADIUS * 0.65 {
+            continue;
+        }
+
+        starfield.push(StarfieldParticle { seed, x, y });
+    }
+    starfield
+}
+
+fn bake_globular() -> Vec<GlobularParticle> {
+    let mut globular = Vec::with_capacity(GLOBULAR_CLUSTER_COUNT);
+    for i in 0..GLOBULAR_CLUSTER_COUNT {
+        let seed = 11_200.0 + i as f32;
+        globular.push(GlobularParticle {
+            seed,
+            angle_offset: noise(seed, 13.0) * std::f32::consts::TAU,
+            orbit_radius: DISC_RADIUS * (0.35 + noise(seed, 17.0) * 0.55),
+            plane: 0.35 + noise(seed, 31.0) * 0.55,
+            phase: noise(seed, 53.0) * std::f32::consts::TAU,
+            omega: 0.10 + noise(seed, 23.0) * 0.16,
+        });
+    }
+    globular
+}
+
+fn bake_arm_satellites(pal: &GalaxyPalette) -> Vec<ArmSatelliteParticle> {
+    let warm = pal.arm_young;
+    let cool = pal.hii_region;
+    let mut satellites = Vec::with_capacity(ARM_SATELLITE_COUNT);
+    let mut placed = 0usize;
+    let mut attempt = 0usize;
+    let max_attempts = ARM_SATELLITE_COUNT * 18;
+
+    while placed < ARM_SATELLITE_COUNT && attempt < max_attempts {
+        let seed = 5_500.0 + attempt as f32;
+        let r = 0.18 + noise(seed, 3.0).powf(0.8) * 0.78;
+        let arm_index = (noise(seed, 7.0) * ARM_COUNT as f32).floor();
+        let arm_jitter = (noise(seed, 11.0) - 0.5) * ARM_WIDTH * 0.6;
+        let omega = 0.18 / (0.40 + r);
+
+        let base_colour = if noise(seed, 83.0) > 0.75 { cool } else { warm };
+        satellites.push(ArmSatelliteParticle {
+            r,
+            arm_index,
+            arm_jitter,
+            omega,
+            phase: noise(seed, 29.0) * std::f32::consts::TAU,
+            base_colour,
+        });
+
+        placed += 1;
+        attempt += 1;
+    }
+
+    satellites
+}
+
+fn bake_bulge() -> Vec<BulgeParticle> {
+    let mut bulge = Vec::with_capacity(BULGE_BLOCK_COUNT);
+    let mut placed = 0usize;
+    let mut attempt = 0usize;
+    let max_attempts = BULGE_BLOCK_COUNT * 16;
+
+    while placed < BULGE_BLOCK_COUNT && attempt < max_attempts {
+        let seed = 6_200.0 + attempt as f32;
+        let nx = noise(seed, 3.0) * 2.0 - 1.0;
+        let ny = noise(seed, 9.0) * 2.0 - 1.0;
+        let density = gaussian2d(nx, ny, 0.30, 0.24);
+
+        if noise(seed, 15.0) > density {
+            attempt += 1;
+            continue;
+        }
+
+        bulge.push(BulgeParticle {
+            nx,
+            ny,
+            density,
+            phase: noise(seed, 53.0) * std::f32::consts::TAU,
+            shimmer_phase: noise(seed, 71.0) * std::f32::consts::TAU,
+        });
+
+        placed += 1;
+        attempt += 1;
+    }
+
+    bulge
+}
+
+fn bake_nucleus() -> Vec<NucleusParticle> {
+    let mut nucleus = Vec::with_capacity(NUCLEUS_BLOCK_COUNT);
+    let mut placed = 0usize;
+    let mut attempt = 0usize;
+    let max_attempts = NUCLEUS_BLOCK_COUNT * 16;
+
+    while placed < NUCLEUS_BLOCK_COUNT && attempt < max_attempts {
+        let seed = 7_700.0 + attempt as f32;
+        let nx = noise(seed, 3.0) * 2.0 - 1.0;
+        let ny = noise(seed, 9.0) * 2.0 - 1.0;
+        let density = gaussian2d(nx, ny, 0.16, 0.14);
+
+        if noise(seed, 15.0) < density {
+            nucleus.push(NucleusParticle {
+                nx,
+                ny,
+                density,
+                phase: noise(seed, 53.0) * std::f32::consts::TAU,
+                shimmer_phase: noise(seed, 71.0) * std::f32::consts::TAU,
+            });
+            placed += 1;
+        }
+        attempt += 1;
+    }
+
+    nucleus
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct GalaxyOrb {
-    theme: OpenCoreTheme,
     started_at: Instant,
     now: Instant,
     speed_multiplier: f32,
@@ -97,14 +434,12 @@ pub struct GalaxyOrb {
 
 impl GalaxyOrb {
     pub fn with_dynamics(
-        theme: OpenCoreTheme,
         started_at: Instant,
         now: Instant,
         speed_multiplier: f32,
         zoom: f32,
     ) -> Self {
         Self {
-            theme,
             started_at,
             now,
             speed_multiplier: speed_multiplier.clamp(0.0, SPEED_CLAMP),
@@ -118,9 +453,14 @@ impl GalaxyOrb {
             .as_secs_f32()
     }
 
-    pub fn paint(&self, painter: &mut Painter<'_>, bounds: Bounds<Pixels>) {
+    pub fn paint(
+        &self,
+        cache: &GalaxyParticleCache,
+        painter: &mut Painter<'_>,
+        bounds: Bounds<Pixels>,
+    ) {
         let t = self.elapsed_seconds() * self.speed_multiplier;
-        let pal = GalaxyPalette::from_theme(&self.theme);
+        let pal = GalaxyPalette::from_theme(&cache.theme);
         let width: f32 = bounds.size.width.into();
         let height: f32 = bounds.size.height.into();
         let origin_x: f32 = bounds.origin.x.into();
@@ -135,36 +475,28 @@ impl GalaxyOrb {
             x: translate.x + p.x * scale,
             y: translate.y + p.y * scale,
         };
-        draw_starfield(painter, &pal, t, scale, project);
-        draw_galactic_halo(painter, &pal, t, scale, project);
-        draw_jet(painter, &pal, t, scale, project);
-        draw_globular_clusters(painter, &pal, t, scale, project);
-        draw_disc(painter, &pal, t, scale, project);
-        draw_arm_satellites(painter, &pal, t, scale, project);
-        draw_bulge(painter, &pal, t, scale, project);
-        draw_nucleus(painter, &pal, t, scale, project);
-        draw_scanline(painter, &pal, t, scale, project);
+        paint_starfield(painter, &pal, cache, t, scale, &project);
+        paint_galactic_halo(painter, &pal, cache, t, scale, &project);
+        paint_jet(painter, &pal, t, scale, &project);
+        paint_globular_clusters(painter, &pal, cache, t, scale, &project);
+        paint_disc(painter, &pal, cache, t, scale, &project);
+        paint_arm_satellites(painter, &pal, cache, t, scale, &project);
+        paint_bulge(painter, &pal, cache, t, scale, &project);
+        paint_nucleus(painter, &pal, cache, t, scale, &project);
+        paint_scanline(painter, &pal, t, scale, &project);
     }
 }
 
-fn draw_starfield(
+fn paint_starfield(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
+    cache: &GalaxyParticleCache,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
-    for i in 0..STARFIELD_COUNT {
-        let seed = 13_700.0 + i as f32;
-        let x = noise(seed, 3.0) * LOGICAL_SIZE.width;
-        let y = noise(seed, 7.0) * LOGICAL_SIZE.height;
-
-        let dx = x - LOGICAL_SIZE.width * 0.5;
-        let dy = (y - LOGICAL_SIZE.height * 0.5) / DISC_TILT;
-        if (dx * dx + dy * dy).sqrt() < DISC_RADIUS * 0.65 {
-            continue;
-        }
-
+    for particle in &cache.starfield {
+        let seed = particle.seed;
         let phase = noise(seed, 19.0) * std::f32::consts::TAU;
         let twinkle = ((t * 1.2 + phase).sin() * 0.5 + 0.5).powf(1.4);
         let alpha = (0.05 + twinkle * 0.40).clamp(0.0, 1.0);
@@ -172,8 +504,8 @@ fn draw_starfield(
         let color = pal.starfield;
 
         let p = project(Point2 {
-            x: snap(x),
-            y: snap(y),
+            x: snap(particle.x),
+            y: snap(particle.y),
         });
         painter.fill_rectangle(
             Point2 {
@@ -189,12 +521,13 @@ fn draw_starfield(
     }
 }
 
-fn draw_galactic_halo(
+fn paint_galactic_halo(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
+    cache: &GalaxyParticleCache,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
     let cool = pal.halo;
     let center = Point2 {
@@ -202,27 +535,21 @@ fn draw_galactic_halo(
         y: LOGICAL_SIZE.height * 0.5,
     };
 
-    for i in 0..HALO_STAR_COUNT {
-        let seed = 2_900.0 + i as f32;
-        let radial = 0.92 + noise(seed, 3.0).powf(0.65) * 0.55;
-        let angle =
-            noise(seed, 11.0) * std::f32::consts::TAU + t * (0.04 + noise(seed, 19.0) * 0.03);
-
-        let jitter_x = (noise(seed, 29.0) - 0.5) * 12.0;
-        let jitter_y = (noise(seed, 37.0) - 0.5) * 9.0;
+    for particle in &cache.halo {
+        let seed = particle.seed;
+        let angle = particle.angle_offset + t * particle.rotation_rate;
 
         let p = Point2 {
-            x: center.x + angle.cos() * DISC_RADIUS * radial + jitter_x,
-            y: center.y + angle.sin() * DISC_RADIUS * radial * DISC_TILT + jitter_y,
+            x: center.x + angle.cos() * DISC_RADIUS * particle.radial + particle.jitter_x,
+            y: center.y
+                + angle.sin() * DISC_RADIUS * particle.radial * DISC_TILT
+                + particle.jitter_y,
         };
 
-        let phase = noise(seed, 47.0) * std::f32::consts::TAU;
-        let twinkle = ((t * 0.7 + phase).sin() * 0.5 + 0.5) * 0.18;
+        let twinkle = ((t * 0.7 + particle.phase).sin() * 0.5 + 0.5) * 0.18;
         let alpha = 0.06 + twinkle;
         let size = (1.0 + noise(seed, 53.0) * 1.6) * scale;
-
-        // Apply blue galaxy tint to outer halo (radial > 0.9)
-        let color = pal.radial_tint(cool, radial, 0.7);
+        let color = pal.radial_tint(cool, particle.radial, 0.7);
 
         let projected = project(p);
         painter.fill_rectangle(
@@ -239,12 +566,12 @@ fn draw_galactic_halo(
     }
 }
 
-fn draw_jet(
+fn paint_jet(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
     let warm = pal.nucleus;
     let cool = pal.jet;
@@ -311,38 +638,32 @@ fn draw_jet(
     }
 }
 
-fn draw_globular_clusters(
+fn paint_globular_clusters(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
+    cache: &GalaxyParticleCache,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
     let center = Point2 {
         x: LOGICAL_SIZE.width * 0.5,
         y: LOGICAL_SIZE.height * 0.5,
     };
 
-    for i in 0..GLOBULAR_CLUSTER_COUNT {
-        let seed = 11_200.0 + i as f32;
-        let angle_offset = noise(seed, 13.0) * std::f32::consts::TAU;
-        let orbit_radius = DISC_RADIUS * (0.35 + noise(seed, 17.0) * 0.55);
-        let plane = 0.35 + noise(seed, 31.0) * 0.55;
-        let phase = noise(seed, 53.0) * std::f32::consts::TAU;
-
-        let omega = 0.10 + noise(seed, 23.0) * 0.16;
-        let angle = angle_offset + t * omega + phase;
+    for particle in &cache.globular {
+        let seed = particle.seed;
+        let angle = particle.angle_offset + t * particle.omega + particle.phase;
 
         let p = Point2 {
-            x: center.x + angle.cos() * orbit_radius,
-            y: center.y + angle.sin() * orbit_radius * plane,
+            x: center.x + angle.cos() * particle.orbit_radius,
+            y: center.y + angle.sin() * particle.orbit_radius * particle.plane,
         };
 
-        let twinkle = ((t * 1.3 + phase).sin() * 0.5 + 0.5) * 0.42;
+        let twinkle = ((t * 1.3 + particle.phase).sin() * 0.5 + 0.5) * 0.42;
         let size = (1.6 + noise(seed, 23.0) * 1.8) * scale;
 
-        // Use blue galaxy accent for globular clusters (no purple)
-        let r_norm = orbit_radius / DISC_RADIUS;
+        let r_norm = particle.orbit_radius / DISC_RADIUS;
         let colour = pal.radial_tint(pal.arm_young, r_norm, 0.8);
 
         let projected = project(p);
@@ -372,78 +693,43 @@ fn draw_globular_clusters(
     }
 }
 
-fn draw_disc(
+fn paint_disc(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
+    cache: &GalaxyParticleCache,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
     let center = Point2 {
         x: LOGICAL_SIZE.width * 0.5,
         y: LOGICAL_SIZE.height * 0.5,
     };
 
-    let mut placed = 0usize;
-    let mut attempt = 0usize;
-    let max_attempts = DISC_STAR_COUNT * 14;
-
-    while placed < DISC_STAR_COUNT && attempt < max_attempts {
-        let seed = 2_400.0 + attempt as f32;
-        let nx = noise(seed, 3.0) * 2.0 - 1.0;
-        let ny = noise(seed, 9.0) * 2.0 - 1.0;
-        let r = (nx * nx + ny * ny).sqrt();
-
-        if !(0.04..=1.0).contains(&r) {
-            attempt += 1;
-            continue;
-        }
-
-        let (density, arm_distance) = arm_density(nx, ny, t);
-        if noise(seed, 15.0) > density {
-            attempt += 1;
-            continue;
-        }
+    for particle in &cache.disc {
+        let omega = 0.18 / (0.40 + particle.r);
+        let theta = particle.theta0 - t * omega;
+        let nx = particle.r * theta.cos();
+        let ny = particle.r * theta.sin();
 
         let raw_x = center.x + nx * DISC_RADIUS;
         let raw_y = center.y + ny * DISC_RADIUS * DISC_TILT;
 
-        let phase = noise(seed, 53.0) * std::f32::consts::TAU;
-        let drift_x = (t * 0.5 + phase).sin() * 0.9;
-        let drift_y = (t * 0.4 + phase * 1.3).cos() * 0.6;
+        let drift_x = (t * 0.5 + particle.phase).sin() * 0.9;
+        let drift_y = (t * 0.4 + particle.phase * 1.3).cos() * 0.6;
 
         let block_x = snap(raw_x + drift_x);
         let block_y = snap(raw_y + drift_y);
 
-        let energy = (density * (1.0 - arm_distance * 0.4)).clamp(0.0, 1.0);
+        let colour = pal.radial_tint(particle.base_colour, particle.r, 0.45);
 
-        let base_colour = if energy > 0.7 {
-            let hii_blend = noise(seed, 97.0);
-            if hii_blend > 0.85 {
-                blend(pal.arm_young, pal.hii_region, (hii_blend - 0.85) * 6.67)
-            } else {
-                pal.arm_young
-            }
-        } else if energy > 0.3 {
-            let interm = (energy - 0.3) / 0.4;
-            blend(pal.arm_old, pal.arm_young, interm)
-        } else if arm_distance < 0.2 {
-            pal.dust
-        } else {
-            blend(pal.arm_old, pal.dust, 0.3)
-        };
-
-        // Apply radial tinting: inner disc → sun, outer disc → blue galaxy
-        let colour = pal.radial_tint(base_colour, r, 0.45);
-
-        let shimmer_phase = noise(seed, 71.0) * std::f32::consts::TAU;
-        let shimmer = ((t * 1.4 + shimmer_phase).sin() * 0.5 + 0.5) * (0.18 + energy * 0.18);
-        let base_alpha = 0.22 + energy * 0.65;
+        let shimmer = ((t * 1.4 + particle.shimmer_phase).sin() * 0.5 + 0.5)
+            * (0.18 + particle.energy * 0.18);
+        let base_alpha = 0.22 + particle.energy * 0.65;
         let alpha = (base_alpha * (0.78 + shimmer)).clamp(0.05, 1.0);
 
-        let pulse_phase = noise(seed, 89.0) * std::f32::consts::TAU;
-        let pulse = (t * 1.0 + pulse_phase).sin() * 0.5 + 0.5;
-        let block_size = (2.6 + energy * 4.2 + pulse * 0.7).clamp(2.0, 8.0);
+        let pulse = (t * 1.0 + particle.pulse_phase).sin() * 0.5 + 0.5;
+        let block_size = (2.6 + particle.energy * 4.2 + pulse * 0.7).clamp(2.0, 8.0);
 
         let projected = project(Point2 {
             x: block_x,
@@ -462,7 +748,7 @@ fn draw_disc(
             with_alpha(colour, alpha),
         );
 
-        if energy > 0.55 {
+        if particle.has_highlight {
             let hi_size = (size * 0.32).max(scale * 1.2);
             let hot = blend(
                 colour,
@@ -486,55 +772,38 @@ fn draw_disc(
                 with_alpha(hot, (alpha * 0.85).clamp(0.0, 1.0)),
             );
         }
-
-        placed += 1;
-        attempt += 1;
     }
 }
 
-fn draw_arm_satellites(
+fn paint_arm_satellites(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
+    cache: &GalaxyParticleCache,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
-    let warm = pal.arm_young;
-    let cool = pal.hii_region;
     let center = Point2 {
         x: LOGICAL_SIZE.width * 0.5,
         y: LOGICAL_SIZE.height * 0.5,
     };
 
-    let mut placed = 0usize;
-    let mut attempt = 0usize;
-    let max_attempts = ARM_SATELLITE_COUNT * 18;
+    for particle in &cache.satellites {
+        let theta_arm = ARM_PITCH * (1.0 + particle.r * 6.0).ln()
+            + particle.arm_index * std::f32::consts::TAU / ARM_COUNT as f32
+            + particle.arm_jitter
+            - t * particle.omega;
 
-    while placed < ARM_SATELLITE_COUNT && attempt < max_attempts {
-        let seed = 5_500.0 + attempt as f32;
-        let r = 0.18 + noise(seed, 3.0).powf(0.8) * 0.78;
-        let arm_index = (noise(seed, 7.0) * ARM_COUNT as f32).floor();
-        let arm_jitter = (noise(seed, 11.0) - 0.5) * ARM_WIDTH * 0.6;
-        let omega = 0.18 / (0.40 + r);
-        let theta_arm = ARM_PITCH * (1.0 + r * 6.0).ln()
-            + arm_index * std::f32::consts::TAU / ARM_COUNT as f32
-            + arm_jitter
-            - t * omega;
-
-        let nx = r * theta_arm.cos();
-        let ny = r * theta_arm.sin();
+        let nx = particle.r * theta_arm.cos();
+        let ny = particle.r * theta_arm.sin();
 
         let raw_x = center.x + nx * DISC_RADIUS;
         let raw_y = center.y + ny * DISC_RADIUS * DISC_TILT;
 
-        let phase = noise(seed, 29.0) * std::f32::consts::TAU;
-        let twinkle = ((t * 1.3 + phase).sin() * 0.5 + 0.5) * 0.55;
-
-        let base_colour = if noise(seed, 83.0) > 0.75 { cool } else { warm };
-        // Apply blue galaxy tint to outer arm satellites
-        let colour = pal.radial_tint(base_colour, r, 0.6);
+        let twinkle = ((t * 1.3 + particle.phase).sin() * 0.5 + 0.5) * 0.55;
+        let colour = pal.radial_tint(particle.base_colour, particle.r, 0.6);
         let alpha = (0.30 + twinkle * 0.45).clamp(0.0, 1.0);
-        let size = (2.2 + (1.0 - r) * 2.0) * scale;
+        let size = (2.2 + (1.0 - particle.r) * 2.0) * scale;
 
         let projected = project(Point2 {
             x: snap(raw_x),
@@ -563,18 +832,16 @@ fn draw_arm_satellites(
             },
             with_alpha(colour, alpha),
         );
-
-        placed += 1;
-        attempt += 1;
     }
 }
 
-fn draw_bulge(
+fn paint_bulge(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
+    cache: &GalaxyParticleCache,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
     let warm = pal.bulge;
     let center = Point2 {
@@ -585,42 +852,24 @@ fn draw_bulge(
     let breath = (t * 0.6).sin() * 0.5 + 0.5;
     let breath_alpha = 0.55 + breath * 0.30;
 
-    let mut placed = 0usize;
-    let mut attempt = 0usize;
-    let max_attempts = BULGE_BLOCK_COUNT * 16;
+    for particle in &cache.bulge {
+        let r = (particle.nx * particle.nx + particle.ny * particle.ny).sqrt();
+        let drift_x = (t * 0.7 + particle.phase).sin() * 0.7;
+        let drift_y = (t * 0.5 + particle.phase * 1.3).cos() * 0.5;
 
-    while placed < BULGE_BLOCK_COUNT && attempt < max_attempts {
-        let seed = 6_200.0 + attempt as f32;
-        let nx = noise(seed, 3.0) * 2.0 - 1.0;
-        let ny = noise(seed, 9.0) * 2.0 - 1.0;
-        let density = gaussian2d(nx, ny, 0.30, 0.24);
-
-        if noise(seed, 15.0) > density {
-            attempt += 1;
-            continue;
-        }
-
-        let r = (nx * nx + ny * ny).sqrt();
-        let phase = noise(seed, 53.0) * std::f32::consts::TAU;
-        let drift_x = (t * 0.7 + phase).sin() * 0.7;
-        let drift_y = (t * 0.5 + phase * 1.3).cos() * 0.5;
-
-        let raw_x = center.x + nx * 38.0 + drift_x;
-        let raw_y = center.y + ny * 32.0 + drift_y;
+        let raw_x = center.x + particle.nx * 38.0 + drift_x;
+        let raw_y = center.y + particle.ny * 32.0 + drift_y;
 
         let block_x = snap(raw_x);
         let block_y = snap(raw_y);
 
-        // Apply sun accent tint to center orb
-        let r_norm = r / 0.38; // Normalize to 0-1 range
+        let r_norm = r / 0.38;
         let tinted = pal.radial_tint(warm, r_norm, 0.7);
-
         let hot = blend(tinted, Rgba::WHITE, (1.0 - r * 1.3).clamp(0.0, 0.6));
 
-        let shimmer_phase = noise(seed, 71.0) * std::f32::consts::TAU;
-        let shimmer = (t * 1.6 + shimmer_phase).sin() * 0.5 + 0.5;
-        let alpha = (breath_alpha * density * (0.7 + shimmer * 0.3)).clamp(0.06, 0.95);
-        let size = (2.4 + density * 3.4) * scale;
+        let shimmer = (t * 1.6 + particle.shimmer_phase).sin() * 0.5 + 0.5;
+        let alpha = (breath_alpha * particle.density * (0.7 + shimmer * 0.3)).clamp(0.06, 0.95);
+        let size = (2.4 + particle.density * 3.4) * scale;
 
         let projected = project(Point2 {
             x: block_x,
@@ -637,20 +886,18 @@ fn draw_bulge(
             },
             with_alpha(hot, alpha),
         );
-        placed += 1;
-        attempt += 1;
     }
 }
 
-fn draw_nucleus(
+fn paint_nucleus(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
+    cache: &GalaxyParticleCache,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
     let warm = pal.nucleus;
-    // Apply strong sun accent to the very center
     let tinted = pal.radial_tint(warm, 0.1, 0.85);
     let hot = blend(
         tinted,
@@ -670,56 +917,41 @@ fn draw_nucleus(
     let breath = (t * 0.85).sin() * 0.5 + 0.5;
     let breath_alpha = 0.65 + breath * 0.30;
 
-    let mut placed = 0usize;
-    let mut attempt = 0usize;
-    let max_attempts = NUCLEUS_BLOCK_COUNT * 16;
+    for particle in &cache.nucleus {
+        let drift_x = (t * 0.9 + particle.phase).sin() * 0.6;
+        let drift_y = (t * 0.7 + particle.phase * 1.3).cos() * 0.5;
 
-    while placed < NUCLEUS_BLOCK_COUNT && attempt < max_attempts {
-        let seed = 7_700.0 + attempt as f32;
-        let nx = noise(seed, 3.0) * 2.0 - 1.0;
-        let ny = noise(seed, 9.0) * 2.0 - 1.0;
-        let density = gaussian2d(nx, ny, 0.16, 0.14);
+        let raw_x = center.x + particle.nx * 18.0 + drift_x;
+        let raw_y = center.y + particle.ny * 14.0 + drift_y;
 
-        if noise(seed, 15.0) < density {
-            let phase = noise(seed, 53.0) * std::f32::consts::TAU;
-            let drift_x = (t * 0.9 + phase).sin() * 0.6;
-            let drift_y = (t * 0.7 + phase * 1.3).cos() * 0.5;
+        let shimmer = (t * 2.4 + particle.shimmer_phase).sin() * 0.5 + 0.5;
+        let alpha = (breath_alpha * (0.7 + shimmer * 0.3)).clamp(0.2, 1.0);
+        let size = (2.4 + particle.density * 3.0) * scale;
 
-            let raw_x = center.x + nx * 18.0 + drift_x;
-            let raw_y = center.y + ny * 14.0 + drift_y;
-
-            let shimmer_phase = noise(seed, 71.0) * std::f32::consts::TAU;
-            let shimmer = (t * 2.4 + shimmer_phase).sin() * 0.5 + 0.5;
-            let alpha = (breath_alpha * (0.7 + shimmer * 0.3)).clamp(0.2, 1.0);
-            let size = (2.4 + density * 3.0) * scale;
-
-            let projected = project(Point2 {
-                x: snap(raw_x),
-                y: snap(raw_y),
-            });
-            painter.fill_rectangle(
-                Point2 {
-                    x: projected.x - size * 0.5,
-                    y: projected.y - size * 0.5,
-                },
-                Size2 {
-                    width: size,
-                    height: size,
-                },
-                with_alpha(hot, alpha),
-            );
-            placed += 1;
-        }
-        attempt += 1;
+        let projected = project(Point2 {
+            x: snap(raw_x),
+            y: snap(raw_y),
+        });
+        painter.fill_rectangle(
+            Point2 {
+                x: projected.x - size * 0.5,
+                y: projected.y - size * 0.5,
+            },
+            Size2 {
+                width: size,
+                height: size,
+            },
+            with_alpha(hot, alpha),
+        );
     }
 }
 
-fn draw_scanline(
+fn paint_scanline(
     painter: &mut Painter<'_>,
     pal: &GalaxyPalette,
     t: f32,
     scale: f32,
-    project: impl Fn(Point2) -> Point2,
+    project: &impl Fn(Point2) -> Point2,
 ) {
     let accent = pal.core;
 
@@ -813,6 +1045,32 @@ fn rgba_from_theme(color: ThemeRgba) -> Rgba {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::theme::ThemeMode;
+
+    #[test]
+    fn particle_cache_bake_is_deterministic_for_theme() {
+        let theme = OpenCoreTheme::resolve(ThemeMode::Dark);
+        let a = GalaxyParticleCache::bake(theme);
+        let b = GalaxyParticleCache::bake(theme);
+        assert_eq!(a.disc_len(), b.disc_len());
+        assert_eq!(a.halo_len(), b.halo_len());
+        assert_eq!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn particle_cache_disc_count_matches_target() {
+        let theme = OpenCoreTheme::resolve(ThemeMode::Dark);
+        let cache = GalaxyParticleCache::bake(theme);
+        assert_eq!(cache.disc_len(), DISC_STAR_COUNT);
+    }
+
+    #[test]
+    fn particle_cache_rebuilds_when_theme_changes() {
+        let dark = GalaxyParticleCache::bake(OpenCoreTheme::resolve(ThemeMode::Dark));
+        let light = GalaxyParticleCache::bake(OpenCoreTheme::resolve(ThemeMode::Light));
+        assert_ne!(dark.theme().mode, light.theme().mode);
+        assert_ne!(dark.fingerprint(), light.fingerprint());
+    }
 
     #[test]
     fn noise_in_unit_range() {

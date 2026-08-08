@@ -1,10 +1,13 @@
 //! Interactive onboarding UI state (animation, orb hold).
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::{App, FocusHandle, Window};
 
 use super::onboarding_dynamics::dynamics_for_progress;
+use super::onboarding_galaxy_orb::GalaxyParticleCache;
+use crate::shared::theme::OpenCoreTheme;
 
 /// Local onboarding animation state (GPU-free).
 #[derive(Debug, Clone)]
@@ -15,7 +18,10 @@ pub struct OnboardingUiState {
     pub hold_progress: f32,
     pub displayed_speed: f32,
     pub displayed_zoom: f32,
+    /// Visual press feedback for the primary CTA button.
+    pub cta_pressed: bool,
     focus_claimed: bool,
+    particle_cache: Option<Arc<GalaxyParticleCache>>,
 }
 
 impl OnboardingUiState {
@@ -29,8 +35,29 @@ impl OnboardingUiState {
             hold_progress: 0.0,
             displayed_speed: initial_speed,
             displayed_zoom: initial_zoom,
+            cta_pressed: false,
             focus_claimed: false,
+            particle_cache: None,
         }
+    }
+
+    pub fn ensure_particle_cache(&mut self, theme: OpenCoreTheme) {
+        let needs_bake = self
+            .particle_cache
+            .as_ref()
+            .map(|c| c.theme() != theme)
+            .unwrap_or(true);
+        if needs_bake {
+            self.particle_cache = Some(Arc::new(GalaxyParticleCache::bake(theme)));
+        }
+    }
+
+    pub fn particle_cache_arc(&self) -> Arc<GalaxyParticleCache> {
+        Arc::clone(
+            self.particle_cache
+                .as_ref()
+                .expect("ensure_particle_cache must run before paint"),
+        )
     }
 
     /// Requests keyboard focus once per onboarding session.
@@ -64,6 +91,16 @@ impl OnboardingUiState {
         self.is_holding = false;
     }
 
+    /// Marks the primary CTA as pressed (mouse down) for visual feedback.
+    pub fn cta_pressed(&mut self) {
+        self.cta_pressed = true;
+    }
+
+    /// Clears the CTA pressed state (mouse up).
+    pub fn cta_released(&mut self) {
+        self.cta_pressed = false;
+    }
+
     fn advance_orb_progress(&mut self, dt: f32) {
         const HOLD_RAMP_PER_SEC: f32 = 0.6;
         const RELEASE_RAMP_PER_SEC: f32 = 0.9;
@@ -93,5 +130,21 @@ mod tests {
         let now = state.now + std::time::Duration::from_millis(200);
         state.tick(now);
         assert!(state.hold_progress > 0.0);
+    }
+
+    #[test]
+    fn ensure_particle_cache_bakes_once_per_theme() {
+        use crate::shared::theme::{OpenCoreTheme, ThemeMode};
+
+        let mut state = OnboardingUiState::new();
+        let dark = OpenCoreTheme::resolve(ThemeMode::Dark);
+        state.ensure_particle_cache(dark);
+        let first = state.particle_cache_arc();
+        state.ensure_particle_cache(dark);
+        assert!(Arc::ptr_eq(&first, &state.particle_cache_arc()));
+
+        let light = OpenCoreTheme::resolve(ThemeMode::Light);
+        state.ensure_particle_cache(light);
+        assert_ne!(state.particle_cache_arc().theme(), dark);
     }
 }
