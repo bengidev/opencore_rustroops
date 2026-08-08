@@ -33,3 +33,9 @@ Desktop.ini
 *.log
 coverage/
 *.profraw
+
+# Local agent / tooling
+docs/superpowers
+docs/superpowers/*
+.impeccable
+.superpowers
