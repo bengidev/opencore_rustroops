@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gpui::{
     App, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, Pixels, Point, Styled, Window, div, px,
+    MouseUpEvent, ParentElement, Pixels, Point, SharedString, Styled, Window, div, px,
 };
 
 use crate::app::gpui_callbacks::WindowAppHandler;
@@ -123,6 +123,7 @@ pub fn dev_reset_fab(
         .rounded(radius)
         .bg(surface)
         .text_size(px(11.))
+        .font_family(SharedString::from("Menlo"))
         .text_color(foreground)
         .cursor_pointer()
         .opacity(if state.dragging { 0.7 } else { 1.0 })
