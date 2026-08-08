@@ -1,5 +1,5 @@
 //! **Facade** for the GPU runtime: boots preferences, opens one window, and routes
-//! [`super::ActiveScreen`] without closing between onboarding and shell.
+//! [`super::ActiveScreen`] without closing between onboarding and home.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -17,11 +17,11 @@ use crate::shared::theme::{OpenCoreTheme, ThemeMode};
 
 use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
+use super::home::home_screen;
 use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
-use super::shell::{ShellCallbacks, shell_screen};
 use super::window_placement::center_window;
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
@@ -123,6 +123,11 @@ impl OpenCoreApp {
         }
     }
 
+    /// Resets persisted preferences to defaults and routes back to onboarding.
+    ///
+    /// Called by the debug reset overlay (Task 4). Retained while the overlay
+    /// is being wired up.
+    #[allow(dead_code)]
     fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.state.reset_persistent_data(self.store.as_ref()) {
             Ok(()) => {
@@ -242,24 +247,7 @@ impl Render for OpenCoreApp {
                     onboarding_screen(theme, ui, callbacks, persistence_error),
                 ))
             }
-            ActiveScreen::Home => {
-                let view = cx.entity().downgrade();
-                let mut callbacks = ShellCallbacks::new();
-                #[cfg(debug_assertions)]
-                {
-                    callbacks.on_reset_dev = Some(Rc::new({
-                        let view = view.clone();
-                        move |window: &mut Window, cx: &mut App| {
-                            let _ = view.update(cx, |app, cx| {
-                                app.reset_dev_data(window, cx);
-                            });
-                        }
-                    }));
-                }
-                div()
-                    .size_full()
-                    .child(shell_screen(self.theme(), callbacks))
-            }
+            ActiveScreen::Home => div().size_full().child(home_screen(self.theme())),
         }
     }
 }

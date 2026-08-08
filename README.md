@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/bengidev/opencore_rustroops/actions/workflows/ci.yml/badge.svg)](https://github.com/bengidev/opencore_rustroops/actions/workflows/ci.yml)
 
-A desktop application that integrates frontier AI capabilities to help users complete tasks on their machine. The app combines three workspaces—editor, chat, and terminal—so you can edit content, converse with AI, and run commands in one environment.
+A desktop application that integrates frontier AI capabilities to help users complete tasks on their machine. The app boots into a Nothing-styled Hello World home screen after onboarding, with a roadmap toward integrated editor, chat, and terminal workspaces.
 
 ## Background
 
@@ -10,15 +10,16 @@ Modern AI tools are powerful but fragmented: you often switch between an editor,
 
 ## Features
 
-The application is organized around three main modes:
+The app currently boots into a **Hello World home screen** (Nothing-styled) after completing a galaxy-orb onboarding flow. This is the foundation for the planned workspace modes:
 
-| Mode | Purpose |
-|------|---------|
-| **Editor** | Code and content editing with AI-assisted workflows |
-| **Chat** | Conversational AI for questions, planning, and task guidance |
-| **Terminal** | Command execution and shell interaction alongside AI support |
+| Mode | Status | Purpose |
+|------|--------|---------|
+| **Home** | ✅ Current | Nothing-styled Hello World landing screen |
+| **Editor** | 🗺 Roadmap | Code and content editing with AI-assisted workflows |
+| **Chat** | 🗺 Roadmap | Conversational AI for questions, planning, and task guidance |
+| **Terminal** | 🗺 Roadmap | Command execution and shell interaction alongside AI support |
 
-Together, these modes let you move between writing, asking, and doing without leaving the app.
+Together, the planned modes will let you move between writing, asking, and doing without leaving the app.
 
 ## Tech Stack
 
@@ -26,7 +27,7 @@ Together, these modes let you move between writing, asking, and doing without le
 - **Desktop UI:** [GPUI](https://github.com/zed-industries/zed) with [gpui-component](https://github.com/longbridge/gpui-component)
 - **Build:** Cargo
 
-The project boots a native GPUI desktop window: an onboarding flow (galaxy orb, theme toggle) routes into a three-zone shell (Editor, Chat, Terminal). On macOS, the window is centered on screen at launch and after onboarding completes.
+The project boots a native GPUI desktop window: an onboarding flow (galaxy orb, theme toggle) routes into a Nothing-styled Hello World home screen. On macOS, the window is centered on screen at launch and after onboarding completes.
 
 ## Prerequisites
 
@@ -73,7 +74,7 @@ opencore_rustroops/
 ├── Cargo.toml
 ├── src/
 │   ├── main.rs           # Entry point
-│   ├── app/              # GPUI desktop app (onboarding, shell, state)
+│   ├── app/              # GPUI desktop app (onboarding, home, state)
 │   └── shared/           # Preferences, theme tokens
 └── README.md
 ```
