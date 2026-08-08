@@ -1,10 +1,13 @@
 //! Interactive onboarding UI state (animation, orb hold).
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::{App, FocusHandle, Window};
 
 use super::onboarding_dynamics::dynamics_for_progress;
+use super::onboarding_galaxy_orb::GalaxyParticleCache;
+use crate::shared::theme::OpenCoreTheme;
 
 /// Local onboarding animation state (GPU-free).
 #[derive(Debug, Clone)]
@@ -18,6 +21,7 @@ pub struct OnboardingUiState {
     /// Visual press feedback for the primary CTA button.
     pub cta_pressed: bool,
     focus_claimed: bool,
+    particle_cache: Option<Arc<GalaxyParticleCache>>,
 }
 
 impl OnboardingUiState {
@@ -33,7 +37,27 @@ impl OnboardingUiState {
             displayed_zoom: initial_zoom,
             cta_pressed: false,
             focus_claimed: false,
+            particle_cache: None,
         }
+    }
+
+    pub fn ensure_particle_cache(&mut self, theme: OpenCoreTheme) {
+        let needs_bake = self
+            .particle_cache
+            .as_ref()
+            .map(|c| c.theme() != theme)
+            .unwrap_or(true);
+        if needs_bake {
+            self.particle_cache = Some(Arc::new(GalaxyParticleCache::bake(theme)));
+        }
+    }
+
+    pub fn particle_cache_arc(&self) -> Arc<GalaxyParticleCache> {
+        Arc::clone(
+            self.particle_cache
+                .as_ref()
+                .expect("ensure_particle_cache must run before paint"),
+        )
     }
 
     /// Requests keyboard focus once per onboarding session.
@@ -106,5 +130,21 @@ mod tests {
         let now = state.now + std::time::Duration::from_millis(200);
         state.tick(now);
         assert!(state.hold_progress > 0.0);
+    }
+
+    #[test]
+    fn ensure_particle_cache_bakes_once_per_theme() {
+        use crate::shared::theme::{OpenCoreTheme, ThemeMode};
+
+        let mut state = OnboardingUiState::new();
+        let dark = OpenCoreTheme::resolve(ThemeMode::Dark);
+        state.ensure_particle_cache(dark);
+        let first = state.particle_cache_arc();
+        state.ensure_particle_cache(dark);
+        assert!(Arc::ptr_eq(&first, &state.particle_cache_arc()));
+
+        let light = OpenCoreTheme::resolve(ThemeMode::Light);
+        state.ensure_particle_cache(light);
+        assert_ne!(state.particle_cache_arc().theme(), dark);
     }
 }

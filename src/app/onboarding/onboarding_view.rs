@@ -1,6 +1,8 @@
 #![allow(clippy::redundant_clone)]
 //! Onboarding view — immersive monochrome landing ported to GPUI.
 
+use std::sync::Arc;
+
 use gpui::{
     FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
     ParentElement, SharedString, Styled, canvas, div, px, relative,
@@ -13,7 +15,7 @@ use crate::shared::theme::{
 };
 
 use super::onboarding_draw::Painter;
-use super::onboarding_galaxy_orb::GalaxyOrb;
+use super::onboarding_galaxy_orb::{GalaxyOrb, GalaxyParticleCache};
 use super::onboarding_scene_backdrop::SceneBackdrop;
 use super::onboarding_theme_toggle::theme_toggle_button;
 use super::onboarding_ui_state::OnboardingUiState;
@@ -174,7 +176,6 @@ fn hero_block(
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let mono = SharedString::from("Menlo");
     let orb = GalaxyOrb::with_dynamics(
-        theme,
         ui.started_at,
         ui.now,
         ui.displayed_speed,
@@ -183,6 +184,7 @@ fn hero_block(
     let on_pressed = callbacks.on_orb_pressed.clone();
     let on_released = callbacks.on_orb_released.clone();
     let spacing = theme.spacing;
+    let cache = ui.particle_cache_arc();
 
     div()
         .w_full()
@@ -205,7 +207,7 @@ fn hero_block(
                         .on_mouse_up(MouseButton::Left, move |_, _, cx| {
                             on_released(cx);
                         })
-                        .child(orb_canvas(orb)),
+                        .child(orb_canvas(orb, cache)),
                 )
                 .child(div().h(px(spacing.lg as f32)))
                 .child(
@@ -231,11 +233,11 @@ fn hero_block(
         )
 }
 
-fn orb_canvas(orb: GalaxyOrb) -> impl IntoElement {
+fn orb_canvas(orb: GalaxyOrb, cache: Arc<GalaxyParticleCache>) -> impl IntoElement {
     canvas(
         move |bounds, _, _| (bounds, orb),
         move |scene_bounds, (_, orb), window, _| {
-            orb.paint(&mut Painter::new(window), scene_bounds);
+            orb.paint(&cache, &mut Painter::new(window), scene_bounds);
         },
     )
     .w_full()
