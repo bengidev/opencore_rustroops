@@ -15,6 +15,8 @@ pub struct OnboardingUiState {
     pub hold_progress: f32,
     pub displayed_speed: f32,
     pub displayed_zoom: f32,
+    /// Visual press feedback for the primary CTA button.
+    pub cta_pressed: bool,
     focus_claimed: bool,
 }
 
@@ -29,6 +31,7 @@ impl OnboardingUiState {
             hold_progress: 0.0,
             displayed_speed: initial_speed,
             displayed_zoom: initial_zoom,
+            cta_pressed: false,
             focus_claimed: false,
         }
     }
@@ -62,6 +65,16 @@ impl OnboardingUiState {
 
     pub fn orb_released(&mut self) {
         self.is_holding = false;
+    }
+
+    /// Marks the primary CTA as pressed (mouse down) for visual feedback.
+    pub fn cta_pressed(&mut self) {
+        self.cta_pressed = true;
+    }
+
+    /// Clears the CTA pressed state (mouse up).
+    pub fn cta_released(&mut self) {
+        self.cta_pressed = false;
     }
 
     fn advance_orb_progress(&mut self, dt: f32) {

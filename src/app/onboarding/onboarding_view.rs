@@ -1,3 +1,4 @@
+#![allow(clippy::redundant_clone)]
 //! Onboarding view — immersive monochrome landing ported to GPUI.
 
 use gpui::{
@@ -5,10 +6,8 @@ use gpui::{
     ParentElement, SharedString, Styled, canvas, div, px, relative,
 };
 
-use crate::app::gpui_callbacks::WindowAppHandler;
-
 use crate::app::gpui_callbacks::AppHandler;
-
+use crate::app::gpui_callbacks::WindowAppHandler;
 use crate::shared::theme::{
     ActionToken, BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
@@ -30,6 +29,8 @@ pub struct OnboardingCallbacks {
     pub on_toggle_theme: WindowAppHandler,
     pub on_orb_pressed: AppHandler,
     pub on_orb_released: AppHandler,
+    pub on_cta_pressed: AppHandler,
+    pub on_cta_released: AppHandler,
 }
 
 /// Focusable shell for onboarding keyboard input (Enter to complete).
@@ -115,24 +116,27 @@ fn main_column(
 
     if let Some(message) = persistence_error {
         let muted = theme.foreground(ForegroundToken::Muted);
+        let mono = SharedString::from("Menlo");
         let message = SharedString::from(message);
         column = column.child(
             div()
                 .w_full()
                 .text_center()
-                .text_size(px(11.))
+                .text_size(px(TypeRole::MonoSm.size()))
+                .font_family(mono)
                 .text_color(muted)
-                .pb(px(4.))
+                .pb(px(SpacingToken::S1.value()))
                 .child(message),
         );
     }
 
-    column.child(action_row(theme, callbacks))
+    column.child(action_row(theme, ui, callbacks))
 }
 
 fn header_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let muted = theme.foreground(ForegroundToken::Muted);
+    let mono = SharedString::from("Menlo");
 
     div()
         .w_full()
@@ -151,7 +155,8 @@ fn header_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl Into
                 )
                 .child(
                     div()
-                        .text_size(px(9.))
+                        .text_size(px(TypeRole::MonoSm.size()))
+                        .font_family(mono)
                         .text_color(muted)
                         .child("LOCAL AI WORKSPACE"),
                 ),
@@ -177,6 +182,7 @@ fn hero_block(
     );
     let on_pressed = callbacks.on_orb_pressed.clone();
     let on_released = callbacks.on_orb_released.clone();
+    let spacing = theme.spacing;
 
     div()
         .w_full()
@@ -201,7 +207,7 @@ fn hero_block(
                         })
                         .child(orb_canvas(orb)),
                 )
-                .child(div().h(px(28.)))
+                .child(div().h(px(spacing.lg as f32)))
                 .child(
                     div()
                         .w_full()
@@ -210,7 +216,7 @@ fn hero_block(
                         .text_color(primary)
                         .child("Your local AI command workspace"),
                 )
-                .child(div().h(px(10.)))
+                .child(div().h(px(spacing.sm as f32)))
                 .child(
                     div()
                         .w_full()
@@ -236,36 +242,52 @@ fn orb_canvas(orb: GalaxyOrb) -> impl IntoElement {
     .h_full()
 }
 
-fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
+fn action_row(
+    theme: OpenCoreTheme,
+    ui: &OnboardingUiState,
+    callbacks: OnboardingCallbacks,
+) -> impl IntoElement {
+    let spacing = theme.spacing;
     div()
         .w_full()
         .flex()
         .items_center()
         .justify_center()
-        .pb(px(8.))
-        .child(primary_button(theme, "Enter OpenCore", callbacks.on_enter))
+        .pb(px(spacing.sm as f32))
+        .child(primary_button(theme, "Enter OpenCore", ui.cta_pressed, callbacks))
 }
 
 fn primary_button(
     theme: OpenCoreTheme,
     label: &'static str,
-    on_press: WindowAppHandler,
+    pressed: bool,
+    callbacks: OnboardingCallbacks,
 ) -> impl IntoElement {
     let bg = theme.action(ActionToken::Strong);
     let text = theme.action(ActionToken::StrongText);
     let radius = px(theme.control_radius());
+    let on_press = callbacks.on_enter.clone();
+    let on_pressed = callbacks.on_cta_pressed.clone();
+    let on_released = callbacks.on_cta_released.clone();
 
     div()
-        .px(px(28.))
+        .px(px(theme.spacing.lg as f32))
         .py(px(14.))
         .rounded(radius)
         .bg(bg)
-        .text_size(px(13.))
+        .text_size(px(TypeRole::LabelMd.size()))
         .font_weight(gpui::FontWeight::BOLD)
         .text_color(text)
         .cursor_pointer()
+        .opacity(if pressed { 0.7 } else { 1.0 })
         .child(label)
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| on_press(window, cx))
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            on_pressed(cx);
+            on_press(window, cx);
+        })
+        .on_mouse_up(MouseButton::Left, move |_, _, cx| {
+            on_released(cx);
+        })
 }
 
 #[cfg(test)]

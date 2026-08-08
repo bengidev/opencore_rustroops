@@ -88,7 +88,7 @@ impl OpenCoreApp {
 
     fn record_persistence_error(&mut self, context: &str, error: PreferencesError) {
         eprintln!("opencore: {context}: {error}");
-        self.persistence_error = Some(format!("Could not save settings ({error})"));
+        self.persistence_error = Some(format!("[ERROR: Could not save settings ({error})]"));
     }
 
     fn apply_onboarding_command(
@@ -223,12 +223,36 @@ impl OnboardingCallbacks {
                 });
             })
         };
+        let on_cta_pressed = {
+            let view = view.clone();
+            Rc::new(move |cx: &mut App| {
+                let _ = view.update(cx, |app, cx| {
+                    if let Some(ui) = app.onboarding_ui.as_mut() {
+                        ui.cta_pressed();
+                        cx.notify();
+                    }
+                });
+            })
+        };
+        let on_cta_released = {
+            let view = view.clone();
+            Rc::new(move |cx: &mut App| {
+                let _ = view.update(cx, |app, cx| {
+                    if let Some(ui) = app.onboarding_ui.as_mut() {
+                        ui.cta_released();
+                        cx.notify();
+                    }
+                });
+            })
+        };
 
         Self {
             on_enter,
             on_toggle_theme,
             on_orb_pressed,
             on_orb_released,
+            on_cta_pressed,
+            on_cta_released,
         }
     }
 }
