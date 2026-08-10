@@ -1,9 +1,6 @@
 //! Onboarding command reducer, interactive state, and view.
 
-mod onboarding_draw;
-mod onboarding_dynamics;
-mod onboarding_galaxy_orb;
-mod onboarding_scene_backdrop;
+mod ascii_galaxy;
 mod onboarding_theme_toggle;
 mod onboarding_ui_state;
 mod onboarding_view;
