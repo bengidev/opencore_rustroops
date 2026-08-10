@@ -2,8 +2,16 @@
 //!
 //! Monochrome palette ported from the reference onboarding implementation.
 
+mod nothing_gpui;
+
 use gpui::Hsla;
 use serde::{Deserialize, Serialize};
+
+pub use nothing_gpui::apply_nothing_theme;
+
+pub const ACCENT_RED: u32 = 0xD7_19_21;
+pub const SUCCESS_GREEN: u32 = 0x4A_9E_5C;
+pub const WARNING_AMBER: u32 = 0xD4_A8_43;
 
 /// User-facing theme selection persisted in [`crate::shared::preferences::AppPreferences`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,7 +215,7 @@ impl OpenCoreTheme {
     }
 
     pub fn control_radius(&self) -> f32 {
-        8.0
+        6.0
     }
 
     pub fn rgba_foreground(&self, token: ForegroundToken) -> ThemeRgba {
@@ -330,5 +338,20 @@ mod tests {
         let dark = OpenCoreTheme::resolve(ThemeMode::Dark);
         assert_eq!(light.spacing, dark.spacing);
         assert_eq!(light.label, dark.label);
+    }
+
+    #[test]
+    fn control_radius_is_six_px() {
+        let dark = OpenCoreTheme::resolve(ThemeMode::Dark);
+        let light = OpenCoreTheme::resolve(ThemeMode::Light);
+        assert_eq!(dark.control_radius(), 6.0);
+        assert_eq!(light.control_radius(), 6.0);
+    }
+
+    #[test]
+    fn nothing_status_constants_match_spec() {
+        assert_eq!(ACCENT_RED, 0xD7_19_21);
+        assert_eq!(SUCCESS_GREEN, 0x4A_9E_5C);
+        assert_eq!(WARNING_AMBER, 0xD4_A8_43);
     }
 }

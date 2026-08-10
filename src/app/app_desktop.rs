@@ -11,10 +11,9 @@ use gpui::{
 #[cfg(debug_assertions)]
 use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point};
 use gpui_component::Root;
-use gpui_component::Theme;
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
-use crate::shared::theme::{OpenCoreTheme, ThemeMode};
+use crate::shared::theme::{OpenCoreTheme, apply_nothing_theme};
 
 use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
@@ -61,7 +60,7 @@ impl OpenCoreApp {
     }
 
     fn sync_component_theme(&self, cx: &mut App) {
-        sync_gpui_component_theme(self.state.theme_mode(), cx);
+        apply_nothing_theme(self.state.theme_mode(), cx);
     }
 
     fn apply_resize_intent(&mut self, window: &mut Window, cx: &App) {
@@ -166,6 +165,7 @@ impl OnboardingCallbacks {
                 });
             })
         };
+
         Self {
             on_enter,
             on_toggle_theme,
@@ -352,16 +352,6 @@ fn window_bounds_for_state(state: &AppState, cx: &App) -> WindowBounds {
     WindowBounds::centered(size(px(width as f32), px(height as f32)), cx)
 }
 
-fn sync_gpui_component_theme(mode: ThemeMode, cx: &mut App) {
-    use gpui_component::theme::ThemeMode as ComponentThemeMode;
-
-    let component_mode = match mode {
-        ThemeMode::Light => ComponentThemeMode::Light,
-        ThemeMode::Dark => ComponentThemeMode::Dark,
-    };
-    Theme::change(component_mode, None, cx);
-}
-
 /// Boots preferences and runs the desktop event loop until the window closes.
 pub fn run_desktop() -> Result<(), AppError> {
     let store = Arc::new(FilePreferencesStore::open()?);
@@ -370,10 +360,11 @@ pub fn run_desktop() -> Result<(), AppError> {
     let initial_theme_mode = state.theme_mode();
 
     gpui_platform::application()
-        .with_assets(gpui_component_assets::Assets)
+        .with_assets(crate::shared::assets::AppAssets)
         .run(move |cx| {
             gpui_component::init(cx);
-            sync_gpui_component_theme(initial_theme_mode, cx);
+            let _ = crate::shared::assets::AppAssets.load_fonts(cx);
+            apply_nothing_theme(initial_theme_mode, cx);
 
             let store = store.clone();
             cx.spawn(async move |cx| {
