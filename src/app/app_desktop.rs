@@ -453,7 +453,9 @@ mod animation_gate_tests {
 
     #[test]
     fn onboarding_animation_gate_follows_ui_presence() {
-        assert!(should_request_onboarding_animation(&Some(OnboardingUiState::new())));
+        assert!(should_request_onboarding_animation(&Some(
+            OnboardingUiState::new()
+        )));
         assert!(!should_request_onboarding_animation(&None));
     }
 }

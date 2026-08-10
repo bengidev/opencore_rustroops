@@ -5,7 +5,6 @@ use ascii_renderer::prelude::*;
 pub const COLS: usize = 72;
 pub const ROWS: usize = 22;
 pub const DEFAULT_SEED: u32 = 0x4E_07_41_46;
-pub const TARGET_DT: f32 = 1.0 / 22.0;
 
 const ARM_COUNT: usize = 3;
 const POINTS_PER_ARM: usize = 48;
@@ -55,10 +54,7 @@ impl GalaxyAscii {
             let fold = (self.time * 2.3 + a as f32 * 0.7 + t * 2.5).cos();
             let radial = 1.0 + wave * 0.22 + fold * 0.12;
             let y_off = fold * 0.18 * t;
-            verts.insert(
-                idx,
-                vec3!(p.x * radial, p.y + y_off, p.z * radial),
-            );
+            verts.insert(idx, vec3!(p.x * radial, p.y + y_off, p.z * radial));
         }
 
         mesh.rotation.y += dt * 0.55;
@@ -74,10 +70,12 @@ impl GalaxyAscii {
         &self.last_frame
     }
 
+    #[cfg(test)]
     pub fn vertex_count(&self) -> usize {
         self.rest.len()
     }
 
+    #[cfg(test)]
     pub fn edge_count(&self) -> usize {
         self.renderer.meshs[0].get_edges().len()
     }
