@@ -3,7 +3,6 @@
 
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
 
 use gpui::{
     App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
@@ -27,11 +26,6 @@ use super::onboarding::{
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
 use super::window_placement::center_window;
-
-/// Returns true when onboarding UI is active and the render path should request the next frame.
-fn should_request_onboarding_animation(onboarding_ui: &Option<OnboardingUiState>) -> bool {
-    onboarding_ui.is_some()
-}
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
 pub struct OpenCoreApp {
@@ -172,58 +166,9 @@ impl OnboardingCallbacks {
                 });
             })
         };
-        let on_orb_pressed = {
-            let view = view.clone();
-            Rc::new(move |cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    if let Some(ui) = app.onboarding_ui.as_mut() {
-                        ui.orb_pressed();
-                        cx.notify();
-                    }
-                });
-            })
-        };
-        let on_orb_released = {
-            let view = view.clone();
-            Rc::new(move |cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    if let Some(ui) = app.onboarding_ui.as_mut() {
-                        ui.orb_released();
-                        cx.notify();
-                    }
-                });
-            })
-        };
-        let on_cta_pressed = {
-            let view = view.clone();
-            Rc::new(move |cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    if let Some(ui) = app.onboarding_ui.as_mut() {
-                        ui.cta_pressed();
-                        cx.notify();
-                    }
-                });
-            })
-        };
-        let on_cta_released = {
-            let view = view.clone();
-            Rc::new(move |cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    if let Some(ui) = app.onboarding_ui.as_mut() {
-                        ui.cta_released();
-                        cx.notify();
-                    }
-                });
-            })
-        };
-
         Self {
             on_enter,
             on_toggle_theme,
-            on_orb_pressed,
-            on_orb_released,
-            on_cta_pressed,
-            on_cta_released,
         }
     }
 }
@@ -351,17 +296,9 @@ impl Render for OpenCoreApp {
         let content = match self.state.active_screen {
             ActiveScreen::Onboarding => {
                 let theme = self.theme();
-                let request_animation = should_request_onboarding_animation(&self.onboarding_ui);
                 let ui = self
                     .onboarding_ui
                     .get_or_insert_with(OnboardingUiState::new);
-                ui.ensure_particle_cache(theme);
-                // Wall-clock dt: extra cx.notify() renders (e.g. theme toggle) advance by
-                // elapsed time since the last tick, not per-notify, so animation stays smooth.
-                ui.tick(Instant::now());
-                if request_animation {
-                    window.request_animation_frame();
-                }
                 let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
@@ -492,14 +429,6 @@ mod tests {
             state.initial_window_size(),
             (HOME_WINDOW_WIDTH, HOME_WINDOW_HEIGHT)
         );
-    }
-
-    #[test]
-    fn onboarding_animation_gate_follows_ui_presence() {
-        assert!(should_request_onboarding_animation(&Some(
-            OnboardingUiState::new()
-        )));
-        assert!(!should_request_onboarding_animation(&None));
     }
 
     #[test]
