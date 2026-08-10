@@ -129,12 +129,6 @@ fn buffer_to_frame(buf: &CharBuffer) -> String {
         .join("\n")
 }
 
-/// Compatibility shim until Task 2 rewires onboarding_view.
-pub fn render_ascii_galaxy(cols: usize, rows: usize, seed: u32) -> String {
-    let _ = (cols, rows);
-    GalaxyAscii::new(seed).tick(0.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{COLS, DEFAULT_SEED, GalaxyAscii, ROWS};

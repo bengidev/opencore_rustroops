@@ -1,27 +1,22 @@
 #![allow(clippy::redundant_clone)]
 //! Onboarding view — immersive monochrome landing ported to GPUI.
 
-use std::sync::Arc;
-
 use gpui::{
-    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, Styled, canvas, div, px, relative,
+    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, SharedString,
+    Styled, div, px, relative,
 };
+use gpui_component::button::{Button, ButtonVariants as _};
 
-use crate::app::gpui_callbacks::AppHandler;
 use crate::app::gpui_callbacks::WindowAppHandler;
 use crate::shared::theme::{
-    ActionToken, BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
+    BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
 
-use super::onboarding_draw::Painter;
-use super::onboarding_galaxy_orb::{GalaxyOrb, GalaxyParticleCache};
-use super::onboarding_scene_backdrop::SceneBackdrop;
 use super::onboarding_theme_toggle::theme_toggle_button;
 use super::onboarding_ui_state::OnboardingUiState;
 
 const HERO_MAX_WIDTH: f32 = 600.0;
-const ORB_HEIGHT: f32 = 300.0;
+const ASCII_HERO_HEIGHT: f32 = 300.0;
 const EDGE_INSET_H: f32 = 16.0;
 const EDGE_INSET_V: f32 = 20.0;
 
@@ -29,10 +24,6 @@ const EDGE_INSET_V: f32 = 20.0;
 pub struct OnboardingCallbacks {
     pub on_enter: WindowAppHandler,
     pub on_toggle_theme: WindowAppHandler,
-    pub on_orb_pressed: AppHandler,
-    pub on_orb_released: AppHandler,
-    pub on_cta_pressed: AppHandler,
-    pub on_cta_released: AppHandler,
 }
 
 /// Focusable shell for onboarding keyboard input (Enter to complete).
@@ -61,42 +52,16 @@ pub fn onboarding_screen(
     persistence_error: Option<&str>,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
-    let backdrop = SceneBackdrop::new(theme);
 
     div()
         .size_full()
         .bg(background)
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .child(backdrop_canvas(backdrop)),
-        )
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .child(main_column(theme, ui, callbacks, persistence_error)),
-        )
+        .child(main_column(theme, ui, callbacks, persistence_error))
 }
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
     let key = event.keystroke.key.as_str();
     matches!(key, "enter" | "return") && !event.is_held && !event.keystroke.modifiers.modified()
-}
-
-fn backdrop_canvas(backdrop: SceneBackdrop) -> impl IntoElement {
-    canvas(
-        move |bounds, _, _| (bounds, backdrop),
-        move |scene_bounds, (_, backdrop), window, _| {
-            backdrop.paint(&mut Painter::new(window), scene_bounds);
-        },
-    )
-    .size_full()
 }
 
 fn main_column(
@@ -113,12 +78,12 @@ fn main_column(
         .px(px(EDGE_INSET_H))
         .child(header_row(theme, callbacks.clone()))
         .child(div().h(px(SpacingToken::S4.value())))
-        .child(hero_block(theme, ui, callbacks.clone()))
+        .child(hero_block(theme, ui.last_frame()))
         .child(div().flex_grow(1.));
 
     if let Some(message) = persistence_error {
         let muted = theme.foreground(ForegroundToken::Muted);
-        let mono = SharedString::from("Menlo");
+        let mono = SharedString::from("Space Mono");
         let message = SharedString::from(message);
         column = column.child(
             div()
@@ -132,13 +97,14 @@ fn main_column(
         );
     }
 
-    column.child(action_row(theme, ui, callbacks))
+    column.child(action_row(theme, callbacks))
 }
 
 fn header_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let muted = theme.foreground(ForegroundToken::Muted);
-    let mono = SharedString::from("Menlo");
+    let mono = SharedString::from("Space Mono");
+    let grotesk = SharedString::from("Space Grotesk");
 
     div()
         .w_full()
@@ -152,6 +118,7 @@ fn header_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl Into
                 .child(
                     div()
                         .text_size(px(TypeRole::LabelMd.size()))
+                        .font_family(grotesk)
                         .text_color(primary)
                         .child("OpenCore"),
                 )
@@ -167,20 +134,28 @@ fn header_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl Into
         .child(theme_toggle_button(theme, callbacks.on_toggle_theme))
 }
 
-fn hero_block(
-    theme: OpenCoreTheme,
-    ui: &OnboardingUiState,
-    callbacks: OnboardingCallbacks,
-) -> impl IntoElement {
+fn hero_block(theme: OpenCoreTheme, frame: &str) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
-    let mono = SharedString::from("Menlo");
-    let orb =
-        GalaxyOrb::with_dynamics(ui.started_at, ui.now, ui.displayed_speed, ui.displayed_zoom);
-    let on_pressed = callbacks.on_orb_pressed.clone();
-    let on_released = callbacks.on_orb_released.clone();
+    let grotesk = SharedString::from("Space Grotesk");
     let spacing = theme.spacing;
-    let cache = ui.particle_cache_arc();
+
+    let mut ascii_col = div()
+        .w_full()
+        .h(px(ASCII_HERO_HEIGHT))
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center();
+    for line in frame.lines() {
+        ascii_col = ascii_col.child(
+            div()
+                .font_family(SharedString::from("Space Mono"))
+                .text_size(px(9.))
+                .text_color(primary)
+                .child(line.to_string()),
+        );
+    }
 
     div()
         .w_full()
@@ -192,25 +167,14 @@ fn hero_block(
                 .flex()
                 .flex_col()
                 .items_center()
-                .child(
-                    div()
-                        .w_full()
-                        .h(px(ORB_HEIGHT))
-                        .cursor_pointer()
-                        .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, _, cx| {
-                            on_pressed(cx);
-                        })
-                        .on_mouse_up(MouseButton::Left, move |_, _, cx| {
-                            on_released(cx);
-                        })
-                        .child(orb_canvas(orb, cache)),
-                )
+                .child(ascii_col)
                 .child(div().h(px(spacing.lg as f32)))
                 .child(
                     div()
                         .w_full()
                         .text_center()
                         .text_size(px(TypeRole::DisplayMd.size()))
+                        .font_family(grotesk.clone())
                         .text_color(primary)
                         .child("Your local AI command workspace"),
                 )
@@ -222,75 +186,30 @@ fn hero_block(
                         .text_center()
                         .text_size(px(TypeRole::MonoSm.size()))
                         .line_height(relative(TypeRole::MonoSm.line_height()))
-                        .font_family(mono)
+                        .font_family(grotesk)
                         .text_color(secondary)
                         .child("OpenCore combines chat, terminal, editing, and Rust-native performance in one permissioned desktop environment. To leave the crowded cloud, polluted by leaks and unconsciousness, to return to a workspace that stays on your machine."),
                 ),
         )
 }
 
-fn orb_canvas(orb: GalaxyOrb, cache: Arc<GalaxyParticleCache>) -> impl IntoElement {
-    canvas(
-        move |bounds, _, _| (bounds, orb),
-        move |scene_bounds, (_, orb), window, _| {
-            orb.paint(&cache, &mut Painter::new(window), scene_bounds);
-        },
-    )
-    .w_full()
-    .h_full()
-}
-
-fn action_row(
-    theme: OpenCoreTheme,
-    ui: &OnboardingUiState,
-    callbacks: OnboardingCallbacks,
-) -> impl IntoElement {
+fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
     let spacing = theme.spacing;
+    let on_enter = callbacks.on_enter;
     div()
         .w_full()
         .flex()
         .items_center()
         .justify_center()
         .pb(px(spacing.sm as f32))
-        .child(primary_button(
-            theme,
-            "Enter OpenCore",
-            ui.cta_pressed,
-            callbacks,
-        ))
-}
-
-fn primary_button(
-    theme: OpenCoreTheme,
-    label: &'static str,
-    pressed: bool,
-    callbacks: OnboardingCallbacks,
-) -> impl IntoElement {
-    let bg = theme.action(ActionToken::Strong);
-    let text = theme.action(ActionToken::StrongText);
-    let radius = px(theme.control_radius());
-    let on_press = callbacks.on_enter.clone();
-    let on_pressed = callbacks.on_cta_pressed.clone();
-    let on_released = callbacks.on_cta_released.clone();
-
-    div()
-        .px(px(theme.spacing.lg as f32))
-        .py(px(14.))
-        .rounded(radius)
-        .bg(bg)
-        .text_size(px(TypeRole::LabelMd.size()))
-        .font_weight(gpui::FontWeight::BOLD)
-        .text_color(text)
-        .cursor_pointer()
-        .opacity(if pressed { 0.7 } else { 1.0 })
-        .child(label)
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-            on_pressed(cx);
-            on_press(window, cx);
-        })
-        .on_mouse_up(MouseButton::Left, move |_, _, cx| {
-            on_released(cx);
-        })
+        .child(
+            Button::new("enter-opencore")
+                .primary()
+                .label("Enter OpenCore")
+                .on_click(move |_, window, cx| {
+                    on_enter(window, cx);
+                }),
+        )
 }
 
 #[cfg(test)]
