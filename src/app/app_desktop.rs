@@ -3,6 +3,7 @@
 
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Instant;
 
 use gpui::{
     App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
@@ -296,9 +297,17 @@ impl Render for OpenCoreApp {
         let content = match self.state.active_screen {
             ActiveScreen::Onboarding => {
                 let theme = self.theme();
-                let ui = self
+                let _ = self
                     .onboarding_ui
                     .get_or_insert_with(OnboardingUiState::new);
+                let request_animation = should_request_onboarding_animation(&self.onboarding_ui);
+                if let Some(ui) = self.onboarding_ui.as_mut() {
+                    ui.tick(Instant::now());
+                }
+                if request_animation {
+                    window.request_animation_frame();
+                }
+                let ui = self.onboarding_ui.as_ref().expect("inserted");
                 let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
@@ -345,6 +354,10 @@ impl Render for OpenCoreApp {
             content
         }
     }
+}
+
+fn should_request_onboarding_animation(onboarding_ui: &Option<OnboardingUiState>) -> bool {
+    onboarding_ui.is_some()
 }
 
 fn window_bounds_for_state(state: &AppState, cx: &App) -> WindowBounds {
@@ -431,5 +444,16 @@ mod tests {
         let intent = state.take_pending_window_resize().expect("intent");
         assert_eq!(intent.width, HOME_WINDOW_WIDTH);
         assert!(state.pending_window_resize.is_none());
+    }
+}
+
+#[cfg(test)]
+mod animation_gate_tests {
+    use super::*;
+
+    #[test]
+    fn onboarding_animation_gate_follows_ui_presence() {
+        assert!(should_request_onboarding_animation(&Some(OnboardingUiState::new())));
+        assert!(!should_request_onboarding_animation(&None));
     }
 }
