@@ -41,9 +41,9 @@ pub fn onboarding_interactive_root(
         .size_full()
         .tab_index(0)
         .track_focus(focus_handle)
-        .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+        .on_key_down(move |event: &KeyDownEvent, window, cx| {
             if is_enter_keystroke(event) {
-                on_enter(_window, cx);
+                on_enter(window, cx);
             }
         })
         .child(content)
