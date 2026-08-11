@@ -33,7 +33,7 @@ impl OnboardingUiState {
     }
 
     pub fn last_frame(&self) -> &str {
-        self.galaxy.frame()
+        self.galaxy.last_frame()
     }
 
     /// Requests keyboard focus once per onboarding session.
