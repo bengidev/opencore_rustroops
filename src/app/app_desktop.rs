@@ -5,12 +5,13 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(debug_assertions)]
+use gpui::Point;
 use gpui::{
-    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
+    App, AppContext, Context, FocusHandle, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render, Styled, WeakEntity,
     Window, WindowBounds, WindowOptions, div, px, size,
 };
-#[cfg(debug_assertions)]
-use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point};
 use gpui_component::Root;
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
