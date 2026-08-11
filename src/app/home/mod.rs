@@ -1,9 +1,10 @@
 //! Nothing-styled Hello World home (gpui.rs-inspired).
 
-use gpui::{IntoElement, ParentElement, Styled, div, px};
+use gpui::{IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use crate::shared::theme::{
-    BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, TypeRole,
+    ACCENT_RED, BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SUCCESS_GREEN,
+    TypeRole, WARNING_AMBER,
 };
 
 /// Full-screen Nothing-styled Hello World home screen.
@@ -12,6 +13,7 @@ pub fn home_screen(theme: OpenCoreTheme) -> impl IntoElement {
     let display = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let label = theme.foreground(ForegroundToken::Muted);
+    let mono = SharedString::from("Space Mono");
 
     div()
         .size_full()
@@ -24,6 +26,7 @@ pub fn home_screen(theme: OpenCoreTheme) -> impl IntoElement {
         .child(
             div()
                 .text_size(px(48.))
+                .font_family(SharedString::from("Space Grotesk"))
                 .font_weight(gpui::FontWeight::LIGHT)
                 .text_color(display)
                 .child("Hello, World!"),
@@ -31,6 +34,7 @@ pub fn home_screen(theme: OpenCoreTheme) -> impl IntoElement {
         .child(
             div()
                 .text_size(px(TypeRole::MonoSm.size()))
+                .font_family(mono.clone())
                 .text_color(secondary)
                 .child("OpenCore · GPUI"),
         )
@@ -39,6 +43,7 @@ pub fn home_screen(theme: OpenCoreTheme) -> impl IntoElement {
             div()
                 .mt(px(theme.spacing.xl as f32))
                 .text_size(px(11.))
+                .font_family(mono)
                 .text_color(label)
                 .child("HOME"),
         )
@@ -47,16 +52,15 @@ pub fn home_screen(theme: OpenCoreTheme) -> impl IntoElement {
 /// Design break: R G B Y K W swatches using theme border tokens.
 fn swatch_row(theme: OpenCoreTheme) -> impl IntoElement {
     let border = theme.border_token(BorderToken::Default);
-    let radius = px(theme.control_radius().min(8.0));
+    let radius = px(theme.control_radius());
 
-    // R G B Y K W
     let colors: [u32; 6] = [
-        0xD7_19_21, // R (Nothing accent red as red chip)
-        0x4A_9E_5C, // G
-        0x5B_9B_F6, // B
-        0xD4_A8_43, // Y
-        0x00_00_00, // K
-        0xFF_FF_FF, // W
+        ACCENT_RED,
+        SUCCESS_GREEN,
+        0x5B_9B_F6, // interactive blue chip
+        WARNING_AMBER,
+        0x00_00_00,
+        0xFF_FF_FF,
     ];
     let mut row = div().flex().gap(px(8.));
     for c in colors {
@@ -84,5 +88,11 @@ mod tests {
             let bg = OpenCoreTheme::resolve(mode).surface(BackgroundToken::Primary);
             let _ = bg; // theme resolves; building element must not panic
         }
+    }
+
+    #[test]
+    fn home_swatch_radius_follows_control_radius() {
+        let theme = OpenCoreTheme::resolve(ThemeMode::Dark);
+        assert_eq!(theme.control_radius(), 6.0);
     }
 }

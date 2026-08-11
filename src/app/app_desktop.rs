@@ -12,10 +12,9 @@ use gpui::{
 #[cfg(debug_assertions)]
 use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point};
 use gpui_component::Root;
-use gpui_component::Theme;
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
-use crate::shared::theme::{OpenCoreTheme, ThemeMode};
+use crate::shared::theme::{OpenCoreTheme, apply_nothing_theme};
 
 use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
@@ -27,11 +26,6 @@ use super::onboarding::{
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
 use super::window_placement::center_window;
-
-/// Returns true when onboarding UI is active and the render path should request the next frame.
-fn should_request_onboarding_animation(onboarding_ui: &Option<OnboardingUiState>) -> bool {
-    onboarding_ui.is_some()
-}
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
 pub struct OpenCoreApp {
@@ -67,7 +61,7 @@ impl OpenCoreApp {
     }
 
     fn sync_component_theme(&self, cx: &mut App) {
-        sync_gpui_component_theme(self.state.theme_mode(), cx);
+        apply_nothing_theme(self.state.theme_mode(), cx);
     }
 
     fn apply_resize_intent(&mut self, window: &mut Window, cx: &App) {
@@ -172,58 +166,10 @@ impl OnboardingCallbacks {
                 });
             })
         };
-        let on_orb_pressed = {
-            let view = view.clone();
-            Rc::new(move |cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    if let Some(ui) = app.onboarding_ui.as_mut() {
-                        ui.orb_pressed();
-                        cx.notify();
-                    }
-                });
-            })
-        };
-        let on_orb_released = {
-            let view = view.clone();
-            Rc::new(move |cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    if let Some(ui) = app.onboarding_ui.as_mut() {
-                        ui.orb_released();
-                        cx.notify();
-                    }
-                });
-            })
-        };
-        let on_cta_pressed = {
-            let view = view.clone();
-            Rc::new(move |cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    if let Some(ui) = app.onboarding_ui.as_mut() {
-                        ui.cta_pressed();
-                        cx.notify();
-                    }
-                });
-            })
-        };
-        let on_cta_released = {
-            let view = view.clone();
-            Rc::new(move |cx: &mut App| {
-                let _ = view.update(cx, |app, cx| {
-                    if let Some(ui) = app.onboarding_ui.as_mut() {
-                        ui.cta_released();
-                        cx.notify();
-                    }
-                });
-            })
-        };
 
         Self {
             on_enter,
             on_toggle_theme,
-            on_orb_pressed,
-            on_orb_released,
-            on_cta_pressed,
-            on_cta_released,
         }
     }
 }
@@ -351,17 +297,17 @@ impl Render for OpenCoreApp {
         let content = match self.state.active_screen {
             ActiveScreen::Onboarding => {
                 let theme = self.theme();
-                let request_animation = should_request_onboarding_animation(&self.onboarding_ui);
-                let ui = self
+                let _ = self
                     .onboarding_ui
                     .get_or_insert_with(OnboardingUiState::new);
-                ui.ensure_particle_cache(theme);
-                // Wall-clock dt: extra cx.notify() renders (e.g. theme toggle) advance by
-                // elapsed time since the last tick, not per-notify, so animation stays smooth.
-                ui.tick(Instant::now());
+                let request_animation = should_request_onboarding_animation(&self.onboarding_ui);
+                if let Some(ui) = self.onboarding_ui.as_mut() {
+                    ui.tick(Instant::now());
+                }
                 if request_animation {
                     window.request_animation_frame();
                 }
+                let ui = self.onboarding_ui.as_ref().expect("inserted");
                 let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
@@ -410,19 +356,13 @@ impl Render for OpenCoreApp {
     }
 }
 
+fn should_request_onboarding_animation(onboarding_ui: &Option<OnboardingUiState>) -> bool {
+    onboarding_ui.is_some()
+}
+
 fn window_bounds_for_state(state: &AppState, cx: &App) -> WindowBounds {
     let (width, height) = state.initial_window_size();
     WindowBounds::centered(size(px(width as f32), px(height as f32)), cx)
-}
-
-fn sync_gpui_component_theme(mode: ThemeMode, cx: &mut App) {
-    use gpui_component::theme::ThemeMode as ComponentThemeMode;
-
-    let component_mode = match mode {
-        ThemeMode::Light => ComponentThemeMode::Light,
-        ThemeMode::Dark => ComponentThemeMode::Dark,
-    };
-    Theme::change(component_mode, None, cx);
 }
 
 /// Boots preferences and runs the desktop event loop until the window closes.
@@ -433,10 +373,11 @@ pub fn run_desktop() -> Result<(), AppError> {
     let initial_theme_mode = state.theme_mode();
 
     gpui_platform::application()
-        .with_assets(gpui_component_assets::Assets)
+        .with_assets(crate::shared::assets::AppAssets)
         .run(move |cx| {
             gpui_component::init(cx);
-            sync_gpui_component_theme(initial_theme_mode, cx);
+            let _ = crate::shared::assets::AppAssets.load_fonts(cx);
+            apply_nothing_theme(initial_theme_mode, cx);
 
             let store = store.clone();
             cx.spawn(async move |cx| {
@@ -495,14 +436,6 @@ mod tests {
     }
 
     #[test]
-    fn onboarding_animation_gate_follows_ui_presence() {
-        assert!(should_request_onboarding_animation(&Some(
-            OnboardingUiState::new()
-        )));
-        assert!(!should_request_onboarding_animation(&None));
-    }
-
-    #[test]
     fn take_pending_window_resize_clears_intent() {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
@@ -511,5 +444,18 @@ mod tests {
         let intent = state.take_pending_window_resize().expect("intent");
         assert_eq!(intent.width, HOME_WINDOW_WIDTH);
         assert!(state.pending_window_resize.is_none());
+    }
+}
+
+#[cfg(test)]
+mod animation_gate_tests {
+    use super::*;
+
+    #[test]
+    fn onboarding_animation_gate_follows_ui_presence() {
+        assert!(should_request_onboarding_animation(&Some(
+            OnboardingUiState::new()
+        )));
+        assert!(!should_request_onboarding_animation(&None));
     }
 }
