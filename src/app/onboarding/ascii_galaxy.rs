@@ -1,41 +1,31 @@
-//! Morphing 3D wireframe spiral rendered headlessly via `ascii_renderer`.
+//! Procedural ASCII galaxy glow field.
+//!
+//! Renders a fixed `COLS` by `ROWS` ASCII frame headlessly. Intensity is
+//! derived from concentric rings, cross waves, and deterministic per-cell
+//! seeds, then mapped through an ASCII ramp. Motion comes purely from a
+//! time accumulation fed by the app's animation frame scheduler; there are
+//! no timers, worker threads, or browser-style APIs.
 
-use ascii_renderer::prelude::*;
-
-pub const COLS: usize = 72;
-pub const ROWS: usize = 22;
+pub const COLS: usize = 74;
+pub const ROWS: usize = 44;
 pub const DEFAULT_SEED: u32 = 0x4E_07_41_46;
 
-const ARM_COUNT: usize = 3;
-const POINTS_PER_ARM: usize = 48;
+const ASCII_RAMP: &[u8] = b" .'`^,:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+const GLYPH_THRESHOLD: f32 = 0.22;
 
 pub struct GalaxyAscii {
-    renderer: Renderer,
-    buffer: CharBuffer,
-    rest: Vec<Vector3>,
+    seeds: Vec<f32>,
     time: f32,
     last_frame: String,
-    #[allow(dead_code)]
-    seed: u32,
 }
 
 impl GalaxyAscii {
     pub fn new(seed: u32) -> Self {
-        let (mesh, rest) = build_spiral_mesh();
+        let seeds = build_cell_seeds(seed);
         let mut galaxy = Self {
-            renderer: Renderer {
-                meshs: vec![mesh],
-                camera: Camera {
-                    position: vec3!(0.0, 0.0, -7.0),
-                    rotation: vec3!(0.0, 0.0, 0.0),
-                    fov: vec2!(0.95, 0.95 * (ROWS as f32 / COLS as f32)),
-                },
-            },
-            buffer: CharBuffer::new(COLS, ROWS),
-            rest,
+            seeds,
             time: 0.0,
             last_frame: String::new(),
-            seed,
         };
         galaxy.tick(0.0);
         galaxy
@@ -43,88 +33,69 @@ impl GalaxyAscii {
 
     pub fn tick(&mut self, dt: f32) -> String {
         self.time += dt;
-
-        let mesh = &mut self.renderer.meshs[0];
-        let verts = mesh.get_verticies_mut();
-        for (idx, &p) in self.rest.iter().enumerate() {
-            let a = idx / POINTS_PER_ARM;
-            let i = idx % POINTS_PER_ARM;
-            let t = i as f32 / (POINTS_PER_ARM - 1) as f32;
-            let wave = (self.time * 1.7 + a as f32 * 1.1 + t * 4.0).sin();
-            let fold = (self.time * 2.3 + a as f32 * 0.7 + t * 2.5).cos();
-            let radial = 1.0 + wave * 0.22 + fold * 0.12;
-            let y_off = fold * 0.18 * t;
-            verts.insert(idx, vec3!(p.x * radial, p.y + y_off, p.z * radial));
-        }
-
-        mesh.rotation.y += dt * 0.55;
-        mesh.rotation.x += dt * 0.22;
-
-        self.buffer.fill(' ');
-        self.renderer.draw(&mut self.buffer);
-        self.last_frame = buffer_to_frame(&self.buffer);
+        self.last_frame = render_frame(&self.seeds, self.time, COLS, ROWS);
         self.last_frame.clone()
     }
 
-    pub fn frame(&self) -> &str {
+    pub fn last_frame(&self) -> &str {
         &self.last_frame
     }
-
-    #[cfg(test)]
-    pub fn vertex_count(&self) -> usize {
-        self.rest.len()
-    }
-
-    #[cfg(test)]
-    pub fn edge_count(&self) -> usize {
-        self.renderer.meshs[0].get_edges().len()
-    }
 }
 
-fn build_spiral_mesh() -> (Mesh, Vec<Vector3>) {
-    let mut mesh = Mesh::default();
-    mesh.char = '*';
-    let mut rest = Vec::with_capacity(ARM_COUNT * POINTS_PER_ARM);
-
-    for a in 0..ARM_COUNT {
-        for i in 0..POINTS_PER_ARM {
-            let t = i as f32 / (POINTS_PER_ARM - 1) as f32;
-            let radius = 0.35 + t * 2.4;
-            let theta = t * 4.5 + a as f32 * (std::f32::consts::TAU / ARM_COUNT as f32);
-            let x = radius * theta.cos();
-            let y = (t - 0.5) * 0.35;
-            let z = radius * theta.sin();
-            let pos = vec3!(x, y, z);
-            let idx = a * POINTS_PER_ARM + i;
-            mesh.insert_vertex(idx, pos);
-            rest.push(pos);
-        }
-    }
-
-    for a in 0..ARM_COUNT {
-        for i in 0..(POINTS_PER_ARM - 1) {
-            let from = a * POINTS_PER_ARM + i;
-            let to = a * POINTS_PER_ARM + i + 1;
-            mesh.add_edge((from, to));
-        }
-    }
-
-    let core0 = 0;
-    let core1 = POINTS_PER_ARM;
-    let core2 = 2 * POINTS_PER_ARM;
-    mesh.add_edge((core0, core1));
-    mesh.add_edge((core1, core2));
-    mesh.add_edge((core2, core0));
-
-    (mesh, rest)
+/// Builds exactly `COLS * ROWS` deterministic unit-hash values in [0, 1).
+fn build_cell_seeds(seed: u32) -> Vec<f32> {
+    (0..(COLS * ROWS))
+        .map(|idx| hash_unit(seed ^ idx as u32))
+        .collect()
 }
 
-fn buffer_to_frame(buf: &CharBuffer) -> String {
-    buf.data
-        .iter()
-        .map(|row| row.iter().collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n")
+/// Small deterministic hash mapping an integer into the unit interval [0, 1).
+fn hash_unit(mut x: u32) -> f32 {
+    x = x.wrapping_mul(0x9E37_79B9);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x85EB_CA6B);
+    x ^= x >> 13;
+    (x as f32) / (u32::MAX as f32)
+}
+
+/// Renders a frame by computing an intensity at every cell and mapping it
+/// through the ASCII ramp, keeping cells below `GLYPH_THRESHOLD` as spaces so
+/// the output preserves negative space.
+fn render_frame(seeds: &[f32], time: f32, cols: usize, rows: usize) -> String {
+    let mut out = String::with_capacity(cols * (rows + 1));
+    let rows_div = rows.saturating_sub(1).max(1) as f32;
+    let cols_div = cols.saturating_sub(1).max(1) as f32;
+
+    for row in 0..rows {
+        let ny = row as f32 / rows_div;
+        let cy = ny * 2.0 - 1.0;
+        for col in 0..cols {
+            let nx = col as f32 / cols_div;
+            let cx = nx * 2.0 - 1.0;
+            let idx = row * cols + col;
+            let r = (cx * cx + cy * cy).sqrt();
+            // Concentric rings radiating from the center, fading outward.
+            let ring = (((r * 6.5) - time * 0.8).sin() * 0.5 + 0.5) * (1.0 - r * 0.30).max(0.0);
+            // Cross waves adding organic motion over time.
+            let wave = (cx * 5.0 + time * 0.5).sin() * (cy * 4.0 - time * 0.4).cos() * 0.5 + 0.5;
+            // Deterministic per-cell sparkle from the seeded hash field.
+            let sparkle = seeds[idx];
+
+            let intensity = (ring * 0.45 + wave * 0.35 + sparkle * 0.20).clamp(0.0, 1.0);
+            out.push(glyph_for_intensity(intensity));
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn glyph_for_intensity(intensity: f32) -> char {
+    if intensity < GLYPH_THRESHOLD {
+        return ' ';
+    }
+    let idx = ((intensity - GLYPH_THRESHOLD) / (1.0 - GLYPH_THRESHOLD)) * (ASCII_RAMP.len() as f32);
+    let idx = idx.clamp(0.0, (ASCII_RAMP.len() - 1) as f32) as usize;
+    ASCII_RAMP[idx] as char
 }
 
 #[cfg(test)]
@@ -132,19 +103,10 @@ mod tests {
     use super::{COLS, DEFAULT_SEED, GalaxyAscii, ROWS};
 
     #[test]
-    fn spiral_mesh_has_expected_topology() {
-        let g = GalaxyAscii::new(DEFAULT_SEED);
-        assert_eq!(g.vertex_count(), 3 * 48);
-        assert_eq!(g.edge_count(), 3 * 47 + 3); // arm segments + core triangle
-    }
-
-    #[test]
     fn tick_frame_has_fixed_dimensions() {
         let mut g = GalaxyAscii::new(DEFAULT_SEED);
         let frame = g.tick(1.0 / 22.0);
         assert_eq!(frame.lines().count(), ROWS);
-        // Raw row length == COLS proves we did not use CharBuffer Display
-        // (Display inserts a space between every glyph, roughly doubling width).
         assert!(frame.lines().all(|l| l.chars().count() == COLS));
     }
 
@@ -158,6 +120,31 @@ mod tests {
         let fa2 = a.tick(0.05);
         let fb2 = b.tick(0.05);
         assert_eq!(fa2, fb2);
-        assert_ne!(fa, fa2); // morph/rotation advanced
+        assert_ne!(fa, fa2); // time accumulation advances the field
+    }
+
+    #[test]
+    fn frame_contains_thresholded_glow_field() {
+        let mut g = GalaxyAscii::new(DEFAULT_SEED);
+        let frame = g.tick(1.0 / 24.0);
+        let visible = frame.chars().filter(|&c| c != ' ' && c != '\n').count();
+        let blank = frame.chars().filter(|&c| c == ' ').count();
+
+        assert!(visible > 120, "expected visible glyphs in glow field");
+        assert!(blank > 120, "expected thresholded negative space");
+    }
+
+    #[test]
+    fn different_seeds_change_static_texture() {
+        let mut a = GalaxyAscii::new(DEFAULT_SEED);
+        let mut b = GalaxyAscii::new(DEFAULT_SEED ^ 0xA5A5_5A5A);
+
+        assert_ne!(a.tick(0.0), b.tick(0.0));
+    }
+
+    #[test]
+    fn ascii_hero_generator_dimensions() {
+        assert_eq!(COLS, 74);
+        assert_eq!(ROWS, 44);
     }
 }
