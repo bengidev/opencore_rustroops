@@ -1,7 +1,7 @@
 # Particle Diorama Hero — Design
 
 **Date:** 2026-08-12  
-**Status:** Approved in conversation; awaiting spec file review before implementation plan  
+**Status:** Spec approved; implementation plan written (`docs/design/2026-08-12-particle-diorama-hero-plan.md`)  
 **Path note:** Canonical copy lives under `docs/design/` (`docs/superpowers/` is gitignored in this repo).  
 **Stack:** Rust + GPUI (`canvas`; light mist — no shader requirement for v1)
 
