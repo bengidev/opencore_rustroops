@@ -40,3 +40,6 @@ docs/superpowers/*
 .impeccable
 .superpowers
 .pi-subagents/
+
+# Git worktrees
+.worktrees/
