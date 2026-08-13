@@ -14,7 +14,7 @@ use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, Mous
 use gpui_component::Root;
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
-use crate::shared::theme::{OpenCoreTheme, apply_nothing_theme};
+use crate::shared::theme::{OpenCoreTheme, ThemeTransition, apply_nothing_theme};
 
 use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
@@ -33,6 +33,7 @@ pub struct OpenCoreApp {
     store: Arc<FilePreferencesStore>,
     focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
+    theme_transition: Option<ThemeTransition>,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
     dev_reset_state: DevResetState,
@@ -50,14 +51,25 @@ impl OpenCoreApp {
             store,
             focus_handle: cx.focus_handle(),
             onboarding_ui,
+            theme_transition: None,
             persistence_error: None,
             #[cfg(debug_assertions)]
             dev_reset_state: DevResetState::default(),
         }
     }
 
-    fn theme(&self) -> OpenCoreTheme {
-        OpenCoreTheme::resolve(self.state.theme_mode())
+    fn visual_theme(&self, now: Instant) -> OpenCoreTheme {
+        let target = self.state.theme_mode();
+        match self.theme_transition {
+            Some(tx) if tx.is_active(now) => OpenCoreTheme::blended(target, tx.mix_light(now)),
+            _ => OpenCoreTheme::resolve(target),
+        }
+    }
+
+    fn settle_theme_transition(&mut self, now: Instant) {
+        if self.theme_transition.is_some_and(|tx| !tx.is_active(now)) {
+            self.theme_transition = None;
+        }
     }
 
     fn sync_component_theme(&self, cx: &mut App) {
@@ -114,10 +126,19 @@ impl OpenCoreApp {
     }
 
     fn toggle_theme(&mut self, cx: &mut Context<Self>) {
-        let next = self.state.theme_mode().toggle();
+        let now = Instant::now();
+        let from = self.state.theme_mode();
+        let next = from.toggle();
         match self.state.set_theme_mode(self.store.as_ref(), next) {
             Ok(()) => {
                 self.persistence_error = None;
+                self.theme_transition = Some(match self.theme_transition {
+                    Some(mut tx) if tx.is_active(now) => {
+                        tx.retarget(next, now);
+                        tx
+                    }
+                    _ => ThemeTransition::start(from, next, now),
+                });
                 self.sync_component_theme(cx);
                 cx.notify();
             }
@@ -294,18 +315,20 @@ impl Render for OpenCoreApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_resize_intent(window, cx);
 
+        let now = Instant::now();
+        self.settle_theme_transition(now);
+        let theme = self.visual_theme(now);
+        if should_request_frame(&self.onboarding_ui, self.theme_transition.as_ref(), now) {
+            window.request_animation_frame();
+        }
+
         let content = match self.state.active_screen {
             ActiveScreen::Onboarding => {
-                let theme = self.theme();
                 let _ = self
                     .onboarding_ui
                     .get_or_insert_with(OnboardingUiState::new);
-                let request_animation = should_request_onboarding_animation(&self.onboarding_ui);
                 if let Some(ui) = self.onboarding_ui.as_mut() {
-                    ui.tick(Instant::now());
-                }
-                if request_animation {
-                    window.request_animation_frame();
+                    ui.tick(now);
                 }
                 let ui = self.onboarding_ui.as_ref().expect("inserted");
                 let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
@@ -318,7 +341,7 @@ impl Render for OpenCoreApp {
                     onboarding_screen(theme, ui, callbacks, persistence_error),
                 ))
             }
-            ActiveScreen::Home => div().size_full().child(home_screen(self.theme())),
+            ActiveScreen::Home => div().size_full().child(home_screen(theme)),
         };
 
         #[cfg(debug_assertions)]
@@ -327,7 +350,6 @@ impl Render for OpenCoreApp {
             let (win_w, win_h) = self.state.initial_window_size();
             let bounds = (win_w as f32, win_h as f32);
             let callbacks = DevResetCallbacks::from_app(cx.entity().downgrade(), bounds);
-            let theme = self.theme();
             // Snapshot the state so the element borrows don't clash with `&mut self`.
             let state_snapshot = self.dev_reset_state.clone();
             let on_drag_move = callbacks.on_drag_move.clone();
@@ -358,6 +380,15 @@ impl Render for OpenCoreApp {
 
 fn should_request_onboarding_animation(onboarding_ui: &Option<OnboardingUiState>) -> bool {
     onboarding_ui.is_some()
+}
+
+fn should_request_frame(
+    onboarding_ui: &Option<OnboardingUiState>,
+    theme_transition: Option<&ThemeTransition>,
+    now: Instant,
+) -> bool {
+    should_request_onboarding_animation(onboarding_ui)
+        || theme_transition.is_some_and(|tx| tx.is_active(now))
 }
 
 fn window_bounds_for_state(state: &AppState, cx: &App) -> WindowBounds {
@@ -457,5 +488,22 @@ mod animation_gate_tests {
             OnboardingUiState::new()
         )));
         assert!(!should_request_onboarding_animation(&None));
+    }
+
+    #[test]
+    fn frame_gate_follows_theme_transition() {
+        let now = Instant::now();
+        let tx = ThemeTransition::start(
+            crate::shared::theme::ThemeMode::Dark,
+            crate::shared::theme::ThemeMode::Light,
+            now,
+        );
+        assert!(should_request_frame(&None, Some(&tx), now));
+        assert!(!should_request_frame(
+            &None,
+            Some(&tx),
+            now + crate::shared::theme::THEME_TRANSITION_DURATION
+        ));
+        assert!(!should_request_frame(&None, None, now));
     }
 }
