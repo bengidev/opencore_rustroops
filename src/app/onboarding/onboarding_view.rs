@@ -24,6 +24,7 @@ const ASCII_TEXT_SIZE: f32 = 9.0;
 const ASCII_BOX_SIZE: f32 = 320.0;
 const EDGE_INSET_H: f32 = 16.0;
 const EDGE_INSET_V: f32 = 20.0;
+const ENTER_BUTTON_HEIGHT: f32 = 48.0;
 
 #[derive(Clone)]
 pub struct OnboardingCallbacks {
@@ -260,6 +261,7 @@ fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl Into
             Button::new("enter-opencore")
                 .primary()
                 .label("Enter OpenCore")
+                .h(px(ENTER_BUTTON_HEIGHT))
                 .on_click(move |_, window, cx| {
                     on_enter(window, cx);
                 }),
@@ -295,6 +297,7 @@ mod tests {
         assert_eq!(HERO_GLOW_INSET_BOTTOM, 34.0);
         assert_eq!(ASCII_TEXT_SIZE, 9.0);
         assert_eq!(ASCII_BOX_SIZE, 320.0);
+        assert_eq!(ENTER_BUTTON_HEIGHT, 48.0);
         assert_eq!(COLS, 74);
         assert_eq!(ROWS, 44);
     }
