@@ -1,7 +1,7 @@
 # Adaptive GUI scaling — Design
 
 **Date:** 2026-08-13  
-**Status:** Spec drafted; awaiting user review before the implementation plan  
+**Status:** Spec approved; implementation plan written (`docs/design/2026-08-13-adaptive-gui-scaling-plan.md`)  
 **Path note:** Canonical copy lives under `docs/design/` (`docs/superpowers/` is gitignored in this repo).  
 **Stack:** Rust + GPUI + gpui-component  
 **Reference (behavior, not copy):** [OpenCode docs](https://opencode.ai/docs/) desktop layout — readable column, vertical scroll, side margins grow on a wide window.
