@@ -16,7 +16,6 @@ use super::onboarding_theme_toggle::theme_toggle_button;
 use super::onboarding_ui_state::OnboardingUiState;
 
 const HERO_MAX_WIDTH: f32 = 680.0;
-const ASCII_HERO_HEIGHT: f32 = 360.0;
 const HERO_GLOW_INSET_H: f32 = 44.0;
 const HERO_GLOW_INSET_TOP: f32 = 46.0;
 const HERO_GLOW_INSET_BOTTOM: f32 = 34.0;
@@ -25,6 +24,13 @@ const ASCII_BOX_SIZE: f32 = 320.0;
 const EDGE_INSET_H: f32 = 16.0;
 const EDGE_INSET_V: f32 = 20.0;
 const ENTER_BUTTON_HEIGHT: f32 = 48.0;
+const HERO_MIN_SIZE: f32 = 220.0;
+
+fn responsive_hero_size(available_width: f32, available_height: f32) -> f32 {
+    let width_limit = (available_width - EDGE_INSET_H * 2.0).max(HERO_MIN_SIZE);
+    let height_limit = (available_height - 260.0).max(HERO_MIN_SIZE);
+    width_limit.min(height_limit).min(ASCII_BOX_SIZE)
+}
 
 #[derive(Clone)]
 pub struct OnboardingCallbacks {
@@ -56,13 +62,17 @@ pub fn onboarding_screen(
     ui: &OnboardingUiState,
     callbacks: OnboardingCallbacks,
     persistence_error: Option<&str>,
+    window_size: gpui::Size<gpui::Pixels>,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
 
-    div()
-        .size_full()
-        .bg(background)
-        .child(main_column(theme, ui, callbacks, persistence_error))
+    div().size_full().bg(background).child(main_column(
+        theme,
+        ui,
+        callbacks,
+        persistence_error,
+        responsive_hero_size(window_size.width.as_f32(), window_size.height.as_f32()),
+    ))
 }
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
@@ -75,23 +85,22 @@ fn main_column(
     ui: &OnboardingUiState,
     callbacks: OnboardingCallbacks,
     persistence_error: Option<&str>,
+    hero_size: f32,
 ) -> impl IntoElement {
-    let mut column = div()
-        .size_full()
+    let mut centered_content = div()
+        .w_full()
+        .flex_1()
         .flex()
         .flex_col()
-        .p(px(EDGE_INSET_V))
-        .px(px(EDGE_INSET_H))
-        .child(header_row(theme, callbacks.clone()))
-        .child(div().h(px(SpacingToken::S4.value())))
-        .child(hero_block(theme, ui))
-        .child(div().flex_grow(1.));
+        .items_center()
+        .justify_center()
+        .child(hero_block(theme, ui, hero_size));
 
     if let Some(message) = persistence_error {
         let muted = theme.foreground(ForegroundToken::Muted);
         let mono = SharedString::from("Space Mono");
         let message = SharedString::from(message);
-        column = column.child(
+        centered_content = centered_content.child(
             div()
                 .w_full()
                 .text_center()
@@ -103,7 +112,19 @@ fn main_column(
         );
     }
 
-    column.child(action_row(theme, callbacks))
+    centered_content = centered_content
+        .child(div().h(px(60.0)))
+        .child(action_row(theme, callbacks.clone()));
+
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .p(px(EDGE_INSET_V))
+        .px(px(EDGE_INSET_H))
+        .child(header_row(theme, callbacks.clone()))
+        .child(div().h(px(SpacingToken::S4.value())))
+        .child(centered_content)
 }
 
 fn header_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
@@ -156,7 +177,7 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         ])
 }
 
-fn hero_block(theme: OpenCoreTheme, ui: &OnboardingUiState) -> impl IntoElement {
+fn hero_block(theme: OpenCoreTheme, ui: &OnboardingUiState, hero_size: f32) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let ascii_color = theme.foreground(ForegroundToken::Primary);
@@ -166,12 +187,12 @@ fn hero_block(theme: OpenCoreTheme, ui: &OnboardingUiState) -> impl IntoElement 
     let hero_ascii = div()
         .relative()
         .w_full()
-        .h(px(ASCII_HERO_HEIGHT))
+        .h(px(hero_size + 40.0))
         .flex()
         .items_center()
         .justify_center()
         .child(hero_glow(theme))
-        .child(ascii_box(theme, ui.last_frame(), ascii_color));
+        .child(ascii_box(theme, ui.last_frame(), ascii_color, hero_size));
 
     div()
         .w_full()
@@ -179,7 +200,8 @@ fn hero_block(theme: OpenCoreTheme, ui: &OnboardingUiState) -> impl IntoElement 
         .justify_center()
         .child(
             div()
-                .w(px(HERO_MAX_WIDTH))
+                .w_full()
+                .max_w(px(HERO_MAX_WIDTH))
                 .flex()
                 .flex_col()
                 .items_center()
@@ -209,7 +231,12 @@ fn hero_block(theme: OpenCoreTheme, ui: &OnboardingUiState) -> impl IntoElement 
         )
 }
 
-fn ascii_box(theme: OpenCoreTheme, frame: &str, text_color: gpui::Hsla) -> impl IntoElement {
+fn ascii_box(
+    theme: OpenCoreTheme,
+    frame: &str,
+    text_color: gpui::Hsla,
+    size: f32,
+) -> impl IntoElement {
     let border = theme.border_token(BorderToken::Strong).opacity(0.40);
     let surface = theme.surface(BackgroundToken::Secondary).opacity(0.50);
 
@@ -233,8 +260,8 @@ fn ascii_box(theme: OpenCoreTheme, frame: &str, text_color: gpui::Hsla) -> impl 
 
     div()
         .relative()
-        .w(px(ASCII_BOX_SIZE))
-        .h(px(ASCII_BOX_SIZE))
+        .w(px(size))
+        .h(px(size))
         .child(ascii)
         .rounded(px(8.))
         .border_1()
@@ -289,9 +316,14 @@ mod tests {
     }
 
     #[test]
+    fn responsive_hero_size_fits_narrow_windows() {
+        assert_eq!(responsive_hero_size(440.0, 360.0), 220.0);
+        assert_eq!(responsive_hero_size(1200.0, 900.0), ASCII_BOX_SIZE);
+    }
+
+    #[test]
     fn ascii_hero_layout_constants() {
         assert_eq!(HERO_MAX_WIDTH, 680.0);
-        assert_eq!(ASCII_HERO_HEIGHT, 360.0);
         assert_eq!(HERO_GLOW_INSET_H, 44.0);
         assert_eq!(HERO_GLOW_INSET_TOP, 46.0);
         assert_eq!(HERO_GLOW_INSET_BOTTOM, 34.0);
