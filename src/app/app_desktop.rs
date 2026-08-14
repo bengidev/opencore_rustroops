@@ -338,7 +338,13 @@ impl Render for OpenCoreApp {
                 div().size_full().child(onboarding_interactive_root(
                     &self.focus_handle,
                     on_enter,
-                    onboarding_screen(theme, ui, callbacks, persistence_error),
+                    onboarding_screen(
+                        theme,
+                        ui,
+                        callbacks,
+                        persistence_error,
+                        window.bounds().size,
+                    ),
                 ))
             }
             ActiveScreen::Home => div().size_full().child(home_screen(theme)),
@@ -347,8 +353,11 @@ impl Render for OpenCoreApp {
         #[cfg(debug_assertions)]
         {
             // Update FAB bounds for edge damping to the current window size.
-            let (win_w, win_h) = self.state.initial_window_size();
-            let bounds = (win_w as f32, win_h as f32);
+            let window_bounds = window.bounds();
+            let bounds = (
+                window_bounds.size.width.as_f32(),
+                window_bounds.size.height.as_f32(),
+            );
             let callbacks = DevResetCallbacks::from_app(cx.entity().downgrade(), bounds);
             // Snapshot the state so the element borrows don't clash with `&mut self`.
             let state_snapshot = self.dev_reset_state.clone();
