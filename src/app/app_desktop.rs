@@ -191,11 +191,8 @@ impl OpenCoreApp {
     /// Called by the debug reset overlay.
     #[cfg(debug_assertions)]
     fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.state.reset_persistent_data(self.store.as_ref()) {
+        match self.reset_dev_data_state() {
             Ok(()) => {
-                clear_shell_slot(&mut self.shell);
-                self.onboarding_ui = Some(OnboardingUiState::new());
-                self.persistence_error = None;
                 self.ensure_onboarding_focus(window, cx);
                 self.finish_screen_transition(window, cx);
             }
@@ -205,10 +202,15 @@ impl OpenCoreApp {
             }
         }
     }
-}
 
-fn clear_shell_slot<T>(slot: &mut Option<T>) {
-    *slot = None;
+    #[cfg(debug_assertions)]
+    fn reset_dev_data_state(&mut self) -> Result<(), PreferencesError> {
+        self.state.reset_persistent_data(self.store.as_ref())?;
+        self.shell = None;
+        self.onboarding_ui = Some(OnboardingUiState::new());
+        self.persistence_error = None;
+        Ok(())
+    }
 }
 
 impl OnboardingCallbacks {
@@ -572,16 +574,32 @@ mod animation_gate_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, debug_assertions))]
 mod reset_tests {
-    use super::clear_shell_slot;
+    use super::*;
+    use gpui::{AppContext, TestAppContext};
 
-    #[test]
-    fn successful_reset_clears_existing_shell_entity() {
-        let mut shell = Some("existing shell entity");
+    #[gpui::test]
+    fn successful_reset_clears_existing_shell_entity(cx: &mut TestAppContext) {
+        let store = Arc::new(FilePreferencesStore::at("/tmp/opencore-reset-test.json"));
+        let app = cx.new(|cx| {
+            OpenCoreApp::new(
+                AppState::from_preferences(crate::shared::preferences::AppPreferences {
+                    onboarding_completed: true,
+                    ..Default::default()
+                }),
+                store,
+                cx,
+            )
+        });
+        let save: ShellSaveFn = Rc::new(|_, _| {});
+        let shell = cx.new(|cx| Shell::new(super::super::shell::ShellChrome::default(), save, cx));
 
-        clear_shell_slot(&mut shell);
+        app.update(cx, |app, _| app.shell = Some(shell));
+        app.update(cx, |app, _| {
+            app.reset_dev_data_state().expect("reset persistent data");
+        });
 
-        assert!(shell.is_none());
+        assert!(cx.read_entity(&app, |app, _| app.shell.is_none()));
     }
 }
