@@ -1,8 +1,9 @@
 use std::{rc::Rc, time::Instant};
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext, Context, DragMoveEvent, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Window, div, px,
+    Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, div, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 
@@ -44,6 +45,23 @@ impl Render for BottomResize {
     }
 }
 
+#[derive(Clone)]
+struct TabDrag {
+    index: usize,
+    title: String,
+}
+
+impl Render for TabDrag {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(10.0))
+            .py(px(6.0))
+            .bg(gpui::black().opacity(0.9))
+            .text_color(gpui::white())
+            .child(self.title.clone())
+    }
+}
+
 /// Static holy-grail shell layout and the live state used by later interactions.
 #[allow(dead_code)]
 pub struct Shell {
@@ -54,6 +72,7 @@ pub struct Shell {
     bottom_tween: Option<DimTween>,
     save: ShellSaveFn,
     theme: OpenCoreTheme,
+    tab_bar_scroll_handle: ScrollHandle,
 }
 
 impl Shell {
@@ -67,6 +86,7 @@ impl Shell {
             bottom_tween: None,
             save,
             theme: OpenCoreTheme::resolve(crate::shared::theme::ThemeMode::Dark),
+            tab_bar_scroll_handle: ScrollHandle::new(),
         }
     }
 
@@ -191,6 +211,104 @@ impl Shell {
         (self.save)(self.chrome.clone(), cx);
     }
 
+    fn sync_tab_model_to_chrome(&mut self) {
+        let (tabs, active_id) = self.tab_model.to_chrome_tabs();
+        self.chrome.tabs = tabs;
+        self.chrome.active_tab_id = active_id;
+    }
+
+    fn select_tab(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.tab_model.select(id);
+        self.sync_tab_model_to_chrome();
+        self.schedule_save(cx);
+        cx.notify();
+    }
+
+    fn close_tab(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.tab_model.close(id);
+        self.sync_tab_model_to_chrome();
+        self.schedule_save(cx);
+        cx.notify();
+    }
+
+    fn add_stub_tab(&mut self, cx: &mut Context<Self>) {
+        self.tab_model.add_stub();
+        self.sync_tab_model_to_chrome();
+        self.schedule_save(cx);
+        cx.notify();
+    }
+
+    fn reorder_tab(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
+        self.tab_model.reorder(from, to);
+        self.sync_tab_model_to_chrome();
+        self.schedule_save(cx);
+        cx.notify();
+    }
+
+    fn render_tab_chip(
+        &self,
+        index: usize,
+        tab: &crate::app::shell::ShellTabRecord,
+        active: bool,
+        titlebar_background: gpui::Hsla,
+        label: gpui::Hsla,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let id = tab.id.clone();
+        let select_id = id.clone();
+        let close_id = id.clone();
+        let on_select = cx.listener(move |shell, _, _, cx| shell.select_tab(&select_id, cx));
+        let on_close = cx.listener(move |shell, _, _, cx| shell.close_tab(&close_id, cx));
+        let drag = TabDrag {
+            index,
+            title: tab.title.clone(),
+        };
+        div()
+            .id(format!("shell-tab-{index}"))
+            .h_full()
+            .min_w(px(120.0))
+            .max_w(px(220.0))
+            .px(px(10.0))
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .flex_shrink_0()
+            .cursor_pointer()
+            .border_b_1()
+            .border_color(if active { label } else { titlebar_background })
+            .when(active, |chip| chip.bg(titlebar_background.opacity(0.65)))
+            .on_click(on_select)
+            .on_drag(drag, move |tab, _, _, cx| cx.new(|_| tab.clone()))
+            .drag_over::<TabDrag>(move |element, dragged, _, _| {
+                if dragged.index == index {
+                    element
+                } else {
+                    element.border_b_2().border_color(label)
+                }
+            })
+            .on_drop({
+                let target = index;
+                cx.listener(move |shell, dragged: &TabDrag, _, cx| {
+                    shell.reorder_tab(dragged.index, tab_drop_index(dragged.index, target), cx);
+                })
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .text_color(if active { gpui::white() } else { label })
+                    .child(tab.title.clone()),
+            )
+            .child(
+                Button::new(format!("shell-tab-close-{index}"))
+                    .ghost()
+                    .compact()
+                    .label("×")
+                    .on_click(on_close),
+            )
+    }
+
     fn settle_tweens(&mut self, now: Instant, reduced: bool) {
         if reduced {
             self.left_tween = None;
@@ -246,6 +364,13 @@ impl Render for Shell {
         let titlebar_background = self.theme.surface(BackgroundToken::Tertiary);
         let label = self.theme.foreground(ForegroundToken::Muted);
 
+        let (tabs, active_id) = self.tab_model.to_chrome_tabs();
+        let active_title = tabs
+            .iter()
+            .find(|tab| tab.id == active_id)
+            .map(|tab| tab.title.clone())
+            .unwrap_or_else(|| "MAIN".into());
+
         let left = div()
             .w(px(left_width))
             .h_full()
@@ -266,7 +391,15 @@ impl Render for Shell {
                     .w(px(self.chrome.right_width))
                     .h_full(),
             );
-        let main = stub_region("MAIN", background, label).flex_1().w_full();
+        let main = div()
+            .flex()
+            .items_center()
+            .justify_center()
+            .flex_1()
+            .w_full()
+            .bg(background)
+            .text_color(label)
+            .child(format!("MAIN · {active_title}"));
         let bottom = div()
             .w_full()
             .h(px(bottom_height))
@@ -281,6 +414,22 @@ impl Render for Shell {
         let on_left_toggle = cx.listener(|shell, _, _, cx| shell.toggle_left(cx));
         let on_right_toggle = cx.listener(|shell, _, _, cx| shell.toggle_right(cx));
         let on_bottom_toggle = cx.listener(|shell, _, _, cx| shell.toggle_bottom(cx));
+        let on_add_tab = cx.listener(|shell, _, _, cx| shell.add_stub_tab(cx));
+
+        let tab_items = tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                self.render_tab_chip(
+                    index,
+                    tab,
+                    tab.id == active_id,
+                    titlebar_background,
+                    label,
+                    cx,
+                )
+            })
+            .collect::<Vec<_>>();
 
         let on_sidebar_drag =
             cx.listener(|shell, event: &DragMoveEvent<SidebarResize>, _window, cx| {
@@ -401,27 +550,83 @@ impl Render for Shell {
                     .items_center()
                     .child(div().w(px(TITLEBAR_CONTROLS_INSET)).h_full())
                     .child(
-                        Button::new("shell-left-toggle")
-                            .ghost()
-                            .compact()
-                            .label("Left")
-                            .on_click(on_left_toggle),
+                        div()
+                            .relative()
+                            .flex_1()
+                            .h_full()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .id("shell-tab-strip")
+                                    .h_full()
+                                    .flex()
+                                    .items_center()
+                                    .overflow_x_scroll()
+                                    .track_scroll(&self.tab_bar_scroll_handle)
+                                    .children(tab_items),
+                            )
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left_0()
+                                    .top_0()
+                                    .bottom_0()
+                                    .w(px(36.0))
+                                    .bg(titlebar_background.opacity(0.86)),
+                            )
+                            .child(
+                                div()
+                                    .absolute()
+                                    .right_0()
+                                    .top_0()
+                                    .bottom_0()
+                                    .w(px(36.0))
+                                    .bg(titlebar_background.opacity(0.86)),
+                            ),
                     )
                     .child(
-                        Button::new("shell-right-toggle")
-                            .ghost()
-                            .compact()
-                            .label("Right")
-                            .on_click(on_right_toggle),
-                    )
-                    .child(
-                        Button::new("shell-bottom-toggle")
-                            .ghost()
-                            .compact()
-                            .label("Bottom")
-                            .on_click(on_bottom_toggle),
+                        div()
+                            .flex()
+                            .flex_shrink_0()
+                            .items_center()
+                            .child(
+                                Button::new("shell-left-toggle")
+                                    .ghost()
+                                    .compact()
+                                    .label("Left")
+                                    .on_click(on_left_toggle),
+                            )
+                            .child(
+                                Button::new("shell-right-toggle")
+                                    .ghost()
+                                    .compact()
+                                    .label("Right")
+                                    .on_click(on_right_toggle),
+                            )
+                            .child(
+                                Button::new("shell-bottom-toggle")
+                                    .ghost()
+                                    .compact()
+                                    .label("Bottom")
+                                    .on_click(on_bottom_toggle),
+                            )
+                            .child(
+                                Button::new("shell-tab-add")
+                                    .ghost()
+                                    .compact()
+                                    .label("+")
+                                    .on_click(on_add_tab),
+                            ),
                     ),
             )
+    }
+}
+
+fn tab_drop_index(from: usize, target: usize) -> usize {
+    if from < target {
+        target.saturating_sub(1)
+    } else {
+        target
     }
 }
 
@@ -483,7 +688,7 @@ fn stub_region(label: &'static str, background: gpui::Hsla, foreground: gpui::Hs
 mod tests {
     use super::{
         BOTTOM_DEFAULT, SIDEBAR_DEFAULT, Shell, TITLEBAR_CONTROLS_INSET, reset_bottom, reset_right,
-        reset_sidebar, resize_bottom, resize_right, resize_sidebar, toggle_panel,
+        reset_sidebar, resize_bottom, resize_right, resize_sidebar, tab_drop_index, toggle_panel,
     };
     use crate::app::shell::{RIGHT_DEFAULT, SIDEBAR_MAX, ShellChrome};
     use std::time::Instant;
@@ -618,6 +823,24 @@ mod tests {
     }
 
     #[test]
+    fn tab_model_snapshot_syncs_into_persisted_chrome() {
+        let mut shell = test_shell();
+        let added_id = shell.tab_model.add_stub();
+
+        shell.sync_tab_model_to_chrome();
+
+        assert_eq!(shell.chrome.active_tab_id, added_id);
+        assert_eq!(shell.chrome.tabs, shell.tab_model.to_chrome_tabs().0);
+    }
+
+    #[test]
+    fn tab_drop_index_accounts_for_removed_source_chip() {
+        assert_eq!(tab_drop_index(0, 2), 1);
+        assert_eq!(tab_drop_index(2, 0), 0);
+        assert_eq!(tab_drop_index(1, 1), 1);
+    }
+
+    #[test]
     fn each_panel_resize_and_reset_cancels_its_own_tween() {
         let mut shell = test_shell();
         let now = Instant::now();
@@ -674,6 +897,7 @@ mod tests {
             theme: crate::shared::theme::OpenCoreTheme::resolve(
                 crate::shared::theme::ThemeMode::Dark,
             ),
+            tab_bar_scroll_handle: gpui::ScrollHandle::new(),
         }
     }
 }
