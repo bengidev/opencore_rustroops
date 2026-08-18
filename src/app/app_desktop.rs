@@ -193,6 +193,7 @@ impl OpenCoreApp {
     fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.state.reset_persistent_data(self.store.as_ref()) {
             Ok(()) => {
+                clear_shell_slot(&mut self.shell);
                 self.onboarding_ui = Some(OnboardingUiState::new());
                 self.persistence_error = None;
                 self.ensure_onboarding_focus(window, cx);
@@ -204,6 +205,10 @@ impl OpenCoreApp {
             }
         }
     }
+}
+
+fn clear_shell_slot<T>(slot: &mut Option<T>) {
+    *slot = None;
 }
 
 impl OnboardingCallbacks {
@@ -564,5 +569,19 @@ mod animation_gate_tests {
             now + crate::shared::theme::THEME_TRANSITION_DURATION
         ));
         assert!(!should_request_frame(&None, None, now));
+    }
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::clear_shell_slot;
+
+    #[test]
+    fn successful_reset_clears_existing_shell_entity() {
+        let mut shell = Some("existing shell entity");
+
+        clear_shell_slot(&mut shell);
+
+        assert!(shell.is_none());
     }
 }
