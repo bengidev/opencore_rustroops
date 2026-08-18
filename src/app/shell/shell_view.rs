@@ -7,6 +7,9 @@ use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme};
 
 use super::{DimTween, ShellChrome, TITLEBAR_HEIGHT, TabModel, eval_tween, tween_finished};
 
+/// Leave the native macOS traffic-light controls (x=12..66) clear.
+const TITLEBAR_CONTROLS_INSET: f32 = 68.0;
+
 /// Callback used by the shell to persist chrome changes at the application root.
 pub type ShellSaveFn = Rc<dyn Fn(ShellChrome, &mut App)>;
 
@@ -249,6 +252,7 @@ impl Render for Shell {
                     .bg(titlebar_background)
                     .flex()
                     .items_center()
+                    .child(div().w(px(TITLEBAR_CONTROLS_INSET)).h_full())
                     .child(
                         Button::new("shell-left-toggle")
                             .ghost()
@@ -300,7 +304,7 @@ fn stub_region(label: &'static str, background: gpui::Hsla, foreground: gpui::Hs
 
 #[cfg(test)]
 mod tests {
-    use super::{Shell, toggle_panel};
+    use super::{Shell, TITLEBAR_CONTROLS_INSET, toggle_panel};
     use crate::app::shell::ShellChrome;
     use std::time::Instant;
 
@@ -352,5 +356,12 @@ mod tests {
         assert!(open);
         assert_eq!(tween.from, 48.0);
         assert_eq!(tween.to, 256.0);
+    }
+
+    #[test]
+    fn titlebar_controls_clear_native_traffic_lights() {
+        const NATIVE_TRAFFIC_LIGHT_RIGHT_EDGE: f32 = 66.0;
+
+        assert!(TITLEBAR_CONTROLS_INSET >= NATIVE_TRAFFIC_LIGHT_RIGHT_EDGE);
     }
 }
