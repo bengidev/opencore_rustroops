@@ -3,8 +3,8 @@ use std::{rc::Rc, time::Instant};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext, Context, DragMoveEvent, InteractiveElement, IntoElement, ParentElement,
-    Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, div, linear_color_stop,
-    linear_gradient, px,
+    Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, canvas, div,
+    linear_color_stop, linear_gradient, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 
@@ -18,6 +18,13 @@ use super::{
 
 /// Leave the native macOS traffic-light controls (x=12..66) clear.
 const TITLEBAR_CONTROLS_INSET: f32 = 68.0;
+const TAB_FADE_WIDTH: f32 = 36.0;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TabFadeState {
+    left: bool,
+    right: bool,
+}
 
 /// Callback used by the shell to persist chrome changes at the application root.
 pub type ShellSaveFn = Rc<dyn Fn(ShellChrome, &mut App)>;
@@ -74,6 +81,7 @@ pub struct Shell {
     save: ShellSaveFn,
     theme: OpenCoreTheme,
     tab_bar_scroll_handle: ScrollHandle,
+    tab_fade_state: TabFadeState,
 }
 
 impl Shell {
@@ -88,6 +96,7 @@ impl Shell {
             save,
             theme: OpenCoreTheme::resolve(crate::shared::theme::ThemeMode::Dark),
             tab_bar_scroll_handle: ScrollHandle::new(),
+            tab_fade_state: TabFadeState::default(),
         }
     }
 
@@ -372,10 +381,7 @@ impl Render for Shell {
         let panel_background = self.theme.surface(BackgroundToken::Secondary);
         let titlebar_background = self.theme.surface(BackgroundToken::Tertiary);
         let label = self.theme.foreground(ForegroundToken::Muted);
-        let tab_scroll_offset = self.tab_bar_scroll_handle.offset().x.as_f32();
-        let tab_scroll_max = self.tab_bar_scroll_handle.max_offset().x.as_f32();
-        let (show_left_fade, show_right_fade) =
-            tab_fade_visibility(tab_scroll_offset, tab_scroll_max);
+        let tab_fade_state = self.tab_fade_state;
 
         let (tabs, active_id) = self.tab_model.to_chrome_tabs();
         let active_title = tabs
@@ -428,6 +434,7 @@ impl Render for Shell {
         let on_right_toggle = cx.listener(|shell, _, _, cx| shell.toggle_right(cx));
         let on_bottom_toggle = cx.listener(|shell, _, _, cx| shell.toggle_bottom(cx));
         let on_add_tab = cx.listener(|shell, _, _, cx| shell.add_stub_tab(cx));
+        let shell_entity = cx.entity();
 
         let tab_count = tabs.len();
         let tab_items = tabs
@@ -453,6 +460,20 @@ impl Render for Shell {
                 cx,
             );
         });
+        let fade_state_canvas = canvas(
+            |_, _, _| (),
+            move |_, _, _, cx| {
+                shell_entity.update(cx, |shell, cx| {
+                    let offset_x = shell.tab_bar_scroll_handle.offset().x.as_f32();
+                    let max_offset_x = shell.tab_bar_scroll_handle.max_offset().x.as_f32();
+                    if update_tab_fade_state(&mut shell.tab_fade_state, offset_x, max_offset_x) {
+                        cx.notify();
+                    }
+                });
+            },
+        )
+        .absolute()
+        .size_full();
 
         let on_sidebar_drag =
             cx.listener(|shell, event: &DragMoveEvent<SidebarResize>, _window, cx| {
@@ -576,46 +597,66 @@ impl Render for Shell {
                         div().relative().flex_1().h_full().overflow_hidden().child(
                             div()
                                 .id("shell-tab-strip")
+                                .relative()
                                 .h_full()
-                                .flex()
-                                .items_center()
-                                .overflow_x_scroll()
-                                .track_scroll(&self.tab_bar_scroll_handle)
-                                .children(tab_items)
+                                .overflow_hidden()
                                 .child(
                                     div()
-                                        .id("shell-tab-trailing-drop")
+                                        .id("shell-tab-scroll-content")
                                         .h_full()
-                                        .w(px(32.0))
-                                        .flex_shrink_0()
-                                        .on_drop(on_trailing_tab_drop),
-                                ),
+                                        .flex()
+                                        .items_center()
+                                        .overflow_x_scroll()
+                                        .track_scroll(&self.tab_bar_scroll_handle)
+                                        .children(tab_items)
+                                        .child(
+                                            div()
+                                                .id("shell-tab-trailing-drop")
+                                                .h_full()
+                                                .w(px(32.0))
+                                                .flex_shrink_0()
+                                                .on_drop(on_trailing_tab_drop),
+                                        ),
+                                )
+                                .child(fade_state_canvas)
+                                .when(tab_fade_state.left, |strip| {
+                                    strip.child(
+                                        div()
+                                            .absolute()
+                                            .left_0()
+                                            .top_0()
+                                            .bottom_0()
+                                            .w(px(TAB_FADE_WIDTH))
+                                            .bg(linear_gradient(
+                                                90.0,
+                                                linear_color_stop(titlebar_background, 0.0),
+                                                linear_color_stop(
+                                                    titlebar_background.opacity(0.0),
+                                                    1.0,
+                                                ),
+                                            )),
+                                    )
+                                })
+                                .when(tab_fade_state.right, |strip| {
+                                    strip.child(
+                                        div()
+                                            .absolute()
+                                            .right_0()
+                                            .top_0()
+                                            .bottom_0()
+                                            .w(px(TAB_FADE_WIDTH))
+                                            .bg(linear_gradient(
+                                                90.0,
+                                                linear_color_stop(
+                                                    titlebar_background.opacity(0.0),
+                                                    0.0,
+                                                ),
+                                                linear_color_stop(titlebar_background, 1.0),
+                                            )),
+                                    )
+                                }),
                         ),
                     )
-                    .when(show_left_fade, |band| {
-                        band.child(div().absolute().left_0().top_0().bottom_0().w(px(36.0)).bg(
-                            linear_gradient(
-                                90.0,
-                                linear_color_stop(titlebar_background, 0.0),
-                                linear_color_stop(titlebar_background.opacity(0.0), 1.0),
-                            ),
-                        ))
-                    })
-                    .when(show_right_fade, |band| {
-                        band.child(
-                            div()
-                                .absolute()
-                                .right_0()
-                                .top_0()
-                                .bottom_0()
-                                .w(px(36.0))
-                                .bg(linear_gradient(
-                                    90.0,
-                                    linear_color_stop(titlebar_background.opacity(0.0), 0.0),
-                                    linear_color_stop(titlebar_background, 1.0),
-                                )),
-                        )
-                    })
                     .child(
                         div()
                             .flex()
@@ -676,6 +717,17 @@ fn tab_fade_visibility(offset_x: f32, max_offset_x: f32) -> (bool, bool) {
         offset_x < -EDGE_EPSILON,
         offset_x > -max_offset_x + EDGE_EPSILON,
     )
+}
+
+fn update_tab_fade_state(state: &mut TabFadeState, offset_x: f32, max_offset_x: f32) -> bool {
+    let (left, right) = tab_fade_visibility(offset_x, max_offset_x);
+    let next = TabFadeState { left, right };
+    if *state == next {
+        false
+    } else {
+        *state = next;
+        true
+    }
 }
 
 fn stop_close_click_propagation(cx: &mut App) {
@@ -739,9 +791,9 @@ fn stub_region(label: &'static str, background: gpui::Hsla, foreground: gpui::Hs
 #[cfg(test)]
 mod tests {
     use super::{
-        BOTTOM_DEFAULT, SIDEBAR_DEFAULT, Shell, TITLEBAR_CONTROLS_INSET, reset_bottom, reset_right,
-        reset_sidebar, resize_bottom, resize_right, resize_sidebar, tab_drop_index,
-        tab_fade_visibility, toggle_panel,
+        BOTTOM_DEFAULT, SIDEBAR_DEFAULT, Shell, TAB_FADE_WIDTH, TITLEBAR_CONTROLS_INSET,
+        TabFadeState, reset_bottom, reset_right, reset_sidebar, resize_bottom, resize_right,
+        resize_sidebar, tab_drop_index, tab_fade_visibility, toggle_panel, update_tab_fade_state,
     };
     use crate::app::shell::{RIGHT_DEFAULT, SIDEBAR_MAX, ShellChrome};
     use gpui::{
@@ -800,6 +852,34 @@ mod tests {
                 assert_eq!(probe.parent_clicks, 0);
             })
             .unwrap();
+    }
+
+    #[test]
+    fn tab_fade_state_refreshes_after_layout_and_only_notifies_on_change() {
+        let mut state = TabFadeState::default();
+
+        assert!(update_tab_fade_state(&mut state, -40.0, 120.0));
+        assert_eq!(
+            state,
+            TabFadeState {
+                left: true,
+                right: true
+            }
+        );
+        assert!(!update_tab_fade_state(&mut state, -40.0, 120.0));
+        assert!(update_tab_fade_state(&mut state, -120.0, 120.0));
+        assert_eq!(
+            state,
+            TabFadeState {
+                left: true,
+                right: false
+            }
+        );
+    }
+
+    #[test]
+    fn tab_fade_width_matches_binding() {
+        assert_eq!(TAB_FADE_WIDTH, 36.0);
     }
 
     #[test]
@@ -1021,6 +1101,7 @@ mod tests {
                 crate::shared::theme::ThemeMode::Dark,
             ),
             tab_bar_scroll_handle: gpui::ScrollHandle::new(),
+            tab_fade_state: super::TabFadeState::default(),
         }
     }
 }
