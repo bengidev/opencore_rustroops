@@ -1,10 +1,11 @@
-use std::rc::Rc;
+use std::{rc::Rc, time::Instant};
 
 use gpui::{App, Context, IntoElement, ParentElement, Render, Styled, Window, div, px};
+use gpui_component::button::{Button, ButtonVariants as _};
 
 use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme};
 
-use super::{DimTween, ShellChrome, TITLEBAR_HEIGHT, TabModel};
+use super::{DimTween, ShellChrome, TITLEBAR_HEIGHT, TabModel, eval_tween, tween_finished};
 
 /// Callback used by the shell to persist chrome changes at the application root.
 pub type ShellSaveFn = Rc<dyn Fn(ShellChrome, &mut App)>;
@@ -74,28 +75,148 @@ impl Shell {
             0.0
         }
     }
+
+    pub fn toggle_left(&mut self, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        let reduced = reduced_motion(cx);
+        let from = eval_tween(self.left_tween.as_ref(), self.left_target(), now, reduced);
+        self.left_tween = Some(toggle_panel(
+            &mut self.chrome.left_open,
+            from,
+            self.chrome.left_width,
+            now,
+        ));
+        self.schedule_save(cx);
+        cx.notify();
+    }
+
+    pub fn toggle_right(&mut self, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        let reduced = reduced_motion(cx);
+        let from = eval_tween(self.right_tween.as_ref(), self.right_target(), now, reduced);
+        self.right_tween = Some(toggle_panel(
+            &mut self.chrome.right_open,
+            from,
+            self.chrome.right_width,
+            now,
+        ));
+        self.schedule_save(cx);
+        cx.notify();
+    }
+
+    pub fn toggle_bottom(&mut self, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        let reduced = reduced_motion(cx);
+        let from = eval_tween(
+            self.bottom_tween.as_ref(),
+            self.bottom_target(),
+            now,
+            reduced,
+        );
+        self.bottom_tween = Some(toggle_panel(
+            &mut self.chrome.bottom_open,
+            from,
+            self.chrome.bottom_height,
+            now,
+        ));
+        self.schedule_save(cx);
+        cx.notify();
+    }
+
+    fn schedule_save(&self, cx: &mut Context<Self>) {
+        (self.save)(self.chrome.clone(), cx);
+    }
+
+    fn settle_tweens(&mut self, now: Instant, reduced: bool) {
+        if reduced {
+            self.left_tween = None;
+            self.right_tween = None;
+            self.bottom_tween = None;
+            return;
+        }
+
+        if self
+            .left_tween
+            .as_ref()
+            .is_some_and(|tween| tween_finished(tween, now))
+        {
+            self.left_tween = None;
+        }
+        if self
+            .right_tween
+            .as_ref()
+            .is_some_and(|tween| tween_finished(tween, now))
+        {
+            self.right_tween = None;
+        }
+        if self
+            .bottom_tween
+            .as_ref()
+            .is_some_and(|tween| tween_finished(tween, now))
+        {
+            self.bottom_tween = None;
+        }
+    }
 }
 
 impl Render for Shell {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let now = Instant::now();
+        let reduced = reduced_motion(cx);
+        self.settle_tweens(now, reduced);
+
+        let left_width = eval_tween(self.left_tween.as_ref(), self.left_target(), now, reduced);
+        let right_width = eval_tween(self.right_tween.as_ref(), self.right_target(), now, reduced);
+        let bottom_height = eval_tween(
+            self.bottom_tween.as_ref(),
+            self.bottom_target(),
+            now,
+            reduced,
+        );
+        if self.left_tween.is_some() || self.right_tween.is_some() || self.bottom_tween.is_some() {
+            window.request_animation_frame();
+        }
+
         let background = self.theme.surface(BackgroundToken::Primary);
         let panel_background = self.theme.surface(BackgroundToken::Secondary);
         let titlebar_background = self.theme.surface(BackgroundToken::Tertiary);
         let label = self.theme.foreground(ForegroundToken::Muted);
 
-        let left = stub_region("LEFT", panel_background, label)
-            .w(px(self.left_target()))
+        let left = div()
+            .w(px(left_width))
             .h_full()
-            .flex_shrink_0();
-        let right = stub_region("RIGHT", panel_background, label)
-            .w(px(self.right_target()))
+            .overflow_hidden()
+            .flex_shrink_0()
+            .child(
+                stub_region("LEFT", panel_background, label)
+                    .w(px(self.chrome.left_width))
+                    .h_full(),
+            );
+        let right = div()
+            .w(px(right_width))
             .h_full()
-            .flex_shrink_0();
+            .overflow_hidden()
+            .flex_shrink_0()
+            .child(
+                stub_region("RIGHT", panel_background, label)
+                    .w(px(self.chrome.right_width))
+                    .h_full(),
+            );
         let main = stub_region("MAIN", background, label).flex_1().w_full();
-        let bottom = stub_region("BOTTOM", panel_background, label)
+        let bottom = div()
             .w_full()
-            .h(px(self.bottom_target()))
-            .flex_shrink_0();
+            .h(px(bottom_height))
+            .overflow_hidden()
+            .flex_shrink_0()
+            .child(
+                stub_region("BOTTOM", panel_background, label)
+                    .w_full()
+                    .h(px(self.chrome.bottom_height)),
+            );
+
+        let on_left_toggle = cx.listener(|shell, _, _, cx| shell.toggle_left(cx));
+        let on_right_toggle = cx.listener(|shell, _, _, cx| shell.toggle_right(cx));
+        let on_bottom_toggle = cx.listener(|shell, _, _, cx| shell.toggle_bottom(cx));
 
         div()
             .relative()
@@ -125,9 +246,46 @@ impl Render for Shell {
                     .left_0()
                     .right_0()
                     .h(px(TITLEBAR_HEIGHT))
-                    .bg(titlebar_background),
+                    .bg(titlebar_background)
+                    .flex()
+                    .items_center()
+                    .child(
+                        Button::new("shell-left-toggle")
+                            .ghost()
+                            .compact()
+                            .label("Left")
+                            .on_click(on_left_toggle),
+                    )
+                    .child(
+                        Button::new("shell-right-toggle")
+                            .ghost()
+                            .compact()
+                            .label("Right")
+                            .on_click(on_right_toggle),
+                    )
+                    .child(
+                        Button::new("shell-bottom-toggle")
+                            .ghost()
+                            .compact()
+                            .label("Bottom")
+                            .on_click(on_bottom_toggle),
+                    ),
             )
     }
+}
+
+fn toggle_panel(open: &mut bool, from: f32, open_size: f32, started: Instant) -> DimTween {
+    *open = !*open;
+    DimTween {
+        from,
+        to: if *open { open_size } else { 0.0 },
+        started,
+    }
+}
+
+/// GPUI does not expose a reduced-motion setting on `Window` or `App` in this revision.
+fn reduced_motion(_cx: &App) -> bool {
+    false
 }
 
 fn stub_region(label: &'static str, background: gpui::Hsla, foreground: gpui::Hsla) -> gpui::Div {
@@ -142,8 +300,9 @@ fn stub_region(label: &'static str, background: gpui::Hsla, foreground: gpui::Hs
 
 #[cfg(test)]
 mod tests {
-    use super::Shell;
+    use super::{Shell, toggle_panel};
     use crate::app::shell::ShellChrome;
+    use std::time::Instant;
 
     #[test]
     fn left_target_zero_when_closed() {
@@ -174,5 +333,24 @@ mod tests {
         chrome.bottom_open = false;
         assert_eq!(Shell::right_target_for(&chrome), 0.0);
         assert_eq!(Shell::bottom_target_for(&chrome), 0.0);
+    }
+
+    #[test]
+    fn toggle_panel_flips_open_flag_and_sets_tween_endpoints() {
+        let now = Instant::now();
+        let mut open = true;
+
+        let tween = toggle_panel(&mut open, 256.0, 256.0, now);
+
+        assert!(!open);
+        assert_eq!(tween.from, 256.0);
+        assert_eq!(tween.to, 0.0);
+        assert_eq!(tween.started, now);
+
+        let tween = toggle_panel(&mut open, 48.0, 256.0, now);
+
+        assert!(open);
+        assert_eq!(tween.from, 48.0);
+        assert_eq!(tween.to, 256.0);
     }
 }
