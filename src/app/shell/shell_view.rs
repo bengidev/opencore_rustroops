@@ -3,7 +3,8 @@ use std::{rc::Rc, time::Instant};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext, Context, DragMoveEvent, InteractiveElement, IntoElement, ParentElement,
-    Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, div, px,
+    Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, div, linear_color_stop,
+    linear_gradient, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 
@@ -252,13 +253,17 @@ impl Shell {
         active: bool,
         titlebar_background: gpui::Hsla,
         label: gpui::Hsla,
+        tab_count: usize,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         let id = tab.id.clone();
         let select_id = id.clone();
         let close_id = id.clone();
         let on_select = cx.listener(move |shell, _, _, cx| shell.select_tab(&select_id, cx));
-        let on_close = cx.listener(move |shell, _, _, cx| shell.close_tab(&close_id, cx));
+        let on_close = cx.listener(move |shell, _event: &gpui::ClickEvent, _, cx| {
+            stop_close_click_propagation(cx);
+            shell.close_tab(&close_id, cx);
+        });
         let drag = TabDrag {
             index,
             title: tab.title.clone(),
@@ -289,7 +294,11 @@ impl Shell {
             .on_drop({
                 let target = index;
                 cx.listener(move |shell, dragged: &TabDrag, _, cx| {
-                    shell.reorder_tab(dragged.index, tab_drop_index(dragged.index, target), cx);
+                    shell.reorder_tab(
+                        dragged.index,
+                        tab_drop_index(dragged.index, target, tab_count),
+                        cx,
+                    );
                 })
             })
             .child(
@@ -363,6 +372,10 @@ impl Render for Shell {
         let panel_background = self.theme.surface(BackgroundToken::Secondary);
         let titlebar_background = self.theme.surface(BackgroundToken::Tertiary);
         let label = self.theme.foreground(ForegroundToken::Muted);
+        let tab_scroll_offset = self.tab_bar_scroll_handle.offset().x.as_f32();
+        let tab_scroll_max = self.tab_bar_scroll_handle.max_offset().x.as_f32();
+        let (show_left_fade, show_right_fade) =
+            tab_fade_visibility(tab_scroll_offset, tab_scroll_max);
 
         let (tabs, active_id) = self.tab_model.to_chrome_tabs();
         let active_title = tabs
@@ -416,6 +429,7 @@ impl Render for Shell {
         let on_bottom_toggle = cx.listener(|shell, _, _, cx| shell.toggle_bottom(cx));
         let on_add_tab = cx.listener(|shell, _, _, cx| shell.add_stub_tab(cx));
 
+        let tab_count = tabs.len();
         let tab_items = tabs
             .iter()
             .enumerate()
@@ -426,10 +440,19 @@ impl Render for Shell {
                     tab.id == active_id,
                     titlebar_background,
                     label,
+                    tab_count,
                     cx,
                 )
             })
             .collect::<Vec<_>>();
+
+        let on_trailing_tab_drop = cx.listener(move |shell, dragged: &TabDrag, _, cx| {
+            shell.reorder_tab(
+                dragged.index,
+                tab_drop_index(dragged.index, tab_count, tab_count),
+                cx,
+            );
+        });
 
         let on_sidebar_drag =
             cx.listener(|shell, event: &DragMoveEvent<SidebarResize>, _window, cx| {
@@ -550,40 +573,49 @@ impl Render for Shell {
                     .items_center()
                     .child(div().w(px(TITLEBAR_CONTROLS_INSET)).h_full())
                     .child(
-                        div()
-                            .relative()
-                            .flex_1()
-                            .h_full()
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .id("shell-tab-strip")
-                                    .h_full()
-                                    .flex()
-                                    .items_center()
-                                    .overflow_x_scroll()
-                                    .track_scroll(&self.tab_bar_scroll_handle)
-                                    .children(tab_items),
-                            )
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left_0()
-                                    .top_0()
-                                    .bottom_0()
-                                    .w(px(36.0))
-                                    .bg(titlebar_background.opacity(0.86)),
-                            )
-                            .child(
-                                div()
-                                    .absolute()
-                                    .right_0()
-                                    .top_0()
-                                    .bottom_0()
-                                    .w(px(36.0))
-                                    .bg(titlebar_background.opacity(0.86)),
-                            ),
+                        div().relative().flex_1().h_full().overflow_hidden().child(
+                            div()
+                                .id("shell-tab-strip")
+                                .h_full()
+                                .flex()
+                                .items_center()
+                                .overflow_x_scroll()
+                                .track_scroll(&self.tab_bar_scroll_handle)
+                                .children(tab_items)
+                                .child(
+                                    div()
+                                        .id("shell-tab-trailing-drop")
+                                        .h_full()
+                                        .w(px(32.0))
+                                        .flex_shrink_0()
+                                        .on_drop(on_trailing_tab_drop),
+                                ),
+                        ),
                     )
+                    .when(show_left_fade, |band| {
+                        band.child(div().absolute().left_0().top_0().bottom_0().w(px(36.0)).bg(
+                            linear_gradient(
+                                90.0,
+                                linear_color_stop(titlebar_background, 0.0),
+                                linear_color_stop(titlebar_background.opacity(0.0), 1.0),
+                            ),
+                        ))
+                    })
+                    .when(show_right_fade, |band| {
+                        band.child(
+                            div()
+                                .absolute()
+                                .right_0()
+                                .top_0()
+                                .bottom_0()
+                                .w(px(36.0))
+                                .bg(linear_gradient(
+                                    90.0,
+                                    linear_color_stop(titlebar_background.opacity(0.0), 0.0),
+                                    linear_color_stop(titlebar_background, 1.0),
+                                )),
+                        )
+                    })
                     .child(
                         div()
                             .flex()
@@ -622,12 +654,32 @@ impl Render for Shell {
     }
 }
 
-fn tab_drop_index(from: usize, target: usize) -> usize {
+fn tab_drop_index(from: usize, target: usize, tab_count: usize) -> usize {
+    if target >= tab_count {
+        return tab_count.saturating_sub(1);
+    }
     if from < target {
         target.saturating_sub(1)
     } else {
         target
     }
+}
+
+fn tab_fade_visibility(offset_x: f32, max_offset_x: f32) -> (bool, bool) {
+    const EDGE_EPSILON: f32 = 0.5;
+
+    if max_offset_x <= EDGE_EPSILON {
+        return (false, false);
+    }
+
+    (
+        offset_x < -EDGE_EPSILON,
+        offset_x > -max_offset_x + EDGE_EPSILON,
+    )
+}
+
+fn stop_close_click_propagation(cx: &mut App) {
+    cx.stop_propagation();
 }
 
 fn toggle_panel(open: &mut bool, from: f32, open_size: f32, started: Instant) -> DimTween {
@@ -688,10 +740,67 @@ fn stub_region(label: &'static str, background: gpui::Hsla, foreground: gpui::Hs
 mod tests {
     use super::{
         BOTTOM_DEFAULT, SIDEBAR_DEFAULT, Shell, TITLEBAR_CONTROLS_INSET, reset_bottom, reset_right,
-        reset_sidebar, resize_bottom, resize_right, resize_sidebar, tab_drop_index, toggle_panel,
+        reset_sidebar, resize_bottom, resize_right, resize_sidebar, tab_drop_index,
+        tab_fade_visibility, toggle_panel,
     };
     use crate::app::shell::{RIGHT_DEFAULT, SIDEBAR_MAX, ShellChrome};
+    use gpui::{
+        AppContext as _, Context, InteractiveElement, IntoElement, Modifiers, ParentElement,
+        Render, StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div,
+        point, px,
+    };
     use std::time::Instant;
+
+    struct CloseRoutingProbe {
+        parent_clicks: usize,
+        close_clicks: usize,
+    }
+
+    impl Render for CloseRoutingProbe {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("probe-parent")
+                .w(px(100.0))
+                .h(px(100.0))
+                .on_click(cx.listener(|probe, _, _, _| probe.parent_clicks += 1))
+                .child(
+                    div()
+                        .id("probe-close")
+                        .absolute()
+                        .left_0()
+                        .top_0()
+                        .w(px(20.0))
+                        .h(px(20.0))
+                        .on_click(cx.listener(|probe, _, _, cx| {
+                            probe.close_clicks += 1;
+                            super::stop_close_click_propagation(cx);
+                        })),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn close_click_stops_parent_selection_event(cx: &mut TestAppContext) {
+        let window_handle = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| {
+                cx.new(|_| CloseRoutingProbe {
+                    parent_clicks: 0,
+                    close_clicks: 0,
+                })
+            })
+            .unwrap()
+        });
+
+        cx.run_until_parked();
+        let mut window = VisualTestContext::from_window(*window_handle, cx);
+        window.simulate_click(point(px(10.0), px(10.0)), Modifiers::default());
+        window_handle
+            .update(cx, |probe, _, _| {
+                assert_eq!(probe.close_clicks, 1);
+                assert_eq!(probe.parent_clicks, 0);
+            })
+            .unwrap();
+    }
 
     #[test]
     fn left_target_zero_when_closed() {
@@ -835,9 +944,23 @@ mod tests {
 
     #[test]
     fn tab_drop_index_accounts_for_removed_source_chip() {
-        assert_eq!(tab_drop_index(0, 2), 1);
-        assert_eq!(tab_drop_index(2, 0), 0);
-        assert_eq!(tab_drop_index(1, 1), 1);
+        assert_eq!(tab_drop_index(0, 2, 2), 1);
+        assert_eq!(tab_drop_index(2, 0, 3), 0);
+        assert_eq!(tab_drop_index(1, 1, 3), 1);
+    }
+
+    #[test]
+    fn tab_drop_index_supports_trailing_drop_target() {
+        assert_eq!(tab_drop_index(0, 3, 3), 2);
+        assert_eq!(tab_drop_index(2, 3, 3), 2);
+    }
+
+    #[test]
+    fn tab_fade_visibility_tracks_scroll_edges_and_overflow() {
+        assert_eq!(tab_fade_visibility(0.0, 0.0), (false, false));
+        assert_eq!(tab_fade_visibility(0.0, 120.0), (false, true));
+        assert_eq!(tab_fade_visibility(-40.0, 120.0), (true, true));
+        assert_eq!(tab_fade_visibility(-120.0, 120.0), (true, false));
     }
 
     #[test]
