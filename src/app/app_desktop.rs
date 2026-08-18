@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::{
-    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
-    Window, WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled,
+    TitlebarOptions, WeakEntity, Window, WindowBounds, WindowOptions, div, point, px, size,
 };
 #[cfg(debug_assertions)]
 use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point};
@@ -20,11 +20,11 @@ use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
-use super::home::home_screen;
 use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
+use super::shell::{Shell, ShellSaveFn, TITLEBAR_HEIGHT};
 use super::window_placement::center_window;
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
@@ -33,6 +33,7 @@ pub struct OpenCoreApp {
     store: Arc<FilePreferencesStore>,
     focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
+    shell: Option<gpui::Entity<Shell>>,
     theme_transition: Option<ThemeTransition>,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
@@ -51,6 +52,7 @@ impl OpenCoreApp {
             store,
             focus_handle: cx.focus_handle(),
             onboarding_ui,
+            shell: None,
             theme_transition: None,
             persistence_error: None,
             #[cfg(debug_assertions)]
@@ -98,6 +100,41 @@ impl OpenCoreApp {
     fn record_persistence_error(&mut self, context: &str, error: PreferencesError) {
         eprintln!("opencore: {context}: {error}");
         self.persistence_error = Some(format!("[ERROR: Could not save settings ({error})]"));
+    }
+
+    fn save_shell(&mut self, chrome: super::shell::ShellChrome) {
+        let mut updated = self.state.preferences.clone();
+        updated.shell = chrome;
+        match self.store.save(&updated) {
+            Ok(()) => {
+                self.state.preferences = updated;
+                self.persistence_error = None;
+            }
+            Err(error) => self.record_persistence_error("save shell", error),
+        }
+    }
+
+    fn ensure_shell(&mut self, window: &Window, cx: &mut Context<Self>) -> gpui::Entity<Shell> {
+        if let Some(shell) = self.shell.as_ref() {
+            return shell.clone();
+        }
+
+        let bounds = window.bounds();
+        let chrome = self
+            .state
+            .preferences
+            .shell
+            .clone()
+            .sanitized(bounds.size.width.as_f32(), bounds.size.height.as_f32());
+        let view = cx.entity().downgrade();
+        let save: ShellSaveFn = Rc::new(move |chrome, app| {
+            let _ = view.update(app, |app, _| {
+                app.save_shell(chrome);
+            });
+        });
+        let shell = cx.new(|cx| Shell::new(chrome, save, cx));
+        self.shell = Some(shell.clone());
+        shell
     }
 
     fn apply_onboarding_command(
@@ -335,19 +372,26 @@ impl Render for OpenCoreApp {
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
 
-                div().size_full().child(onboarding_interactive_root(
-                    &self.focus_handle,
-                    on_enter,
-                    onboarding_screen(
-                        theme,
-                        ui,
-                        callbacks,
-                        persistence_error,
-                        window.bounds().size,
-                    ),
-                ))
+                div()
+                    .size_full()
+                    .pt(px(TITLEBAR_HEIGHT))
+                    .child(onboarding_interactive_root(
+                        &self.focus_handle,
+                        on_enter,
+                        onboarding_screen(
+                            theme,
+                            ui,
+                            callbacks,
+                            persistence_error,
+                            window.bounds().size,
+                        ),
+                    ))
             }
-            ActiveScreen::Home => div().size_full().child(home_screen(theme)),
+            ActiveScreen::Home => {
+                let shell = self.ensure_shell(window, cx);
+                let _ = shell.update(cx, |shell, _| shell.set_theme(theme));
+                div().size_full().child(shell)
+            }
         };
 
         #[cfg(debug_assertions)]
@@ -424,6 +468,11 @@ pub fn run_desktop() -> Result<(), AppError> {
                 let bounds = cx.update(|app| window_bounds_for_state(&state, app));
                 let options = WindowOptions {
                     window_bounds: Some(bounds),
+                    titlebar: Some(TitlebarOptions {
+                        title: None,
+                        appears_transparent: true,
+                        traffic_light_position: Some(point(px(12.0), px(11.0))),
+                    }),
                     ..Default::default()
                 };
 

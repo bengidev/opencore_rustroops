@@ -7,7 +7,6 @@ mod app_state;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
-mod home;
 mod onboarding;
 pub mod shell;
 mod window_placement;
