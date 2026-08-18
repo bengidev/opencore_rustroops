@@ -940,6 +940,23 @@ mod tests {
     }
 
     #[test]
+    fn mutated_shell_chrome_round_trips_through_json() {
+        let mut chrome = ShellChrome::default();
+        chrome.left_width = 333.0;
+        chrome.right_open = true;
+        chrome.tabs.push(super::super::ShellTabRecord {
+            id: "tab-2".into(),
+            title: "Second".into(),
+        });
+        chrome.active_tab_id = "tab-2".into();
+
+        let json = serde_json::to_string(&chrome).expect("serialize");
+        let restored: ShellChrome = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored, chrome);
+    }
+
+    #[test]
     fn sidebar_resize_clamps_and_opens_panel_without_touching_other_state() {
         let mut chrome = ShellChrome::default();
         chrome.left_open = false;
