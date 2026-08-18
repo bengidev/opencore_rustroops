@@ -468,6 +468,7 @@ mod tests {
         let state = AppState::from_preferences(AppPreferences {
             theme_mode: ThemeMode::Dark,
             onboarding_completed: true,
+            ..Default::default()
         });
         assert_eq!(
             state.initial_window_size(),

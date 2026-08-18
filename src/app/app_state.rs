@@ -32,7 +32,7 @@ pub struct WindowResizeIntent {
 }
 
 /// Global application state: routing and preferences.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AppState {
     pub active_screen: ActiveScreen,
     pub preferences: AppPreferences,
