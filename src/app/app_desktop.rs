@@ -203,7 +203,6 @@ impl OpenCoreApp {
     fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.reset_dev_data_state() {
             Ok(()) => {
-                self.shell_save_task.take();
                 self.ensure_onboarding_focus(window, cx);
                 self.finish_screen_transition(window, cx);
             }
@@ -217,6 +216,7 @@ impl OpenCoreApp {
     #[cfg(debug_assertions)]
     fn reset_dev_data_state(&mut self) -> Result<(), PreferencesError> {
         self.state.reset_persistent_data(self.store.as_ref())?;
+        self.shell_save_task.take();
         self.shell = None;
         self.onboarding_ui = Some(OnboardingUiState::new());
         self.persistence_error = None;
@@ -615,17 +615,24 @@ mod shell_persistence_tests {
             onboarding_completed: true,
             ..Default::default()
         };
-        let app = test_app(cx, store, preferences);
+        let app = test_app(cx, store.clone(), preferences);
         let mut chrome = ShellChrome::default();
         chrome.left_width = 333.0;
 
         app.update(cx, |app, cx| app.schedule_shell_save(chrome.clone(), cx));
+        cx.run_until_parked();
+        cx.executor().advance_clock(Duration::from_millis(400));
+        cx.run_until_parked();
 
         cx.read_entity(&app, |app, _| {
             assert_eq!(app.state.preferences.shell, chrome);
             assert_eq!(app.state.preferences.theme_mode, ThemeMode::Light);
             assert!(app.state.preferences.onboarding_completed);
         });
+        let saved = store.load().expect("load saved preferences");
+        assert_eq!(saved.shell, chrome);
+        assert_eq!(saved.theme_mode, ThemeMode::Light);
+        assert!(saved.onboarding_completed);
     }
 
     #[gpui::test]
@@ -641,13 +648,14 @@ mod shell_persistence_tests {
 
         app.update(cx, |app, cx| app.schedule_shell_save(first, cx));
         cx.run_until_parked();
+        cx.executor().advance_clock(Duration::from_millis(200));
         app.update(cx, |app, cx| app.schedule_shell_save(latest.clone(), cx));
         cx.run_until_parked();
-        cx.executor().advance_clock(Duration::from_millis(399));
+        cx.executor().advance_clock(Duration::from_millis(200));
         cx.run_until_parked();
         assert!(!path.exists());
 
-        cx.executor().advance_clock(Duration::from_millis(1));
+        cx.executor().advance_clock(Duration::from_millis(200));
         cx.run_until_parked();
         let saved = store.load().expect("load saved preferences");
         assert_eq!(saved.shell, latest);
@@ -679,7 +687,10 @@ mod shell_persistence_tests {
 #[cfg(all(test, debug_assertions))]
 mod reset_tests {
     use super::*;
+    use crate::shared::preferences::ShellChrome;
     use gpui::{AppContext, TestAppContext};
+    use std::time::Duration;
+    use tempfile::TempDir;
 
     #[gpui::test]
     fn successful_reset_clears_existing_shell_entity(cx: &mut TestAppContext) {
@@ -703,5 +714,36 @@ mod reset_tests {
         });
 
         assert!(cx.read_entity(&app, |app, _| app.shell.is_none()));
+    }
+
+    #[gpui::test]
+    fn successful_reset_cancels_pending_shell_save(cx: &mut TestAppContext) {
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("preferences.json");
+        let store = Arc::new(FilePreferencesStore::at(&path));
+        let app = cx.new(|cx| {
+            OpenCoreApp::new(
+                AppState::from_preferences(crate::shared::preferences::AppPreferences {
+                    onboarding_completed: true,
+                    ..Default::default()
+                }),
+                store.clone(),
+                cx,
+            )
+        });
+        let mut stale_chrome = ShellChrome::default();
+        stale_chrome.left_width = 399.0;
+
+        app.update(cx, |app, cx| app.schedule_shell_save(stale_chrome, cx));
+        cx.run_until_parked();
+        app.update(cx, |app, _| {
+            app.reset_dev_data_state().expect("reset persistent data");
+        });
+        assert!(cx.read_entity(&app, |app, _| app.shell_save_task.is_none()));
+        cx.executor().advance_clock(Duration::from_millis(400));
+        cx.run_until_parked();
+
+        let saved = store.load().expect("load reset preferences");
+        assert_eq!(saved, crate::shared::preferences::AppPreferences::default());
     }
 }
