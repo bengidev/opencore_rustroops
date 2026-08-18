@@ -407,7 +407,7 @@ impl Render for OpenCoreApp {
             }
             ActiveScreen::Home => {
                 let shell = self.ensure_shell(window, cx);
-                let _ = shell.update(cx, |shell, _| shell.set_theme(theme));
+                shell.update(cx, |shell, _| shell.set_theme(theme));
                 div().size_full().child(shell)
             }
         };
@@ -616,8 +616,10 @@ mod shell_persistence_tests {
             ..Default::default()
         };
         let app = test_app(cx, store.clone(), preferences);
-        let mut chrome = ShellChrome::default();
-        chrome.left_width = 333.0;
+        let chrome = ShellChrome {
+            left_width: 333.0,
+            ..Default::default()
+        };
 
         app.update(cx, |app, cx| app.schedule_shell_save(chrome.clone(), cx));
         cx.run_until_parked();
@@ -641,8 +643,10 @@ mod shell_persistence_tests {
         let path = dir.path().join("preferences.json");
         let store = Arc::new(FilePreferencesStore::at(&path));
         let app = test_app(cx, store.clone(), AppPreferences::default());
-        let mut first = ShellChrome::default();
-        first.left_width = 300.0;
+        let first = ShellChrome {
+            left_width: 300.0,
+            ..Default::default()
+        };
         let mut latest = first.clone();
         latest.left_width = 360.0;
 
@@ -731,8 +735,10 @@ mod reset_tests {
                 cx,
             )
         });
-        let mut stale_chrome = ShellChrome::default();
-        stale_chrome.left_width = 399.0;
+        let stale_chrome = ShellChrome {
+            left_width: 399.0,
+            ..Default::default()
+        };
 
         app.update(cx, |app, cx| app.schedule_shell_save(stale_chrome, cx));
         cx.run_until_parked();

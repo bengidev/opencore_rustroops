@@ -2,13 +2,13 @@ use std::{rc::Rc, time::Instant};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    App, AppContext, Context, DragMoveEvent, InteractiveElement, IntoElement, ParentElement,
-    Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, canvas, div,
-    linear_color_stop, linear_gradient, px,
+    App, AppContext, Context, DragMoveEvent, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Render, ScrollHandle, StatefulInteractiveElement, Styled, Window,
+    WindowControlArea, canvas, div, linear_color_stop, linear_gradient, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 
-use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme};
+use crate::shared::theme::{BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme};
 
 use super::{
     BOTTOM_DEFAULT, DimTween, RIGHT_DEFAULT, SIDEBAR_DEFAULT, ShellChrome, TITLEBAR_HEIGHT,
@@ -82,6 +82,7 @@ pub struct Shell {
     theme: OpenCoreTheme,
     tab_bar_scroll_handle: ScrollHandle,
     tab_fade_state: TabFadeState,
+    titlebar_drag_pending: bool,
 }
 
 impl Shell {
@@ -97,6 +98,7 @@ impl Shell {
             theme: OpenCoreTheme::resolve(crate::shared::theme::ThemeMode::Dark),
             tab_bar_scroll_handle: ScrollHandle::new(),
             tab_fade_state: TabFadeState::default(),
+            titlebar_drag_pending: false,
         }
     }
 
@@ -260,15 +262,18 @@ impl Shell {
         index: usize,
         tab: &crate::app::shell::ShellTabRecord,
         active: bool,
-        titlebar_background: gpui::Hsla,
-        label: gpui::Hsla,
+        colors: (gpui::Hsla, gpui::Hsla),
         tab_count: usize,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
+        let (titlebar_background, label) = colors;
         let id = tab.id.clone();
         let select_id = id.clone();
         let close_id = id.clone();
-        let on_select = cx.listener(move |shell, _, _, cx| shell.select_tab(&select_id, cx));
+        let on_select = cx.listener(move |shell, _, _, cx| {
+            cx.stop_propagation();
+            shell.select_tab(&select_id, cx);
+        });
         let on_close = cx.listener(move |shell, _event: &gpui::ClickEvent, _, cx| {
             stop_close_click_propagation(cx);
             shell.close_tab(&close_id, cx);
@@ -279,6 +284,8 @@ impl Shell {
         };
         div()
             .id(format!("shell-tab-{index}"))
+            .tab_index(index as isize)
+            .focus_visible(|style| style.border_1().border_color(label))
             .h_full()
             .min_w(px(120.0))
             .max_w(px(220.0))
@@ -288,6 +295,9 @@ impl Shell {
             .gap(px(8.0))
             .flex_shrink_0()
             .cursor_pointer()
+            .occlude()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .active(|style| style.opacity(press_feedback_opacity(true)))
             .border_b_1()
             .border_color(if active { label } else { titlebar_background })
             .when(active, |chip| chip.bg(titlebar_background.opacity(0.65)))
@@ -381,6 +391,7 @@ impl Render for Shell {
         let panel_background = self.theme.surface(BackgroundToken::Secondary);
         let titlebar_background = self.theme.surface(BackgroundToken::Tertiary);
         let label = self.theme.foreground(ForegroundToken::Muted);
+        let handle_border = self.theme.border_token(BorderToken::Strong);
         let tab_fade_state = self.tab_fade_state;
 
         let (tabs, active_id) = self.tab_model.to_chrome_tabs();
@@ -436,6 +447,21 @@ impl Render for Shell {
         let on_add_tab = cx.listener(|shell, _, _, cx| shell.add_stub_tab(cx));
         let shell_entity = cx.entity();
 
+        let on_titlebar_mouse_down =
+            cx.listener(|shell, _, _, _| shell.titlebar_drag_pending = true);
+        let on_titlebar_mouse_up =
+            cx.listener(|shell, _, _, _| shell.titlebar_drag_pending = false);
+        let on_titlebar_mouse_down_out =
+            cx.listener(|shell, _, _, _| shell.titlebar_drag_pending = false);
+        let on_titlebar_mouse_up_out =
+            cx.listener(|shell, _, _, _| shell.titlebar_drag_pending = false);
+        let on_titlebar_mouse_move = cx.listener(|shell, _, window, _| {
+            if shell.titlebar_drag_pending {
+                shell.titlebar_drag_pending = false;
+                window.start_window_move();
+            }
+        });
+
         let tab_count = tabs.len();
         let tab_items = tabs
             .iter()
@@ -445,8 +471,7 @@ impl Render for Shell {
                     index,
                     tab,
                     tab.id == active_id,
-                    titlebar_background,
-                    label,
+                    (titlebar_background, label),
                     tab_count,
                     cx,
                 )
@@ -526,6 +551,11 @@ impl Render for Shell {
                 .bottom_0()
                 .left(px(-2.5))
                 .w(px(5.0))
+                .border_l_1()
+                .border_color(handle_border.opacity(resize_handle_border_opacity(false)))
+                .hover(|style| {
+                    style.border_color(handle_border.opacity(resize_handle_border_opacity(true)))
+                })
                 .cursor_col_resize()
                 .on_drag(SidebarResize, |_, _, _, cx| cx.new(|_| SidebarResize))
                 .on_drag_move(on_sidebar_drag)
@@ -539,6 +569,11 @@ impl Render for Shell {
                 .bottom_0()
                 .left(px(-2.5))
                 .w(px(5.0))
+                .border_l_1()
+                .border_color(handle_border.opacity(resize_handle_border_opacity(false)))
+                .hover(|style| {
+                    style.border_color(handle_border.opacity(resize_handle_border_opacity(true)))
+                })
                 .cursor_col_resize()
                 .on_drag(RightResize, |_, _, _, cx| cx.new(|_| RightResize))
                 .on_drag_move(on_right_drag)
@@ -552,11 +587,36 @@ impl Render for Shell {
                 .right_0()
                 .top(px(-2.5))
                 .h(px(5.0))
+                .border_t_1()
+                .border_color(handle_border.opacity(resize_handle_border_opacity(false)))
+                .hover(|style| {
+                    style.border_color(handle_border.opacity(resize_handle_border_opacity(true)))
+                })
                 .cursor_row_resize()
                 .on_drag(BottomResize, |_, _, _, cx| cx.new(|_| BottomResize))
                 .on_drag_move(on_bottom_drag)
                 .on_click(on_bottom_reset),
         );
+
+        let titlebar_drag_region = div()
+            .id("shell-titlebar-drag")
+            .debug_selector(|| "shell-titlebar-drag".into())
+            .absolute()
+            .top_0()
+            .left(px(TITLEBAR_CONTROLS_INSET))
+            .right_0()
+            .h(px(TITLEBAR_HEIGHT))
+            .window_control_area(WindowControlArea::Drag)
+            .on_mouse_down(MouseButton::Left, on_titlebar_mouse_down)
+            .on_mouse_up(MouseButton::Left, on_titlebar_mouse_up)
+            .on_mouse_down_out(on_titlebar_mouse_down_out)
+            .on_mouse_up_out(MouseButton::Left, on_titlebar_mouse_up_out)
+            .on_mouse_move(on_titlebar_mouse_move)
+            .on_click(|event, window, _| {
+                if event.click_count() == 2 {
+                    window.titlebar_double_click();
+                }
+            });
 
         div()
             .relative()
@@ -592,6 +652,7 @@ impl Render for Shell {
                     .bg(titlebar_background)
                     .flex()
                     .items_center()
+                    .child(titlebar_drag_region)
                     .child(div().w(px(TITLEBAR_CONTROLS_INSET)).h_full())
                     .child(
                         div().relative().flex_1().h_full().overflow_hidden().child(
@@ -615,6 +676,10 @@ impl Render for Shell {
                                                 .h_full()
                                                 .w(px(32.0))
                                                 .flex_shrink_0()
+                                                .occlude()
+                                                .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                                    cx.stop_propagation()
+                                                })
                                                 .on_drop(on_trailing_tab_drop),
                                         ),
                                 )
@@ -659,9 +724,13 @@ impl Render for Shell {
                     )
                     .child(
                         div()
+                            .id("shell-titlebar-controls")
                             .flex()
                             .flex_shrink_0()
                             .items_center()
+                            .occlude()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .active(|style| style.opacity(press_feedback_opacity(true)))
                             .child(
                                 Button::new("shell-left-toggle")
                                     .ghost()
@@ -778,6 +847,23 @@ fn reduced_motion(_cx: &App) -> bool {
     false
 }
 
+const PRESS_FEEDBACK_OPACITY: f32 = 0.84;
+
+fn press_feedback_opacity(pressed: bool) -> f32 {
+    if pressed { PRESS_FEEDBACK_OPACITY } else { 1.0 }
+}
+
+const HANDLE_BORDER_IDLE_OPACITY: f32 = 0.28;
+const HANDLE_BORDER_HOVER_OPACITY: f32 = 1.0;
+
+fn resize_handle_border_opacity(hovered: bool) -> f32 {
+    if hovered {
+        HANDLE_BORDER_HOVER_OPACITY
+    } else {
+        HANDLE_BORDER_IDLE_OPACITY
+    }
+}
+
 fn stub_region(label: &'static str, background: gpui::Hsla, foreground: gpui::Hsla) -> gpui::Div {
     div()
         .flex()
@@ -792,14 +878,15 @@ fn stub_region(label: &'static str, background: gpui::Hsla, foreground: gpui::Hs
 mod tests {
     use super::{
         BOTTOM_DEFAULT, SIDEBAR_DEFAULT, Shell, TAB_FADE_WIDTH, TITLEBAR_CONTROLS_INSET,
-        TabFadeState, reset_bottom, reset_right, reset_sidebar, resize_bottom, resize_right,
-        resize_sidebar, tab_drop_index, tab_fade_visibility, toggle_panel, update_tab_fade_state,
+        TabFadeState, press_feedback_opacity, reset_bottom, reset_right, reset_sidebar,
+        resize_bottom, resize_handle_border_opacity, resize_right, resize_sidebar, tab_drop_index,
+        tab_fade_visibility, toggle_panel, update_tab_fade_state,
     };
     use crate::app::shell::{RIGHT_DEFAULT, SIDEBAR_MAX, ShellChrome};
     use gpui::{
-        AppContext as _, Context, InteractiveElement, IntoElement, Modifiers, ParentElement,
-        Render, StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div,
-        point, px,
+        AppContext as _, Context, InteractiveElement, IntoElement, Modifiers, MouseButton,
+        ParentElement, Render, StatefulInteractiveElement, Styled, TestAppContext,
+        VisualTestContext, Window, div, point, px,
     };
     use std::time::Instant;
 
@@ -854,6 +941,75 @@ mod tests {
             .unwrap();
     }
 
+    #[gpui::test]
+    fn shell_exposes_a_real_empty_titlebar_drag_region(cx: &mut TestAppContext) {
+        let window_handle = cx.update(|cx| {
+            gpui_component::init(cx);
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| test_shell()))
+                .unwrap()
+        });
+
+        cx.run_until_parked();
+        let mut window = VisualTestContext::from_window(*window_handle, cx);
+
+        assert!(window.debug_bounds("shell-titlebar-drag").is_some());
+    }
+
+    #[gpui::test]
+    fn tab_chip_does_not_arm_titlebar_drag(cx: &mut TestAppContext) {
+        let window_handle = cx.update(|cx| {
+            gpui_component::init(cx);
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| test_shell()))
+                .unwrap()
+        });
+
+        cx.run_until_parked();
+        let mut window = VisualTestContext::from_window(*window_handle, cx);
+        window.simulate_mouse_down(
+            point(px(80.0), px(20.0)),
+            MouseButton::Left,
+            Modifiers::default(),
+        );
+
+        window_handle
+            .update(cx, |shell, _, _| assert!(!shell.titlebar_drag_pending))
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn titlebar_toggle_area_does_not_arm_titlebar_drag(cx: &mut TestAppContext) {
+        let window_handle = cx.update(|cx| {
+            gpui_component::init(cx);
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| test_shell()))
+                .unwrap()
+        });
+
+        cx.run_until_parked();
+        let mut window = VisualTestContext::from_window(*window_handle, cx);
+        window.simulate_mouse_down(
+            point(px(1500.0), px(20.0)),
+            MouseButton::Left,
+            Modifiers::default(),
+        );
+
+        window_handle
+            .update(cx, |shell, _, _| assert!(!shell.titlebar_drag_pending))
+            .unwrap();
+    }
+
+    #[test]
+    fn press_feedback_uses_a_brief_near_imperceptible_opacity_flash() {
+        assert_eq!(press_feedback_opacity(false), 1.0);
+        assert_eq!(press_feedback_opacity(true), 0.84);
+    }
+
+    #[test]
+    fn resize_handle_hover_uses_a_stronger_border_than_idle() {
+        assert_eq!(resize_handle_border_opacity(false), 0.28);
+        assert_eq!(resize_handle_border_opacity(true), 1.0);
+        assert!(resize_handle_border_opacity(true) > resize_handle_border_opacity(false));
+    }
+
     #[test]
     fn tab_fade_state_refreshes_after_layout_and_only_notifies_on_change() {
         let mut state = TabFadeState::default();
@@ -884,33 +1040,48 @@ mod tests {
 
     #[test]
     fn left_target_zero_when_closed() {
-        let mut chrome = ShellChrome::default();
-        chrome.left_open = false;
+        let chrome = ShellChrome {
+            left_open: false,
+            ..Default::default()
+        };
 
         assert_eq!(Shell::left_target_for(&chrome), 0.0);
     }
 
     #[test]
     fn left_target_uses_width_when_open() {
-        let mut chrome = ShellChrome::default();
-        chrome.left_width = 312.0;
+        let chrome = ShellChrome {
+            left_width: 312.0,
+            ..Default::default()
+        };
 
         assert_eq!(Shell::left_target_for(&chrome), 312.0);
     }
 
     #[test]
     fn right_and_bottom_targets_follow_open_flags() {
-        let mut chrome = ShellChrome::default();
-        chrome.right_open = true;
-        chrome.bottom_open = true;
+        let open_chrome = ShellChrome {
+            right_open: true,
+            bottom_open: true,
+            ..Default::default()
+        };
 
-        assert_eq!(Shell::right_target_for(&chrome), chrome.right_width);
-        assert_eq!(Shell::bottom_target_for(&chrome), chrome.bottom_height);
+        assert_eq!(
+            Shell::right_target_for(&open_chrome),
+            open_chrome.right_width
+        );
+        assert_eq!(
+            Shell::bottom_target_for(&open_chrome),
+            open_chrome.bottom_height
+        );
 
-        chrome.right_open = false;
-        chrome.bottom_open = false;
-        assert_eq!(Shell::right_target_for(&chrome), 0.0);
-        assert_eq!(Shell::bottom_target_for(&chrome), 0.0);
+        let closed_chrome = ShellChrome {
+            right_open: false,
+            bottom_open: false,
+            ..Default::default()
+        };
+        assert_eq!(Shell::right_target_for(&closed_chrome), 0.0);
+        assert_eq!(Shell::bottom_target_for(&closed_chrome), 0.0);
     }
 
     #[test]
@@ -936,14 +1107,18 @@ mod tests {
     fn titlebar_controls_clear_native_traffic_lights() {
         const NATIVE_TRAFFIC_LIGHT_RIGHT_EDGE: f32 = 66.0;
 
-        assert!(TITLEBAR_CONTROLS_INSET >= NATIVE_TRAFFIC_LIGHT_RIGHT_EDGE);
+        const {
+            assert!(TITLEBAR_CONTROLS_INSET >= NATIVE_TRAFFIC_LIGHT_RIGHT_EDGE);
+        }
     }
 
     #[test]
     fn mutated_shell_chrome_round_trips_through_json() {
-        let mut chrome = ShellChrome::default();
-        chrome.left_width = 333.0;
-        chrome.right_open = true;
+        let mut chrome = ShellChrome {
+            left_width: 333.0,
+            right_open: true,
+            ..Default::default()
+        };
         chrome.tabs.push(super::super::ShellTabRecord {
             id: "tab-2".into(),
             title: "Second".into(),
@@ -958,9 +1133,11 @@ mod tests {
 
     #[test]
     fn sidebar_resize_clamps_and_opens_panel_without_touching_other_state() {
-        let mut chrome = ShellChrome::default();
-        chrome.left_open = false;
-        chrome.right_open = true;
+        let mut chrome = ShellChrome {
+            left_open: false,
+            right_open: true,
+            ..Default::default()
+        };
         let before_right = chrome.right_width;
 
         resize_sidebar(&mut chrome, 999.0);
@@ -972,8 +1149,10 @@ mod tests {
 
     #[test]
     fn right_resize_uses_live_viewport_width_and_opens_panel() {
-        let mut chrome = ShellChrome::default();
-        chrome.right_open = false;
+        let mut chrome = ShellChrome {
+            right_open: false,
+            ..Default::default()
+        };
 
         resize_right(&mut chrome, 900.0, 800.0);
 
@@ -983,8 +1162,10 @@ mod tests {
 
     #[test]
     fn bottom_resize_uses_live_viewport_height_and_opens_panel() {
-        let mut chrome = ShellChrome::default();
-        chrome.bottom_open = false;
+        let mut chrome = ShellChrome {
+            bottom_open: false,
+            ..Default::default()
+        };
 
         resize_bottom(&mut chrome, 900.0, 800.0);
 
@@ -994,13 +1175,15 @@ mod tests {
 
     #[test]
     fn resize_reset_helpers_restore_persisted_defaults_and_open_panels() {
-        let mut chrome = ShellChrome::default();
-        chrome.left_width = 390.0;
-        chrome.right_width = 450.0;
-        chrome.bottom_height = 410.0;
-        chrome.left_open = false;
-        chrome.right_open = false;
-        chrome.bottom_open = false;
+        let mut chrome = ShellChrome {
+            left_width: 390.0,
+            right_width: 450.0,
+            bottom_height: 410.0,
+            left_open: false,
+            right_open: false,
+            bottom_open: false,
+            ..Default::default()
+        };
 
         reset_sidebar(&mut chrome);
         reset_right(&mut chrome);
@@ -1119,6 +1302,7 @@ mod tests {
             ),
             tab_bar_scroll_handle: gpui::ScrollHandle::new(),
             tab_fade_state: super::TabFadeState::default(),
+            titlebar_drag_pending: false,
         }
     }
 }
