@@ -25,7 +25,7 @@ use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
-use super::shell::{Shell, ShellSaveFn, TITLEBAR_HEIGHT};
+use super::shell::{Shell, ShellSaveFn};
 use super::window_placement::center_window;
 
 const SHELL_SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
@@ -485,20 +485,17 @@ impl Render for OpenCoreApp {
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
 
-                div()
-                    .size_full()
-                    .pt(px(TITLEBAR_HEIGHT))
-                    .child(onboarding_interactive_root(
-                        &self.focus_handle,
-                        on_enter,
-                        onboarding_screen(
-                            theme,
-                            ui,
-                            callbacks,
-                            persistence_error,
-                            window.bounds().size,
-                        ),
-                    ))
+                div().size_full().child(onboarding_interactive_root(
+                    &self.focus_handle,
+                    on_enter,
+                    onboarding_screen(
+                        theme,
+                        ui,
+                        callbacks,
+                        persistence_error,
+                        window.bounds().size,
+                    ),
+                ))
             }
             ActiveScreen::Home => {
                 let shell = self.ensure_shell(cx);
