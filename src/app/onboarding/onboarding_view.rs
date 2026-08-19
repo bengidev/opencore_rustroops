@@ -84,6 +84,10 @@ pub fn onboarding_interactive_root(
                 on_enter(window, cx);
             }
         })
+        .child(div().size_full().pt(px(TITLEBAR_HEIGHT)).child(content))
+        // Keep the drag hitbox above the full-screen content wrapper. The
+        // wrapper is padded visually, but still owns the titlebar band for
+        // hit-testing unless this strip is the frontmost child.
         .child(
             div()
                 .absolute()
@@ -96,7 +100,6 @@ pub fn onboarding_interactive_root(
                 .on_mouse_up(MouseButton::Left, on_drag_up)
                 .on_mouse_move(on_drag_move),
         )
-        .child(div().size_full().pt(px(TITLEBAR_HEIGHT)).child(content))
 }
 
 /// Full-screen onboarding scene matching the reference layout.
