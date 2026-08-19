@@ -7,8 +7,8 @@ mod app_state;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
-mod home;
 mod onboarding;
+pub mod shell;
 mod window_placement;
 
 pub use app_boot::boot_screen;
@@ -64,6 +64,7 @@ mod tests {
         let prefs = AppPreferences {
             theme_mode: ThemeMode::Dark,
             onboarding_completed: true,
+            ..Default::default()
         };
         assert_eq!(boot_screen(&prefs), ActiveScreen::Home);
     }
@@ -74,12 +75,14 @@ mod tests {
             let incomplete = AppPreferences {
                 theme_mode: theme,
                 onboarding_completed: false,
+                ..Default::default()
             };
             assert_eq!(boot_screen(&incomplete), ActiveScreen::Onboarding);
 
             let complete = AppPreferences {
                 theme_mode: theme,
                 onboarding_completed: true,
+                ..Default::default()
             };
             assert_eq!(boot_screen(&complete), ActiveScreen::Home);
         }
@@ -90,6 +93,7 @@ mod tests {
         let prefs = AppPreferences {
             theme_mode: ThemeMode::Light,
             onboarding_completed: false,
+            ..Default::default()
         };
         let state = AppState::from_preferences(prefs);
         assert_eq!(state.theme_mode(), ThemeMode::Light);
@@ -134,6 +138,7 @@ mod tests {
         let complete = AppState::from_preferences(AppPreferences {
             theme_mode: ThemeMode::Dark,
             onboarding_completed: true,
+            ..Default::default()
         });
         assert_eq!(
             complete.initial_window_size(),
@@ -155,6 +160,7 @@ mod tests {
         let mut state = AppState::from_preferences(AppPreferences {
             theme_mode: ThemeMode::Light,
             onboarding_completed: true,
+            ..Default::default()
         });
         state
             .reset_persistent_data(&store)

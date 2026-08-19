@@ -9,9 +9,9 @@ use crate::shared::theme::ThemeMode;
 pub const ONBOARDING_WINDOW_WIDTH: u32 = 960;
 
 /// Onboarding window height.
-pub const ONBOARDING_WINDOW_HEIGHT: u32 = 680;
+pub const ONBOARDING_WINDOW_HEIGHT: u32 = 740;
 
-/// Home window width after onboarding (960×680 → 1280×800).
+/// Home window width after onboarding (960×740 → 1280×800).
 pub const HOME_WINDOW_WIDTH: u32 = 1280;
 
 /// Home window height after onboarding.
@@ -32,7 +32,7 @@ pub struct WindowResizeIntent {
 }
 
 /// Global application state: routing and preferences.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AppState {
     pub active_screen: ActiveScreen,
     pub preferences: AppPreferences,

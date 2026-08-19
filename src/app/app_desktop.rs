@@ -1,13 +1,14 @@
 //! **Facade** for the GPU runtime: boots preferences, opens one window, and routes
 //! [`super::ActiveScreen`] without closing between onboarding and home.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui::{
-    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, WeakEntity,
-    Window, WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Task,
+    TitlebarOptions, WeakEntity, Window, WindowBounds, WindowOptions, div, point, px, size,
 };
 #[cfg(debug_assertions)]
 use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point};
@@ -20,12 +21,69 @@ use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
-use super::home::home_screen;
 use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
+use super::shell::{Shell, ShellSaveFn};
 use super::window_placement::center_window;
+
+const SHELL_SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
+
+#[derive(Debug, Default)]
+struct PendingShellSave {
+    latest: super::shell::ShellChrome,
+    dirty: bool,
+}
+
+impl PendingShellSave {
+    fn set_latest(&mut self, chrome: super::shell::ShellChrome) {
+        self.latest = chrome;
+        self.dirty = true;
+    }
+
+    fn take_dirty(&mut self) -> Option<super::shell::ShellChrome> {
+        if self.dirty {
+            self.dirty = false;
+            Some(self.latest.clone())
+        } else {
+            None
+        }
+    }
+
+    fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    #[cfg(debug_assertions)]
+    fn clear(&mut self) {
+        self.dirty = false;
+    }
+}
+
+fn flush_pending_shell_save(
+    pending: &Rc<RefCell<PendingShellSave>>,
+    store: &FilePreferencesStore,
+    context: &str,
+) {
+    let Some(chrome) = pending.borrow_mut().take_dirty() else {
+        return;
+    };
+
+    let mut preferences = match store.load() {
+        Ok(preferences) => preferences,
+        Err(error) => {
+            eprintln!("opencore: {context}: {error}");
+            pending.borrow_mut().mark_dirty();
+            return;
+        }
+    };
+    preferences.shell = chrome;
+    if let Err(error) = store.save(&preferences) {
+        eprintln!("opencore: {context}: {error}");
+        pending.borrow_mut().mark_dirty();
+    }
+}
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
 pub struct OpenCoreApp {
@@ -33,6 +91,11 @@ pub struct OpenCoreApp {
     store: Arc<FilePreferencesStore>,
     focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
+    shell: Option<gpui::Entity<Shell>>,
+    shell_save_task: Option<Task<()>>,
+    pending_shell_save: Rc<RefCell<PendingShellSave>>,
+    _shutdown_subscription: gpui::Subscription,
+    _window_closed_subscription: gpui::Subscription,
     theme_transition: Option<ThemeTransition>,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
@@ -46,11 +109,43 @@ impl OpenCoreApp {
         } else {
             None
         };
+        let pending_shell_save = Rc::new(RefCell::new(PendingShellSave::default()));
+        let pending_for_shutdown = pending_shell_save.clone();
+        let store_for_shutdown = store.clone();
+        // Register directly on App rather than through Context::on_app_quit:
+        // GPUI clears window-owned entities before running quit futures, while
+        // this shared state remains available to flush the latest dirty shell.
+        let shutdown_subscription = App::on_app_quit(cx, move |_app| {
+            let pending_for_shutdown = pending_for_shutdown.clone();
+            let store_for_shutdown = store_for_shutdown.clone();
+            async move {
+                flush_pending_shell_save(
+                    &pending_for_shutdown,
+                    &store_for_shutdown,
+                    "save shell on shutdown",
+                );
+            }
+        });
+        let pending_for_window_close = pending_shell_save.clone();
+        let store_for_window_close = store.clone();
+        let window_closed_subscription = App::on_window_closed(cx, move |_app, _window_id| {
+            flush_pending_shell_save(
+                &pending_for_window_close,
+                &store_for_window_close,
+                "save shell on window close",
+            );
+        });
+
         Self {
             state,
             store,
             focus_handle: cx.focus_handle(),
             onboarding_ui,
+            shell: None,
+            shell_save_task: None,
+            pending_shell_save,
+            _shutdown_subscription: shutdown_subscription,
+            _window_closed_subscription: window_closed_subscription,
             theme_transition: None,
             persistence_error: None,
             #[cfg(debug_assertions)]
@@ -98,6 +193,52 @@ impl OpenCoreApp {
     fn record_persistence_error(&mut self, context: &str, error: PreferencesError) {
         eprintln!("opencore: {context}: {error}");
         self.persistence_error = Some(format!("[ERROR: Could not save settings ({error})]"));
+    }
+
+    fn schedule_shell_save(&mut self, chrome: super::shell::ShellChrome, cx: &mut Context<Self>) {
+        self.state.preferences.shell = chrome.clone();
+        self.pending_shell_save.borrow_mut().set_latest(chrome);
+        self.shell_save_task = Some(cx.spawn(async move |view, cx| {
+            cx.background_executor().timer(SHELL_SAVE_DEBOUNCE).await;
+            let _ = view.update(cx, |app, _| app.flush_shell_save());
+        }));
+    }
+
+    fn flush_shell_save(&mut self) {
+        if !self.pending_shell_save.borrow().dirty {
+            self.shell_save_task = None;
+            return;
+        }
+
+        let preferences = self.state.preferences.clone();
+        match self.store.save(&preferences) {
+            Ok(()) => {
+                self.pending_shell_save.borrow_mut().dirty = false;
+                self.persistence_error = None;
+            }
+            Err(error) => {
+                self.pending_shell_save.borrow_mut().mark_dirty();
+                self.record_persistence_error("save shell", error);
+            }
+        }
+        self.shell_save_task = None;
+    }
+
+    fn ensure_shell(&mut self, cx: &mut Context<Self>) -> gpui::Entity<Shell> {
+        if let Some(shell) = self.shell.as_ref() {
+            return shell.clone();
+        }
+
+        let chrome = self.state.preferences.shell.clone().sanitized_persisted();
+        let view = cx.entity().downgrade();
+        let save: ShellSaveFn = Rc::new(move |chrome, app| {
+            let _ = view.update(app, |app, cx| {
+                app.schedule_shell_save(chrome, cx);
+            });
+        });
+        let shell = cx.new(|cx| Shell::new(chrome, save, cx));
+        self.shell = Some(shell.clone());
+        shell
     }
 
     fn apply_onboarding_command(
@@ -154,10 +295,8 @@ impl OpenCoreApp {
     /// Called by the debug reset overlay.
     #[cfg(debug_assertions)]
     fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.state.reset_persistent_data(self.store.as_ref()) {
+        match self.reset_dev_data_state() {
             Ok(()) => {
-                self.onboarding_ui = Some(OnboardingUiState::new());
-                self.persistence_error = None;
                 self.ensure_onboarding_focus(window, cx);
                 self.finish_screen_transition(window, cx);
             }
@@ -166,6 +305,17 @@ impl OpenCoreApp {
                 cx.notify();
             }
         }
+    }
+
+    #[cfg(debug_assertions)]
+    fn reset_dev_data_state(&mut self) -> Result<(), PreferencesError> {
+        self.state.reset_persistent_data(self.store.as_ref())?;
+        self.shell_save_task.take();
+        self.pending_shell_save.borrow_mut().clear();
+        self.shell = None;
+        self.onboarding_ui = Some(OnboardingUiState::new());
+        self.persistence_error = None;
+        Ok(())
     }
 }
 
@@ -347,7 +497,11 @@ impl Render for OpenCoreApp {
                     ),
                 ))
             }
-            ActiveScreen::Home => div().size_full().child(home_screen(theme)),
+            ActiveScreen::Home => {
+                let shell = self.ensure_shell(cx);
+                shell.update(cx, |shell, _| shell.set_theme(theme));
+                div().size_full().child(shell)
+            }
         };
 
         #[cfg(debug_assertions)]
@@ -424,6 +578,11 @@ pub fn run_desktop() -> Result<(), AppError> {
                 let bounds = cx.update(|app| window_bounds_for_state(&state, app));
                 let options = WindowOptions {
                     window_bounds: Some(bounds),
+                    titlebar: Some(TitlebarOptions {
+                        title: None,
+                        appears_transparent: true,
+                        traffic_light_position: Some(point(px(12.0), px(11.0))),
+                    }),
                     ..Default::default()
                 };
 
@@ -468,6 +627,7 @@ mod tests {
         let state = AppState::from_preferences(AppPreferences {
             theme_mode: ThemeMode::Dark,
             onboarding_completed: true,
+            ..Default::default()
         });
         assert_eq!(
             state.initial_window_size(),
@@ -514,5 +674,198 @@ mod animation_gate_tests {
             now + crate::shared::theme::THEME_TRANSITION_DURATION
         ));
         assert!(!should_request_frame(&None, None, now));
+    }
+}
+
+#[cfg(test)]
+mod shell_persistence_tests {
+    use super::*;
+    use crate::shared::preferences::{AppPreferences, ShellChrome};
+    use crate::shared::theme::ThemeMode;
+    use gpui::{AppContext, TestAppContext};
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    fn test_app(
+        cx: &mut TestAppContext,
+        store: Arc<FilePreferencesStore>,
+        preferences: AppPreferences,
+    ) -> gpui::Entity<OpenCoreApp> {
+        cx.new(|cx| OpenCoreApp::new(AppState::from_preferences(preferences), store, cx))
+    }
+
+    #[gpui::test]
+    fn shell_snapshot_merges_immediately_and_preserves_unrelated_preferences(
+        cx: &mut TestAppContext,
+    ) {
+        let dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(
+            dir.path().join("preferences.json"),
+        ));
+        let preferences = AppPreferences {
+            theme_mode: ThemeMode::Light,
+            onboarding_completed: true,
+            ..Default::default()
+        };
+        let app = test_app(cx, store.clone(), preferences);
+        let chrome = ShellChrome {
+            left_width: 333.0,
+            ..Default::default()
+        };
+
+        app.update(cx, |app, cx| app.schedule_shell_save(chrome.clone(), cx));
+        cx.run_until_parked();
+        cx.executor().advance_clock(Duration::from_millis(400));
+        cx.run_until_parked();
+
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.state.preferences.shell, chrome);
+            assert_eq!(app.state.preferences.theme_mode, ThemeMode::Light);
+            assert!(app.state.preferences.onboarding_completed);
+        });
+        let saved = store.load().expect("load saved preferences");
+        assert_eq!(saved.shell, chrome);
+        assert_eq!(saved.theme_mode, ThemeMode::Light);
+        assert!(saved.onboarding_completed);
+    }
+
+    #[gpui::test]
+    fn shell_debounce_writes_only_the_latest_snapshot(cx: &mut TestAppContext) {
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("preferences.json");
+        let store = Arc::new(FilePreferencesStore::at(&path));
+        let app = test_app(cx, store.clone(), AppPreferences::default());
+        let first = ShellChrome {
+            left_width: 300.0,
+            ..Default::default()
+        };
+        let mut latest = first.clone();
+        latest.left_width = 360.0;
+
+        app.update(cx, |app, cx| app.schedule_shell_save(first, cx));
+        cx.run_until_parked();
+        cx.executor().advance_clock(Duration::from_millis(200));
+        app.update(cx, |app, cx| app.schedule_shell_save(latest.clone(), cx));
+        cx.run_until_parked();
+        cx.executor().advance_clock(Duration::from_millis(200));
+        cx.run_until_parked();
+        assert!(!path.exists());
+
+        cx.executor().advance_clock(Duration::from_millis(200));
+        cx.run_until_parked();
+        let saved = store.load().expect("load saved preferences");
+        assert_eq!(saved.shell, latest);
+    }
+
+    #[gpui::test]
+    fn shell_debounce_records_save_errors(cx: &mut TestAppContext) {
+        let dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(dir.path()));
+        let app = test_app(cx, store, AppPreferences::default());
+
+        app.update(cx, |app, cx| {
+            app.schedule_shell_save(ShellChrome::default(), cx)
+        });
+        cx.run_until_parked();
+        cx.executor().advance_clock(Duration::from_millis(400));
+        cx.run_until_parked();
+
+        cx.read_entity(&app, |app, _| {
+            assert!(
+                app.persistence_error
+                    .as_deref()
+                    .is_some_and(|error| error.contains("Could not save settings"))
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn shell_shutdown_flushes_dirty_latest_snapshot_before_debounce(cx: &mut TestAppContext) {
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("preferences.json");
+        let store = Arc::new(FilePreferencesStore::at(&path));
+        let app = test_app(cx, store.clone(), AppPreferences::default());
+        let latest = ShellChrome {
+            left_width: 372.0,
+            right_open: true,
+            ..Default::default()
+        };
+
+        app.update(cx, |app, cx| app.schedule_shell_save(latest.clone(), cx));
+        cx.run_until_parked();
+
+        cx.update(|gpui| gpui.shutdown());
+
+        let saved = store.load().expect("load shutdown-flushed preferences");
+        assert_eq!(saved.shell, latest);
+    }
+}
+
+#[cfg(all(test, debug_assertions))]
+mod reset_tests {
+    use super::*;
+    use crate::shared::preferences::ShellChrome;
+    use gpui::{AppContext, TestAppContext};
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    #[gpui::test]
+    fn successful_reset_clears_existing_shell_entity(cx: &mut TestAppContext) {
+        let dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(
+            dir.path().join("preferences.json"),
+        ));
+        let app = cx.new(|cx| {
+            OpenCoreApp::new(
+                AppState::from_preferences(crate::shared::preferences::AppPreferences {
+                    onboarding_completed: true,
+                    ..Default::default()
+                }),
+                store,
+                cx,
+            )
+        });
+        let save: ShellSaveFn = Rc::new(|_, _| {});
+        let shell = cx.new(|cx| Shell::new(super::super::shell::ShellChrome::default(), save, cx));
+
+        app.update(cx, |app, _| app.shell = Some(shell));
+        app.update(cx, |app, _| {
+            app.reset_dev_data_state().expect("reset persistent data");
+        });
+
+        assert!(cx.read_entity(&app, |app, _| app.shell.is_none()));
+    }
+
+    #[gpui::test]
+    fn successful_reset_cancels_pending_shell_save(cx: &mut TestAppContext) {
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("preferences.json");
+        let store = Arc::new(FilePreferencesStore::at(&path));
+        let app = cx.new(|cx| {
+            OpenCoreApp::new(
+                AppState::from_preferences(crate::shared::preferences::AppPreferences {
+                    onboarding_completed: true,
+                    ..Default::default()
+                }),
+                store.clone(),
+                cx,
+            )
+        });
+        let stale_chrome = ShellChrome {
+            left_width: 399.0,
+            ..Default::default()
+        };
+
+        app.update(cx, |app, cx| app.schedule_shell_save(stale_chrome, cx));
+        cx.run_until_parked();
+        app.update(cx, |app, _| {
+            app.reset_dev_data_state().expect("reset persistent data");
+        });
+        assert!(cx.read_entity(&app, |app, _| app.shell_save_task.is_none()));
+        cx.executor().advance_clock(Duration::from_millis(400));
+        cx.run_until_parked();
+
+        let saved = store.load().expect("load reset preferences");
+        assert_eq!(saved, crate::shared::preferences::AppPreferences::default());
     }
 }

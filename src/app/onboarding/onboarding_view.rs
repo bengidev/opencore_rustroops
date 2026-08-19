@@ -2,10 +2,12 @@
 //! Onboarding view — immersive monochrome landing ported to GPUI.
 
 use gpui::{
-    BoxShadow, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
-    SharedString, Styled, div, px, relative,
+    BoxShadow, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    ParentElement, SharedString, Styled, Window, WindowControlArea, div, px, relative,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
+use std::cell::Cell;
+use std::rc::Rc;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
 use crate::shared::theme::{
@@ -22,9 +24,16 @@ const HERO_GLOW_INSET_BOTTOM: f32 = 34.0;
 const ASCII_TEXT_SIZE: f32 = 9.0;
 const ASCII_BOX_SIZE: f32 = 320.0;
 const EDGE_INSET_H: f32 = 16.0;
-const EDGE_INSET_V: f32 = 20.0;
+const EDGE_INSET_TOP: f32 = 4.0;
+const EDGE_INSET_BOTTOM: f32 = 20.0;
 const ENTER_BUTTON_HEIGHT: f32 = 48.0;
 const HERO_MIN_SIZE: f32 = 220.0;
+const TITLEBAR_CONTROLS_INSET: f32 = 88.0;
+const TITLEBAR_HEIGHT: f32 = 38.0;
+
+fn onboarding_drag_should_start(pointer_down: bool, pointer_moved: bool) -> bool {
+    pointer_down && pointer_moved
+}
 
 fn responsive_hero_size(available_width: f32, available_height: f32) -> f32 {
     let width_limit = (available_width - EDGE_INSET_H * 2.0).max(HERO_MIN_SIZE);
@@ -44,7 +53,30 @@ pub fn onboarding_interactive_root(
     on_enter: WindowAppHandler,
     content: impl IntoElement,
 ) -> impl IntoElement {
+    let drag_pending = Rc::new(Cell::new(false));
+    let on_drag_down = {
+        let drag_pending = drag_pending.clone();
+        move |_: &gpui::MouseDownEvent, _window: &mut Window, _cx: &mut gpui::App| {
+            drag_pending.set(true);
+        }
+    };
+    let on_drag_up = {
+        let drag_pending = drag_pending.clone();
+        move |_: &gpui::MouseUpEvent, _window: &mut Window, _cx: &mut gpui::App| {
+            drag_pending.set(false);
+        }
+    };
+    let on_drag_move = {
+        let drag_pending = drag_pending.clone();
+        move |_: &gpui::MouseMoveEvent, window: &mut Window, _cx: &mut gpui::App| {
+            if onboarding_drag_should_start(drag_pending.replace(false), true) {
+                window.start_window_move();
+            }
+        }
+    };
+
     div()
+        .relative()
         .size_full()
         .tab_index(0)
         .track_focus(focus_handle)
@@ -53,7 +85,22 @@ pub fn onboarding_interactive_root(
                 on_enter(window, cx);
             }
         })
-        .child(content)
+        .child(div().size_full().pt(px(TITLEBAR_HEIGHT)).child(content))
+        // Keep the drag hitbox above the full-screen content wrapper. The
+        // wrapper is padded visually, but still owns the titlebar band for
+        // hit-testing unless this strip is the frontmost child.
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .left(px(TITLEBAR_CONTROLS_INSET))
+                .right_0()
+                .h(px(TITLEBAR_HEIGHT))
+                .window_control_area(WindowControlArea::Drag)
+                .on_mouse_down(MouseButton::Left, on_drag_down)
+                .on_mouse_up(MouseButton::Left, on_drag_up)
+                .on_mouse_move(on_drag_move),
+        )
 }
 
 /// Full-screen onboarding scene matching the reference layout.
@@ -120,10 +167,11 @@ fn main_column(
         .size_full()
         .flex()
         .flex_col()
-        .p(px(EDGE_INSET_V))
+        .pt(px(EDGE_INSET_TOP))
+        .pb(px(EDGE_INSET_BOTTOM))
         .px(px(EDGE_INSET_H))
         .child(header_row(theme, callbacks.clone()))
-        .child(div().h(px(SpacingToken::S4.value())))
+        .child(div().h(px(8.)))
         .child(centered_content)
 }
 
@@ -300,6 +348,13 @@ mod tests {
     use super::super::ascii_galaxy::{COLS, ROWS};
     use super::*;
     use gpui::Keystroke;
+
+    #[test]
+    fn onboarding_titlebar_drag_starts_only_after_pointer_moves() {
+        assert!(!onboarding_drag_should_start(false, true));
+        assert!(!onboarding_drag_should_start(true, false));
+        assert!(onboarding_drag_should_start(true, true));
+    }
 
     fn enter_key_event(is_held: bool) -> KeyDownEvent {
         KeyDownEvent {

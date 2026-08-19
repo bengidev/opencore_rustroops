@@ -10,14 +10,18 @@ use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// Single preferences document (theme + onboarding completion).
+pub mod shell_chrome;
+pub use shell_chrome::ShellChrome;
+
+/// Single preferences document (theme, onboarding completion, and shell chrome).
 ///
 /// Unknown JSON fields are ignored on load and dropped on the next save.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppPreferences {
     pub theme_mode: ThemeMode,
     pub onboarding_completed: bool,
+    pub shell: ShellChrome,
 }
 
 /// Errors from loading or saving preferences.
@@ -152,6 +156,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&json).expect("parse");
         assert_eq!(value["theme_mode"], "dark");
         assert_eq!(value["onboarding_completed"], false);
+        assert!(value.get("shell").is_some());
     }
 
     #[test]
@@ -159,6 +164,7 @@ mod tests {
         let prefs = AppPreferences::default();
         assert_eq!(prefs.theme_mode, ThemeMode::Dark);
         assert!(!prefs.onboarding_completed);
+        assert!(prefs.shell.left_open);
     }
 
     #[test]
@@ -166,6 +172,7 @@ mod tests {
         let prefs = AppPreferences {
             theme_mode: ThemeMode::Light,
             onboarding_completed: true,
+            ..Default::default()
         };
         let json = serde_json::to_string(&prefs).expect("serialize");
         let restored: AppPreferences = serde_json::from_str(&json).expect("deserialize");
@@ -186,6 +193,7 @@ mod tests {
         let prefs = AppPreferences {
             theme_mode: ThemeMode::Dark,
             onboarding_completed: false,
+            ..Default::default()
         };
         store.save(&prefs).expect("save");
         let loaded = store.load().expect("load");
@@ -200,6 +208,7 @@ mod tests {
         let prefs = AppPreferences {
             theme_mode: ThemeMode::Light,
             onboarding_completed: true,
+            ..Default::default()
         };
         store.save(&prefs).expect("save");
         let loaded = store.load().expect("load");

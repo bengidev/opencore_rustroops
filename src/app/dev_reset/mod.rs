@@ -37,11 +37,11 @@ pub struct DevResetState {
 
 impl Default for DevResetState {
     fn default() -> Self {
-        // Bottom-right of the smaller (onboarding) window: 960×680
+        // Bottom-right of the smaller (onboarding) window: 960×740
         Self {
             origin: Point {
                 x: px(960.0 - EDGE_INSET - FAB_WIDTH),
-                y: px(680.0 - EDGE_INSET - FAB_HEIGHT),
+                y: px(740.0 - EDGE_INSET - FAB_HEIGHT),
             },
             dragging: false,
             pointer_start: None,
