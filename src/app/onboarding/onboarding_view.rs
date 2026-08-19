@@ -24,10 +24,11 @@ const HERO_GLOW_INSET_BOTTOM: f32 = 34.0;
 const ASCII_TEXT_SIZE: f32 = 9.0;
 const ASCII_BOX_SIZE: f32 = 320.0;
 const EDGE_INSET_H: f32 = 16.0;
-const EDGE_INSET_V: f32 = 20.0;
+const EDGE_INSET_TOP: f32 = 4.0;
+const EDGE_INSET_BOTTOM: f32 = 20.0;
 const ENTER_BUTTON_HEIGHT: f32 = 48.0;
 const HERO_MIN_SIZE: f32 = 220.0;
-const TITLEBAR_CONTROLS_INSET: f32 = 68.0;
+const TITLEBAR_CONTROLS_INSET: f32 = 88.0;
 const TITLEBAR_HEIGHT: f32 = 38.0;
 
 fn onboarding_drag_should_start(pointer_down: bool, pointer_moved: bool) -> bool {
@@ -166,10 +167,11 @@ fn main_column(
         .size_full()
         .flex()
         .flex_col()
-        .p(px(EDGE_INSET_V))
+        .pt(px(EDGE_INSET_TOP))
+        .pb(px(EDGE_INSET_BOTTOM))
         .px(px(EDGE_INSET_H))
         .child(header_row(theme, callbacks.clone()))
-        .child(div().h(px(SpacingToken::S4.value())))
+        .child(div().h(px(8.)))
         .child(centered_content)
 }
 
