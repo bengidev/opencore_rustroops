@@ -49,6 +49,23 @@ mod tests {
     }
 
     #[test]
+    fn tiny_viewports_prioritize_fraction_caps_over_nominal_mins() {
+        let viewport_width = 300.0;
+        let viewport_height = 100.0;
+
+        assert_eq!(
+            clamp_right_width(900.0, viewport_width),
+            viewport_width * 0.52
+        );
+        assert_eq!(
+            clamp_bottom_height(900.0, viewport_height),
+            viewport_height * BOTTOM_MAX_VH
+        );
+        assert!(clamp_right_width(10.0, viewport_width) <= viewport_width * 0.52);
+        assert!(clamp_bottom_height(10.0, viewport_height) <= viewport_height * BOTTOM_MAX_VH);
+    }
+
+    #[test]
     fn shell_chrome_default_matches_spec() {
         let c = ShellChrome::default();
         assert!(c.left_open);
@@ -59,5 +76,28 @@ mod tests {
         assert_eq!(c.bottom_height, BOTTOM_DEFAULT);
         assert_eq!(c.tabs.len(), 1);
         assert_eq!(c.active_tab_id, c.tabs[0].id);
+    }
+
+    #[test]
+    fn persisted_sanitization_keeps_viewport_caps_for_live_rendering() {
+        let chrome = ShellChrome {
+            right_open: true,
+            right_width: 400.0,
+            bottom_open: true,
+            bottom_height: 400.0,
+            ..Default::default()
+        }
+        .sanitized_persisted();
+
+        assert_eq!(chrome.right_width, 400.0);
+        assert_eq!(chrome.bottom_height, 400.0);
+        assert_eq!(
+            crate::app::shell::Shell::right_target_for_viewport(&chrome, 300.0),
+            156.0
+        );
+        assert_eq!(
+            crate::app::shell::Shell::bottom_target_for_viewport(&chrome, 100.0),
+            55.0
+        );
     }
 }

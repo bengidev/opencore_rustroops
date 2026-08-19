@@ -134,9 +134,33 @@ impl Shell {
         }
     }
 
+    /// Return the right-pane target constrained by the current viewport.
+    ///
+    /// The persisted width remains untouched so a resize back to a sensible
+    /// viewport can restore the user's chosen dimension.
+    pub fn right_target_for_viewport(chrome: &ShellChrome, viewport_width: f32) -> f32 {
+        if chrome.right_open {
+            clamp_right_width(chrome.right_width, viewport_width)
+        } else {
+            0.0
+        }
+    }
+
     pub fn bottom_target_for(chrome: &ShellChrome) -> f32 {
         if chrome.bottom_open {
             chrome.bottom_height
+        } else {
+            0.0
+        }
+    }
+
+    /// Return the bottom-drawer target constrained by the current viewport.
+    ///
+    /// The persisted height remains untouched so a resize back to a sensible
+    /// viewport can restore the user's chosen dimension.
+    pub fn bottom_target_for_viewport(chrome: &ShellChrome, viewport_height: f32) -> f32 {
+        if chrome.bottom_open {
+            clamp_bottom_height(chrome.bottom_height, viewport_height)
         } else {
             0.0
         }
@@ -156,33 +180,60 @@ impl Shell {
         cx.notify();
     }
 
+    /// Toggle the right pane using its persisted/static width.
     pub fn toggle_right(&mut self, cx: &mut Context<Self>) {
+        self.toggle_right_at_viewport(f32::INFINITY, cx);
+    }
+
+    fn toggle_right_in(&mut self, window: &Window, cx: &mut Context<Self>) {
+        self.toggle_right_at_viewport(window.bounds().size.width.as_f32(), cx);
+    }
+
+    fn toggle_right_at_viewport(&mut self, viewport_width: f32, cx: &mut Context<Self>) {
         let now = Instant::now();
         let reduced = reduced_motion(cx);
-        let from = eval_tween(self.right_tween.as_ref(), self.right_target(), now, reduced);
+        let open_size = clamp_right_width(self.chrome.right_width, viewport_width);
+        let from = effective_dimension(
+            self.right_tween.as_ref(),
+            Self::right_target_for_viewport(&self.chrome, viewport_width),
+            open_size,
+            now,
+            reduced,
+        );
         self.right_tween = Some(toggle_panel(
             &mut self.chrome.right_open,
             from,
-            self.chrome.right_width,
+            open_size,
             now,
         ));
         self.schedule_save(cx);
         cx.notify();
     }
 
+    /// Toggle the bottom drawer using its persisted/static height.
     pub fn toggle_bottom(&mut self, cx: &mut Context<Self>) {
+        self.toggle_bottom_at_viewport(f32::INFINITY, cx);
+    }
+
+    fn toggle_bottom_in(&mut self, window: &Window, cx: &mut Context<Self>) {
+        self.toggle_bottom_at_viewport(window.bounds().size.height.as_f32(), cx);
+    }
+
+    fn toggle_bottom_at_viewport(&mut self, viewport_height: f32, cx: &mut Context<Self>) {
         let now = Instant::now();
         let reduced = reduced_motion(cx);
-        let from = eval_tween(
+        let open_size = clamp_bottom_height(self.chrome.bottom_height, viewport_height);
+        let from = effective_dimension(
             self.bottom_tween.as_ref(),
-            self.bottom_target(),
+            Self::bottom_target_for_viewport(&self.chrome, viewport_height),
+            open_size,
             now,
             reduced,
         );
         self.bottom_tween = Some(toggle_panel(
             &mut self.chrome.bottom_open,
             from,
-            self.chrome.bottom_height,
+            open_size,
             now,
         ));
         self.schedule_save(cx);
@@ -375,11 +426,23 @@ impl Render for Shell {
         let reduced = reduced_motion(cx);
         self.settle_tweens(now, reduced);
 
+        let viewport = window.bounds().size;
+        let viewport_width = viewport.width.as_f32();
+        let viewport_height = viewport.height.as_f32();
         let left_width = eval_tween(self.left_tween.as_ref(), self.left_target(), now, reduced);
-        let right_width = eval_tween(self.right_tween.as_ref(), self.right_target(), now, reduced);
-        let bottom_height = eval_tween(
+        let right_cap = clamp_right_width(self.chrome.right_width, viewport_width);
+        let right_width = effective_dimension(
+            self.right_tween.as_ref(),
+            Self::right_target_for_viewport(&self.chrome, viewport_width),
+            right_cap,
+            now,
+            reduced,
+        );
+        let bottom_cap = clamp_bottom_height(self.chrome.bottom_height, viewport_height);
+        let bottom_height = effective_dimension(
             self.bottom_tween.as_ref(),
-            self.bottom_target(),
+            Self::bottom_target_for_viewport(&self.chrome, viewport_height),
+            bottom_cap,
             now,
             reduced,
         );
@@ -442,8 +505,9 @@ impl Render for Shell {
             );
 
         let on_left_toggle = cx.listener(|shell, _, _, cx| shell.toggle_left(cx));
-        let on_right_toggle = cx.listener(|shell, _, _, cx| shell.toggle_right(cx));
-        let on_bottom_toggle = cx.listener(|shell, _, _, cx| shell.toggle_bottom(cx));
+        let on_right_toggle = cx.listener(|shell, _, window, cx| shell.toggle_right_in(window, cx));
+        let on_bottom_toggle =
+            cx.listener(|shell, _, window, cx| shell.toggle_bottom_in(window, cx));
         let on_add_tab = cx.listener(|shell, _, _, cx| shell.add_stub_tab(cx));
         let shell_entity = cx.entity();
 
@@ -725,6 +789,7 @@ impl Render for Shell {
                     .child(
                         div()
                             .id("shell-titlebar-controls")
+                            .debug_selector(|| "shell-titlebar-controls".into())
                             .flex()
                             .flex_shrink_0()
                             .items_center()
@@ -812,6 +877,19 @@ fn toggle_panel(open: &mut bool, from: f32, open_size: f32, started: Instant) ->
     }
 }
 
+/// Evaluate a panel dimension while keeping an in-flight tween inside the
+/// current viewport cap. The persisted open size is not rewritten when the
+/// viewport becomes smaller.
+fn effective_dimension(
+    tween: Option<&DimTween>,
+    target: f32,
+    cap: f32,
+    now: Instant,
+    reduced_motion: bool,
+) -> f32 {
+    eval_tween(tween, target, now, reduced_motion).clamp(0.0, cap.max(0.0))
+}
+
 fn resize_sidebar(chrome: &mut ShellChrome, proposed_width: f32) {
     chrome.left_width = clamp_sidebar_width(proposed_width);
     chrome.left_open = true;
@@ -884,9 +962,9 @@ mod tests {
     };
     use crate::app::shell::{RIGHT_DEFAULT, SIDEBAR_MAX, ShellChrome};
     use gpui::{
-        AppContext as _, Context, InteractiveElement, IntoElement, Modifiers, MouseButton,
+        AppContext as _, Bounds, Context, InteractiveElement, IntoElement, Modifiers, MouseButton,
         ParentElement, Render, StatefulInteractiveElement, Styled, TestAppContext,
-        VisualTestContext, Window, div, point, px,
+        VisualTestContext, Window, WindowBounds, WindowOptions, div, point, px, size,
     };
     use std::time::Instant;
 
@@ -980,14 +1058,24 @@ mod tests {
     fn titlebar_toggle_area_does_not_arm_titlebar_drag(cx: &mut TestAppContext) {
         let window_handle = cx.update(|cx| {
             gpui_component::init(cx);
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| test_shell()))
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: size(px(640.0), px(320.0)),
+                })),
+                ..Default::default()
+            };
+            cx.open_window(options, |_, cx| cx.new(|_| test_shell()))
                 .unwrap()
         });
 
         cx.run_until_parked();
         let mut window = VisualTestContext::from_window(*window_handle, cx);
+        let toggle_bounds = window
+            .debug_bounds("shell-titlebar-controls")
+            .expect("titlebar controls should be inside the explicit test window");
         window.simulate_mouse_down(
-            point(px(1500.0), px(20.0)),
+            toggle_bounds.center(),
             MouseButton::Left,
             Modifiers::default(),
         );
@@ -1082,6 +1170,47 @@ mod tests {
         };
         assert_eq!(Shell::right_target_for(&closed_chrome), 0.0);
         assert_eq!(Shell::bottom_target_for(&closed_chrome), 0.0);
+    }
+
+    #[test]
+    fn live_right_target_caps_without_mutating_persisted_width() {
+        let chrome = ShellChrome {
+            right_open: true,
+            right_width: 400.0,
+            ..Default::default()
+        };
+
+        assert_eq!(Shell::right_target_for_viewport(&chrome, 300.0), 156.0);
+        assert_eq!(Shell::right_target_for_viewport(&chrome, 1280.0), 400.0);
+        assert_eq!(chrome.right_width, 400.0);
+    }
+
+    #[test]
+    fn live_bottom_target_caps_without_mutating_persisted_height() {
+        let chrome = ShellChrome {
+            bottom_open: true,
+            bottom_height: 400.0,
+            ..Default::default()
+        };
+
+        assert_eq!(Shell::bottom_target_for_viewport(&chrome, 100.0), 55.0);
+        assert_eq!(Shell::bottom_target_for_viewport(&chrome, 800.0), 400.0);
+        assert_eq!(chrome.bottom_height, 400.0);
+    }
+
+    #[test]
+    fn live_cap_clamps_an_in_flight_tween_after_resize() {
+        let started = Instant::now();
+        let tween = super::DimTween {
+            from: 400.0,
+            to: 400.0,
+            started,
+        };
+
+        assert_eq!(
+            super::effective_dimension(Some(&tween), 156.0, 156.0, started, false),
+            156.0
+        );
     }
 
     #[test]
@@ -1193,6 +1322,23 @@ mod tests {
         assert_eq!(chrome.right_width, RIGHT_DEFAULT);
         assert_eq!(chrome.bottom_height, BOTTOM_DEFAULT);
         assert!(chrome.left_open && chrome.right_open && chrome.bottom_open);
+    }
+
+    #[test]
+    fn reset_defaults_use_live_caps_only_for_rendered_targets() {
+        let mut chrome = ShellChrome {
+            right_width: 450.0,
+            bottom_height: 410.0,
+            ..Default::default()
+        };
+
+        reset_right(&mut chrome);
+        reset_bottom(&mut chrome);
+
+        assert_eq!(chrome.right_width, RIGHT_DEFAULT);
+        assert_eq!(chrome.bottom_height, BOTTOM_DEFAULT);
+        assert_eq!(Shell::right_target_for_viewport(&chrome, 300.0), 156.0);
+        assert_eq!(Shell::bottom_target_for_viewport(&chrome, 100.0), 55.0);
     }
 
     #[test]

@@ -61,21 +61,43 @@ pub fn clamp_sidebar_width(w: f32) -> f32 {
 }
 
 pub fn clamp_right_width(w: f32, viewport_w: f32) -> f32 {
-    let max = RIGHT_MAX.min(viewport_w * 0.52);
-    w.clamp(RIGHT_MIN, max.max(RIGHT_MIN))
+    let max = RIGHT_MAX.min(viewport_w.max(0.0) * 0.52);
+    // On a tiny viewport the fraction cap is the only feasible upper bound;
+    // lower the nominal minimum rather than allowing the cap to be exceeded.
+    w.clamp(RIGHT_MIN.min(max), max)
 }
 
 pub fn clamp_bottom_height(h: f32, viewport_h: f32) -> f32 {
-    let max = (viewport_h * BOTTOM_MAX_VH).max(BOTTOM_MIN);
-    h.clamp(BOTTOM_MIN, max)
+    let max = viewport_h.max(0.0) * BOTTOM_MAX_VH;
+    // A viewport fraction takes precedence over the nominal minimum when the
+    // two constraints cannot both be satisfied.
+    h.clamp(BOTTOM_MIN.min(max), max)
 }
 
 impl ShellChrome {
+    /// Repair persisted values without applying a viewport-specific cap.
+    ///
+    /// Render and interaction code applies the live viewport caps so a
+    /// temporary narrow window does not overwrite a sensible saved width or
+    /// height.
+    pub fn sanitized_persisted(mut self) -> Self {
+        self.left_width = clamp_sidebar_width(self.left_width);
+        self.right_width = self.right_width.clamp(RIGHT_MIN, RIGHT_MAX);
+        self.bottom_height = self.bottom_height.max(BOTTOM_MIN);
+        self.repair_tabs();
+        self
+    }
+
     /// Clamp all sizes against a viewport; repair empty tabs.
     pub fn sanitized(mut self, viewport_w: f32, viewport_h: f32) -> Self {
         self.left_width = clamp_sidebar_width(self.left_width);
         self.right_width = clamp_right_width(self.right_width, viewport_w);
         self.bottom_height = clamp_bottom_height(self.bottom_height, viewport_h);
+        self.repair_tabs();
+        self
+    }
+
+    fn repair_tabs(&mut self) {
         if self.tabs.is_empty() {
             let tab = ShellTabRecord::default();
             self.active_tab_id = tab.id.clone();
@@ -84,6 +106,5 @@ impl ShellChrome {
         if !self.tabs.iter().any(|t| t.id == self.active_tab_id) {
             self.active_tab_id = self.tabs[0].id.clone();
         }
-        self
     }
 }
