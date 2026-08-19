@@ -1284,8 +1284,7 @@ mod tests {
         TAB_FADE_WIDTH, TITLEBAR_CONTROLS_INSET, TabFadeState, press_feedback_opacity,
         reset_bottom, reset_right, reset_sidebar, resize_bottom, resize_handle_border_opacity,
         resize_right, resize_sidebar, tab_chip_width_for_title, tab_chip_width_for_title_len,
-        tab_drop_index,
-        tab_fade_visibility, tab_is_renaming, toggle_panel, update_tab_fade_state,
+        tab_drop_index, tab_fade_visibility, tab_is_renaming, toggle_panel, update_tab_fade_state,
     };
     use crate::app::shell::{RIGHT_DEFAULT, ShellChrome};
     use gpui::{
