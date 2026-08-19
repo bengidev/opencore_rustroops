@@ -20,16 +20,28 @@ impl TabModel {
         }
     }
 
-    pub fn close(&mut self, id: &str) {
-        if self.tabs.len() <= 1 {
+    pub fn rename(&mut self, id: &str, title: impl AsRef<str>) {
+        let trimmed = title.as_ref().trim();
+        if trimmed.is_empty() {
             return;
         }
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        tab.title = trimmed.to_owned();
+    }
 
+    pub fn close(&mut self, id: &str) {
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
             return;
         };
         let was_active = self.active_id == id;
         self.tabs.remove(index);
+
+        if self.tabs.is_empty() {
+            self.active_id.clear();
+            return;
+        }
 
         if was_active {
             let neighbor_index = index.min(self.tabs.len() - 1);
@@ -174,11 +186,12 @@ mod tests {
     }
 
     #[test]
-    fn close_last_tab_is_noop() {
+    fn close_last_tab_leaves_strip_empty() {
         let mut m = model_two();
         m.close("a");
         m.close("b");
-        assert_eq!(m.tabs.len(), 1);
+        assert!(m.tabs.is_empty());
+        assert!(m.active_id.is_empty());
     }
 
     #[test]
@@ -193,6 +206,37 @@ mod tests {
     fn reorder_out_of_bounds_is_noop() {
         let mut m = model_two();
         m.reorder(0, 2);
+        assert_eq!(m, model_two());
+    }
+
+    #[test]
+    fn rename_updates_known_tab_title() {
+        let mut m = model_two();
+        m.rename("a", "Alpha");
+        assert_eq!(m.tabs[0].title, "Alpha");
+        assert_eq!(m.active_id, "a");
+    }
+
+    #[test]
+    fn rename_trims_whitespace() {
+        let mut m = model_two();
+        m.rename("b", "  Beta  ");
+        assert_eq!(m.tabs[1].title, "Beta");
+    }
+
+    #[test]
+    fn rename_empty_or_whitespace_keeps_previous_title() {
+        let mut m = model_two();
+        m.rename("a", "   ");
+        assert_eq!(m.tabs[0].title, "A");
+        m.rename("a", "");
+        assert_eq!(m.tabs[0].title, "A");
+    }
+
+    #[test]
+    fn rename_unknown_id_is_noop() {
+        let mut m = model_two();
+        m.rename("missing", "Nope");
         assert_eq!(m, model_two());
     }
 
