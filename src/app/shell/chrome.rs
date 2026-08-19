@@ -1,8 +1,7 @@
 //! Persisted shell chrome sizes and open flags.
 
 pub use crate::shared::preferences::shell_chrome::{
-    BOTTOM_DEFAULT, BOTTOM_MAX_VH, BOTTOM_MIN, RIGHT_DEFAULT, RIGHT_MAX, RIGHT_MIN,
-    SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, ShellChrome, ShellTabRecord, TITLEBAR_HEIGHT,
+    BOTTOM_DEFAULT, RIGHT_DEFAULT, SIDEBAR_DEFAULT, ShellChrome, ShellTabRecord, TITLEBAR_HEIGHT,
     clamp_bottom_height, clamp_right_width, clamp_sidebar_width,
 };
 
@@ -13,56 +12,31 @@ mod tests {
     #[test]
     fn constants_match_plan() {
         assert_eq!(TITLEBAR_HEIGHT, 38.0);
-        assert_eq!(SIDEBAR_MIN, 208.0);
-        assert_eq!(SIDEBAR_MAX, 400.0);
         assert_eq!(SIDEBAR_DEFAULT, 256.0);
-        assert_eq!(RIGHT_MIN, 240.0);
-        assert_eq!(RIGHT_MAX, 480.0);
         assert_eq!(RIGHT_DEFAULT, 320.0);
-        assert_eq!(BOTTOM_MIN, 120.0);
         assert_eq!(BOTTOM_DEFAULT, 220.0);
-        assert_eq!(BOTTOM_MAX_VH, 0.55);
     }
 
     #[test]
-    fn clamp_sidebar_respects_min_max() {
-        assert_eq!(clamp_sidebar_width(10.0), SIDEBAR_MIN);
-        assert_eq!(clamp_sidebar_width(999.0), SIDEBAR_MAX);
-        assert_eq!(clamp_sidebar_width(300.0), 300.0);
+    fn clamp_sidebar_only_floors_at_zero() {
+        assert_eq!(clamp_sidebar_width(-10.0), 0.0);
+        assert_eq!(clamp_sidebar_width(10.0), 10.0);
+        assert_eq!(clamp_sidebar_width(999.0), 999.0);
     }
 
     #[test]
-    fn clamp_right_respects_min_max_and_viewport_fraction() {
-        assert_eq!(clamp_right_width(10.0, 1280.0), RIGHT_MIN);
-        assert_eq!(
-            clamp_right_width(900.0, 1280.0),
-            (1280.0_f32 * 0.52).min(RIGHT_MAX)
-        );
+    fn clamp_right_floors_at_zero_and_caps_at_viewport() {
+        assert_eq!(clamp_right_width(-10.0, 1280.0), 0.0);
+        assert_eq!(clamp_right_width(900.0, 1280.0), 900.0);
+        assert_eq!(clamp_right_width(900.0, 800.0), 800.0);
         assert_eq!(clamp_right_width(300.0, 1280.0), 300.0);
     }
 
     #[test]
-    fn clamp_bottom_respects_min_and_viewport_fraction() {
-        assert_eq!(clamp_bottom_height(10.0, 800.0), BOTTOM_MIN);
-        assert_eq!(clamp_bottom_height(900.0, 800.0), 800.0 * BOTTOM_MAX_VH);
+    fn clamp_bottom_floors_at_zero_and_caps_at_viewport() {
+        assert_eq!(clamp_bottom_height(-10.0, 800.0), 0.0);
+        assert_eq!(clamp_bottom_height(900.0, 800.0), 800.0);
         assert_eq!(clamp_bottom_height(200.0, 800.0), 200.0);
-    }
-
-    #[test]
-    fn tiny_viewports_prioritize_fraction_caps_over_nominal_mins() {
-        let viewport_width = 300.0;
-        let viewport_height = 100.0;
-
-        assert_eq!(
-            clamp_right_width(900.0, viewport_width),
-            viewport_width * 0.52
-        );
-        assert_eq!(
-            clamp_bottom_height(900.0, viewport_height),
-            viewport_height * BOTTOM_MAX_VH
-        );
-        assert!(clamp_right_width(10.0, viewport_width) <= viewport_width * 0.52);
-        assert!(clamp_bottom_height(10.0, viewport_height) <= viewport_height * BOTTOM_MAX_VH);
     }
 
     #[test]
@@ -79,7 +53,7 @@ mod tests {
     }
 
     #[test]
-    fn persisted_sanitization_keeps_viewport_caps_for_live_rendering() {
+    fn persisted_sanitization_keeps_large_sizes_for_live_viewport_caps() {
         let chrome = ShellChrome {
             right_open: true,
             right_width: 400.0,
@@ -93,11 +67,11 @@ mod tests {
         assert_eq!(chrome.bottom_height, 400.0);
         assert_eq!(
             crate::app::shell::Shell::right_target_for_viewport(&chrome, 300.0),
-            156.0
+            300.0
         );
         assert_eq!(
             crate::app::shell::Shell::bottom_target_for_viewport(&chrome, 100.0),
-            55.0
+            100.0
         );
     }
 }

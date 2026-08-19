@@ -1,15 +1,9 @@
 //! Persisted shell chrome sizes and open flags.
 
 pub const TITLEBAR_HEIGHT: f32 = 38.0;
-pub const SIDEBAR_MIN: f32 = 208.0;
-pub const SIDEBAR_MAX: f32 = 400.0;
 pub const SIDEBAR_DEFAULT: f32 = 256.0;
-pub const RIGHT_MIN: f32 = 240.0;
-pub const RIGHT_MAX: f32 = 480.0;
 pub const RIGHT_DEFAULT: f32 = 320.0;
-pub const BOTTOM_MIN: f32 = 120.0;
 pub const BOTTOM_DEFAULT: f32 = 220.0;
-pub const BOTTOM_MAX_VH: f32 = 0.55;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -56,22 +50,19 @@ impl Default for ShellChrome {
     }
 }
 
+/// Floor at zero — no content min/max; drag may shrink to nothing.
 pub fn clamp_sidebar_width(w: f32) -> f32 {
-    w.clamp(SIDEBAR_MIN, SIDEBAR_MAX)
+    w.max(0.0)
 }
 
+/// Floor at zero and cap at the live viewport so the panel cannot exceed the window.
 pub fn clamp_right_width(w: f32, viewport_w: f32) -> f32 {
-    let max = RIGHT_MAX.min(viewport_w.max(0.0) * 0.52);
-    // On a tiny viewport the fraction cap is the only feasible upper bound;
-    // lower the nominal minimum rather than allowing the cap to be exceeded.
-    w.clamp(RIGHT_MIN.min(max), max)
+    w.clamp(0.0, viewport_w.max(0.0))
 }
 
+/// Floor at zero and cap at the live viewport so the drawer cannot exceed the window.
 pub fn clamp_bottom_height(h: f32, viewport_h: f32) -> f32 {
-    let max = viewport_h.max(0.0) * BOTTOM_MAX_VH;
-    // A viewport fraction takes precedence over the nominal minimum when the
-    // two constraints cannot both be satisfied.
-    h.clamp(BOTTOM_MIN.min(max), max)
+    h.clamp(0.0, viewport_h.max(0.0))
 }
 
 impl ShellChrome {
@@ -82,8 +73,8 @@ impl ShellChrome {
     /// height.
     pub fn sanitized_persisted(mut self) -> Self {
         self.left_width = clamp_sidebar_width(self.left_width);
-        self.right_width = self.right_width.clamp(RIGHT_MIN, RIGHT_MAX);
-        self.bottom_height = self.bottom_height.max(BOTTOM_MIN);
+        self.right_width = self.right_width.max(0.0);
+        self.bottom_height = self.bottom_height.max(0.0);
         self.repair_tabs();
         self
     }
