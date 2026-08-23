@@ -158,6 +158,14 @@ impl CenterStubHost {
         }
     }
 
+    pub fn active_ix(&self) -> usize {
+        self.active_ix
+    }
+
+    pub fn tab_count(&self) -> usize {
+        self.tabs.len()
+    }
+
     pub fn select(&mut self, ix: usize) {
         if ix < self.tabs.len() {
             self.active_ix = ix;
@@ -172,7 +180,7 @@ impl CenterStubHost {
     }
 
     pub fn close_tab(&mut self, ix: usize) {
-        if ix >= self.tabs.len() {
+        if self.tabs.len() <= 1 || ix >= self.tabs.len() {
             return;
         }
         self.tabs.remove(ix);
