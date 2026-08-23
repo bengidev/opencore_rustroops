@@ -40,14 +40,14 @@ impl ShellWorkspace {
         let dock_area =
             cx.new(|cx| DockArea::new(MAIN_DOCK_ID, Some(DOCK_LAYOUT_VERSION), window, cx));
 
-        let center_host = match saved {
-            None => apply_default_holy_grail(&dock_area, window, cx),
+        let (center_host, reset_to_default) = match saved {
+            None => (apply_default_holy_grail(&dock_area, window, cx), true),
             Some(state) if state.version != Some(DOCK_LAYOUT_VERSION) => {
                 eprintln!(
                     "opencore: dock layout version mismatch (saved {:?}, expected {DOCK_LAYOUT_VERSION}); resetting to default",
                     state.version,
                 );
-                apply_default_holy_grail(&dock_area, window, cx)
+                (apply_default_holy_grail(&dock_area, window, cx), true)
             }
             Some(state) => match dock_area.update(cx, |dock, cx| dock.load(state, window, cx)) {
                 Ok(()) => {
@@ -63,15 +63,21 @@ impl ShellWorkspace {
                             cx,
                         );
                     });
-                    recover_center_host(&dock_area, cx)
-                        .unwrap_or_else(|| apply_default_holy_grail(&dock_area, window, cx))
+                    match recover_center_host(&dock_area, cx) {
+                        Some(host) => (host, false),
+                        None => (apply_default_holy_grail(&dock_area, window, cx), true),
+                    }
                 }
                 Err(error) => {
                     eprintln!("opencore: dock layout load failed: {error:?}");
-                    apply_default_holy_grail(&dock_area, window, cx)
+                    (apply_default_holy_grail(&dock_area, window, cx), true)
                 }
             },
         };
+
+        if reset_to_default {
+            save(dock_area.read(cx).dump(cx), cx);
+        }
 
         let save_for_layout = save.clone();
         let layout_subscription =
@@ -172,6 +178,7 @@ impl Render for ShellWorkspace {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::rc::Rc;
 
     use gpui::{App, AppContext, TestAppContext, px};
@@ -222,6 +229,27 @@ mod tests {
         cx.read_entity(&workspace, |workspace, cx| {
             assert_default_holy_grail_layout(&workspace.dock_area, cx);
         });
+    }
+
+    #[gpui::test]
+    fn dock_reset_persists_default_layout(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+        let saved_layout = Rc::new(RefCell::new(None));
+        let save: DockSaveFn = {
+            let saved_layout = saved_layout.clone();
+            Rc::new(move |layout, _| {
+                *saved_layout.borrow_mut() = Some(layout);
+            })
+        };
+        let saved = DockAreaState {
+            version: Some(0),
+            ..Default::default()
+        };
+
+        let _ = cx.add_window_view(|window, cx| ShellWorkspace::new(Some(saved), save, window, cx));
+
+        let persisted = saved_layout.borrow().clone().expect("save callback should run");
+        assert_eq!(persisted.version, Some(DOCK_LAYOUT_VERSION));
     }
 
     #[gpui::test]
