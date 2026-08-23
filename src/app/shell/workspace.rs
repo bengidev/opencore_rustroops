@@ -42,7 +42,15 @@ impl ShellWorkspace {
             DockArea::new(MAIN_DOCK_ID, Some(DOCK_LAYOUT_VERSION), window, cx)
         });
 
-        let center_host = match saved.filter(|state| state.version == Some(DOCK_LAYOUT_VERSION)) {
+        let center_host = match saved {
+            None => apply_default_holy_grail(&dock_area, window, cx),
+            Some(state) if state.version != Some(DOCK_LAYOUT_VERSION) => {
+                eprintln!(
+                    "opencore: dock layout version mismatch (saved {:?}, expected {DOCK_LAYOUT_VERSION}); resetting to default",
+                    state.version,
+                );
+                apply_default_holy_grail(&dock_area, window, cx)
+            }
             Some(state) => match dock_area.update(cx, |dock, cx| dock.load(state, window, cx)) {
                 Ok(()) => {
                     dock_area.update(cx, |dock, cx| {
@@ -65,7 +73,6 @@ impl ShellWorkspace {
                     apply_default_holy_grail(&dock_area, window, cx)
                 }
             },
-            None => apply_default_holy_grail(&dock_area, window, cx),
         };
 
         let save_for_layout = save.clone();
@@ -165,5 +172,110 @@ impl Render for ShellWorkspace {
                             })),
                     ),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use gpui::{App, AppContext, TestAppContext, px};
+    use gpui_component::dock::{DockAreaState, DockPlacement};
+
+    use crate::app::shell::{
+        DOCK_LAYOUT_VERSION, SIDEBAR_DEFAULT, register_shell_panels,
+    };
+
+    use super::{DockSaveFn, ShellWorkspace};
+
+    fn init_shell_panels(cx: &mut TestAppContext) {
+        cx.update(|app| {
+            gpui_component::init(app);
+            register_shell_panels(app);
+        });
+    }
+
+    fn noop_save() -> DockSaveFn {
+        Rc::new(|_, _| {})
+    }
+
+    fn assert_default_holy_grail_layout(dock_area: &gpui::Entity<gpui_component::dock::DockArea>, cx: &App) {
+        let dock = dock_area.read(cx);
+        assert!(dock.is_dock_open(DockPlacement::Left, cx));
+        assert!(!dock.is_dock_open(DockPlacement::Right, cx));
+        assert!(!dock.is_dock_open(DockPlacement::Bottom, cx));
+        assert_eq!(
+            dock.left_dock().map(|dock| dock.read(cx).size()),
+            Some(px(SIDEBAR_DEFAULT))
+        );
+        assert_eq!(dock.dump(cx).version, Some(DOCK_LAYOUT_VERSION));
+    }
+
+    #[gpui::test]
+    fn dock_load_version_mismatch_resets_default(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+        let saved = DockAreaState {
+            version: Some(0),
+            ..Default::default()
+        };
+
+        let (workspace, _) = cx.add_window_view(|window, cx| {
+            ShellWorkspace::new(Some(saved), noop_save(), window, cx)
+        });
+
+        cx.read_entity(&workspace, |workspace, cx| {
+            assert_default_holy_grail_layout(&workspace.dock_area, cx);
+        });
+    }
+
+    #[gpui::test]
+    fn dock_load_none_uses_default_layout(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, _) = cx.add_window_view(|window, cx| {
+            ShellWorkspace::new(None, noop_save(), window, cx)
+        });
+
+        cx.read_entity(&workspace, |workspace, cx| {
+            assert_default_holy_grail_layout(&workspace.dock_area, cx);
+        });
+    }
+
+    #[gpui::test]
+    fn dock_load_compatible_but_unrecoverable_resets_default(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+        let saved = DockAreaState {
+            version: Some(DOCK_LAYOUT_VERSION),
+            ..Default::default()
+        };
+
+        let (workspace, _) = cx.add_window_view(|window, cx| {
+            ShellWorkspace::new(Some(saved), noop_save(), window, cx)
+        });
+
+        cx.read_entity(&workspace, |workspace, cx| {
+            assert_default_holy_grail_layout(&workspace.dock_area, cx);
+        });
+    }
+
+    #[gpui::test]
+    fn dock_load_failure_resets_default(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (reference, _) = cx.add_window_view(|window, cx| {
+            ShellWorkspace::new(None, noop_save(), window, cx)
+        });
+
+        let mut corrupt =
+            cx.read_entity(&reference, |workspace, cx| workspace.dock_area.read(cx).dump(cx));
+        corrupt.center.panel_name = "nonexistent-panel".into();
+
+        let (workspace, _) = cx.add_window_view(|window, cx| {
+            ShellWorkspace::new(Some(corrupt), noop_save(), window, cx)
+        });
+
+        cx.read_entity(&workspace, |workspace, cx| {
+            assert_default_holy_grail_layout(&workspace.dock_area, cx);
+        });
     }
 }
