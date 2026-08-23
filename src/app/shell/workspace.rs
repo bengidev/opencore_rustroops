@@ -1,23 +1,22 @@
-//! Dock-based shell workspace: title bar center tabs, DockArea body, status bar toggles.
+//! Dock-based shell workspace: title bar dock toggles and DockArea body.
 
 use std::rc::Rc;
 
 use gpui::{
-    App, AppContext, Context, Edges, Entity, IntoElement, ParentElement, Render, Styled,
-    Subscription, Window, div,
+    App, AppContext, ClickEvent, Context, Edges, Entity, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, Render, Styled, Subscription, Window, div,
 };
 use gpui_component::{
-    IconName, Sizable,
+    IconName, InteractiveElementExt as _, Sizable, TitleBar, h_flex,
     button::{Button, ButtonVariants as _},
-    dock::{DockArea, DockAreaState, DockEvent, DockItem, DockPlacement, PanelView},
-    status_bar::StatusBar,
+    dock::{
+        DockArea, DockAreaState, DockEvent, DockItem, DockPlacement, PanelStyle,
+    },
 };
 
 use crate::shared::theme::OpenCoreTheme;
 
-use super::{
-    DOCK_LAYOUT_VERSION, apply_default_holy_grail, center_title_bar, panels::CenterStubHost,
-};
+use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
 
 const MAIN_DOCK_ID: &str = "main-dock";
 
@@ -26,7 +25,6 @@ pub type DockSaveFn = Rc<dyn Fn(DockAreaState, &mut App)>;
 
 pub struct ShellWorkspace {
     dock_area: Entity<DockArea>,
-    center_host: Entity<CenterStubHost>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -37,21 +35,29 @@ impl ShellWorkspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let dock_area =
-            cx.new(|cx| DockArea::new(MAIN_DOCK_ID, Some(DOCK_LAYOUT_VERSION), window, cx));
+        let dock_area = cx.new(|cx| {
+            DockArea::new(MAIN_DOCK_ID, Some(DOCK_LAYOUT_VERSION), window, cx)
+                // Always show tab bars so single-tab groups still expose tab-bar drop targets.
+                .panel_style(PanelStyle::TabBar)
+        });
 
-        let (center_host, reset_to_default) = match saved {
-            None => (apply_default_holy_grail(&dock_area, window, cx), true),
+        let reset_to_default = match saved {
+            None => {
+                apply_default_holy_grail(&dock_area, window, cx);
+                true
+            }
             Some(state) if state.version != Some(DOCK_LAYOUT_VERSION) => {
                 eprintln!(
                     "opencore: dock layout version mismatch (saved {:?}, expected {DOCK_LAYOUT_VERSION}); resetting to default",
                     state.version,
                 );
-                (apply_default_holy_grail(&dock_area, window, cx), true)
+                apply_default_holy_grail(&dock_area, window, cx);
+                true
             }
             Some(state) => match dock_area.update(cx, |dock, cx| dock.load(state, window, cx)) {
                 Ok(()) => {
                     dock_area.update(cx, |dock, cx| {
+                        dock.set_toggle_button_visible(false, cx);
                         dock.set_dock_collapsible(
                             Edges {
                                 left: true,
@@ -63,14 +69,17 @@ impl ShellWorkspace {
                             cx,
                         );
                     });
-                    match recover_center_host(&dock_area, cx) {
-                        Some(host) => (host, false),
-                        None => (apply_default_holy_grail(&dock_area, window, cx), true),
+                    if center_has_main_stub(&dock_area, cx) {
+                        false
+                    } else {
+                        apply_default_holy_grail(&dock_area, window, cx);
+                        true
                     }
                 }
                 Err(error) => {
                     eprintln!("opencore: dock layout load failed: {error:?}");
-                    (apply_default_holy_grail(&dock_area, window, cx), true)
+                    apply_default_holy_grail(&dock_area, window, cx);
+                    true
                 }
             },
         };
@@ -88,42 +97,66 @@ impl ShellWorkspace {
                 }
             });
 
-        let titlebar_subscription = cx.observe(&center_host, |_, _, cx| {
-            cx.notify();
-        });
-
         Self {
             dock_area,
-            center_host,
-            _subscriptions: vec![layout_subscription, titlebar_subscription],
+            _subscriptions: vec![layout_subscription],
         }
     }
 
     pub fn set_theme(&mut self, _theme: OpenCoreTheme) {}
 }
 
-fn recover_center_host(dock_area: &Entity<DockArea>, cx: &App) -> Option<Entity<CenterStubHost>> {
-    recover_center_host_from_item(dock_area.read(cx).center(), cx)
+/// True when center contains at least one registered main stub panel.
+///
+/// Empty/`Default` `DockAreaState` still loads as a tab of `InvalidPanel`, so a
+/// raw panel-count check is not enough to decide whether the layout is usable.
+fn center_has_main_stub(dock_area: &Entity<DockArea>, cx: &App) -> bool {
+    item_has_main_stub(dock_area.read(cx).center(), cx)
 }
 
-fn recover_center_host_from_item(item: &DockItem, cx: &App) -> Option<Entity<CenterStubHost>> {
+fn item_has_main_stub(item: &DockItem, cx: &App) -> bool {
     match item {
-        DockItem::Panel { view, .. } => try_recover_center(view.as_ref(), cx),
-        DockItem::Tabs { items, .. } => items
-            .iter()
-            .find_map(|view| try_recover_center(view.as_ref(), cx)),
-        DockItem::Split { items, .. } => items
-            .iter()
-            .find_map(|item| recover_center_host_from_item(item, cx)),
-        DockItem::Tiles { .. } => None,
+        DockItem::Panel { view, .. } => view.panel_name(cx) == "main-stub",
+        DockItem::Tabs { items, .. } => items.iter().any(|view| view.panel_name(cx) == "main-stub"),
+        DockItem::Split { items, .. } => items.iter().any(|item| item_has_main_stub(item, cx)),
+        DockItem::Tiles { .. } => false,
     }
 }
 
-fn try_recover_center(view: &dyn PanelView, cx: &App) -> Option<Entity<CenterStubHost>> {
-    if view.panel_name(cx) != "center-stub-host" {
-        return None;
-    }
-    view.view().downcast::<CenterStubHost>().ok()
+/// Title-bar dock toggle that expands/collapses a dock without zooming the window.
+///
+/// TitleBar treats the strip as a drag/double-click zoom region. Wrapping the
+/// button in an occluding hit target and ignoring the second click of a
+/// double-click keeps a double-tap as a single dock toggle.
+fn title_bar_dock_toggle(
+    id: &'static str,
+    icon: IconName,
+    tooltip: &'static str,
+    placement: DockPlacement,
+    cx: &Context<ShellWorkspace>,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .occlude()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_double_click(|_, _, cx| cx.stop_propagation())
+        .child(
+            Button::new(id)
+                .ghost()
+                .xsmall()
+                .icon(icon)
+                .tooltip(tooltip)
+                .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                    cx.stop_propagation();
+                    // First click of a double-click already toggled; skip the second.
+                    if event.click_count() > 1 {
+                        return;
+                    }
+                    this.dock_area.update(cx, |area, cx| {
+                        area.toggle_dock(placement, window, cx);
+                    });
+                })),
+        )
 }
 
 impl Render for ShellWorkspace {
@@ -132,47 +165,35 @@ impl Render for ShellWorkspace {
             .size_full()
             .flex()
             .flex_col()
-            .child(center_title_bar(&self.center_host, cx))
-            .child(div().flex_1().min_h_0().child(self.dock_area.clone()))
             .child(
-                StatusBar::new()
-                    .left(
-                        Button::new("toggle-left-dock")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::PanelLeft)
-                            .tooltip("Toggle Left Dock")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.dock_area.update(cx, |area, cx| {
-                                    area.toggle_dock(DockPlacement::Left, window, cx);
-                                });
-                            })),
-                    )
-                    .left(
-                        Button::new("toggle-bottom-dock")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::PanelBottom)
-                            .tooltip("Toggle Bottom Dock")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.dock_area.update(cx, |area, cx| {
-                                    area.toggle_dock(DockPlacement::Bottom, window, cx);
-                                });
-                            })),
-                    )
+                TitleBar::new()
+                    .child(title_bar_dock_toggle(
+                        "toggle-left-dock",
+                        IconName::PanelLeft,
+                        "Toggle Left Dock",
+                        DockPlacement::Left,
+                        cx,
+                    ))
                     .child(
-                        Button::new("toggle-right-dock")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::PanelRight)
-                            .tooltip("Toggle Right Dock")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.dock_area.update(cx, |area, cx| {
-                                    area.toggle_dock(DockPlacement::Right, window, cx);
-                                });
-                            })),
+                        h_flex()
+                            .gap_1()
+                            .child(title_bar_dock_toggle(
+                                "toggle-bottom-dock",
+                                IconName::PanelBottom,
+                                "Toggle Bottom Dock",
+                                DockPlacement::Bottom,
+                                cx,
+                            ))
+                            .child(title_bar_dock_toggle(
+                                "toggle-right-dock",
+                                IconName::PanelRight,
+                                "Toggle Right Dock",
+                                DockPlacement::Right,
+                                cx,
+                            )),
                     ),
             )
+            .child(div().flex_1().min_h_0().child(self.dock_area.clone()))
     }
 }
 
@@ -203,6 +224,10 @@ mod tests {
         dock_area: &gpui::Entity<gpui_component::dock::DockArea>,
         cx: &App,
     ) {
+        use crate::app::shell::{
+            EDGE_DOCK_TAB_COUNT, dock_item_enables_dnd, dock_item_panel_count,
+        };
+
         let dock = dock_area.read(cx);
         assert!(dock.is_dock_open(DockPlacement::Left, cx));
         assert!(!dock.is_dock_open(DockPlacement::Right, cx));
@@ -212,6 +237,31 @@ mod tests {
             Some(px(SIDEBAR_DEFAULT))
         );
         assert_eq!(dock.dump(cx).version, Some(DOCK_LAYOUT_VERSION));
+
+        assert!(
+            dock_item_enables_dnd(dock.center()),
+            "center must be Split-wrapped for DnD"
+        );
+        assert!(
+            dock_item_panel_count(dock.center()) >= EDGE_DOCK_TAB_COUNT,
+            "center expected ≥{EDGE_DOCK_TAB_COUNT} panels for DnD"
+        );
+
+        for dock_entity in [dock.left_dock(), dock.right_dock(), dock.bottom_dock()]
+            .into_iter()
+            .flatten()
+        {
+            let panel = dock_entity.read(cx).panel();
+            assert!(
+                dock_item_enables_dnd(panel),
+                "edge dock must be Split-wrapped for DnD"
+            );
+            let count = dock_item_panel_count(panel);
+            assert!(
+                count >= EDGE_DOCK_TAB_COUNT,
+                "edge dock expected ≥{EDGE_DOCK_TAB_COUNT} panels for DnD, got {count}"
+            );
+        }
     }
 
     #[gpui::test]
@@ -248,7 +298,10 @@ mod tests {
 
         let _ = cx.add_window_view(|window, cx| ShellWorkspace::new(Some(saved), save, window, cx));
 
-        let persisted = saved_layout.borrow().clone().expect("save callback should run");
+        let persisted = saved_layout
+            .borrow()
+            .clone()
+            .expect("save callback should run");
         assert_eq!(persisted.version, Some(DOCK_LAYOUT_VERSION));
     }
 
@@ -265,7 +318,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn dock_load_compatible_but_unrecoverable_resets_default(cx: &mut TestAppContext) {
+    fn dock_load_compatible_but_empty_center_resets_default(cx: &mut TestAppContext) {
         init_shell_panels(cx);
         let saved = DockAreaState {
             version: Some(DOCK_LAYOUT_VERSION),
