@@ -34,12 +34,5 @@ Desktop.ini
 coverage/
 *.profraw
 
-# Local agent / tooling
-docs/superpowers
-docs/superpowers/*
-.impeccable
-.superpowers
-.pi-subagents/
-
 # Git worktrees
 .worktrees/
