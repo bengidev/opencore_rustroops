@@ -1,14 +1,12 @@
-//! Post-onboarding holy-grail chrome (panels + main tabs).
+//! Post-onboarding holy-grail chrome (Dock workspace + title bar toggles).
 
-mod chrome;
-mod shell_view;
-pub mod tabs;
-pub mod tween;
+mod default_layout;
+mod panels;
+mod workspace;
 
-pub use chrome::{
-    BOTTOM_DEFAULT, RIGHT_DEFAULT, SIDEBAR_DEFAULT, ShellChrome, ShellTabRecord, TITLEBAR_HEIGHT,
-    clamp_bottom_height, clamp_right_width, clamp_sidebar_width,
+pub use default_layout::{
+    BOTTOM_DEFAULT, DOCK_LAYOUT_VERSION, EDGE_DOCK_TAB_COUNT, RIGHT_DEFAULT, SIDEBAR_DEFAULT,
+    apply_default_holy_grail, dock_item_enables_dnd, dock_item_panel_count,
 };
-pub use shell_view::{Shell, ShellSaveFn};
-pub use tabs::TabModel;
-pub use tween::{DimTween, RESIZE_MS, ease_out, eval_tween, tween_finished};
+pub use panels::register_shell_panels;
+pub use workspace::{DockSaveFn, ShellWorkspace};
