@@ -238,9 +238,14 @@ impl OpenCoreApp {
 
         let saved = self.state.preferences.dock_layout.clone();
         let view = cx.entity().downgrade();
+        // Defer: ShellWorkspace::new may invoke `save` while OpenCoreApp is still
+        // inside render/update (ensure_shell). Nested `view.update` panics.
         let save: DockSaveFn = Rc::new(move |layout, app| {
-            let _ = view.update(app, |app, cx| {
-                app.schedule_dock_layout_save(layout, cx);
+            let view = view.clone();
+            app.defer(move |app| {
+                let _ = view.update(app, |app, cx| {
+                    app.schedule_dock_layout_save(layout, cx);
+                });
             });
         });
         let shell = cx.new(|cx| ShellWorkspace::new(saved, save, window, cx));
