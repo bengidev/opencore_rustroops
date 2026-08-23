@@ -33,11 +33,7 @@ fn wrap_for_dnd(
 ///
 /// Center uses native Dock tabs (`MainStubPanel`) so tabs live in the panel
 /// tab bar and can join other tab groups via drag-and-drop.
-pub fn apply_default_holy_grail(
-    dock_area: &Entity<DockArea>,
-    window: &mut Window,
-    cx: &mut App,
-) {
+pub fn apply_default_holy_grail(dock_area: &Entity<DockArea>, window: &mut Window, cx: &mut App) {
     let weak = dock_area.downgrade();
     let center = wrap_for_dnd(
         DockItem::tabs(

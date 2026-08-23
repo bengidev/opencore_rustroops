@@ -7,11 +7,10 @@ use gpui::{
     MouseButton, ParentElement, Render, Styled, Subscription, Window, div,
 };
 use gpui_component::{
-    IconName, InteractiveElementExt as _, Sizable, TitleBar, h_flex,
+    IconName, InteractiveElementExt as _, Sizable, TitleBar,
     button::{Button, ButtonVariants as _},
-    dock::{
-        DockArea, DockAreaState, DockEvent, DockItem, DockPlacement, PanelStyle,
-    },
+    dock::{DockArea, DockAreaState, DockEvent, DockItem, DockPlacement, PanelStyle},
+    h_flex,
 };
 
 use crate::shared::theme::OpenCoreTheme;

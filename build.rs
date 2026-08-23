@@ -87,8 +87,7 @@ fn patch_tab_panel_toolbar(path: &std::path::Path) -> bool {
         return false;
     }
 
-    let needle =
-        "        let zoomable_toolbar_visible = state.zoomable.map_or(false, |v| v.toolbar_visible());\n";
+    let needle = "        let zoomable_toolbar_visible = state.zoomable.map_or(false, |v| v.toolbar_visible());\n";
     let Some(index) = content.find(needle) else {
         panic!(
             "gpui-component tab_panel.rs changed; update build.rs toolbar patch for {}",
