@@ -11,9 +11,6 @@ use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
 
-pub mod shell_chrome;
-pub use shell_chrome::ShellChrome;
-
 /// Single preferences document (theme, onboarding completion, and dock layout).
 ///
 /// Unknown JSON fields are ignored on load and dropped on the next save.

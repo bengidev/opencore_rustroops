@@ -8,11 +8,14 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Task,
-    TitlebarOptions, WeakEntity, Window, WindowBounds, WindowOptions, div, point, px, size,
+    WeakEntity, Window, WindowBounds, WindowOptions, div, px, size,
 };
+#[cfg(all(debug_assertions, target_os = "linux"))]
+use gpui::{TitlebarOptions, point};
 #[cfg(debug_assertions)]
 use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point};
 use gpui_component::Root;
+use gpui_component::dock::DockAreaState;
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use crate::shared::theme::{OpenCoreTheme, ThemeTransition, apply_nothing_theme};
@@ -25,24 +28,24 @@ use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
-use super::shell::{Shell, ShellSaveFn, register_shell_panels};
+use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
 use super::window_placement::center_window;
 
 const SHELL_SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
 
 #[derive(Debug, Default)]
-struct PendingShellSave {
-    latest: super::shell::ShellChrome,
+struct PendingDockSave {
+    latest: DockAreaState,
     dirty: bool,
 }
 
-impl PendingShellSave {
-    fn set_latest(&mut self, chrome: super::shell::ShellChrome) {
-        self.latest = chrome;
+impl PendingDockSave {
+    fn set_latest(&mut self, layout: DockAreaState) {
+        self.latest = layout;
         self.dirty = true;
     }
 
-    fn take_dirty(&mut self) -> Option<super::shell::ShellChrome> {
+    fn take_dirty(&mut self) -> Option<DockAreaState> {
         if self.dirty {
             self.dirty = false;
             Some(self.latest.clone())
@@ -62,14 +65,26 @@ impl PendingShellSave {
 }
 
 fn flush_pending_shell_save(
-    pending: &Rc<RefCell<PendingShellSave>>,
-    _store: &FilePreferencesStore,
-    _context: &str,
+    pending: &Rc<RefCell<PendingDockSave>>,
+    store: &FilePreferencesStore,
+    context: &str,
 ) {
-    let Some(_chrome) = pending.borrow_mut().take_dirty() else {
+    let Some(layout) = pending.borrow_mut().take_dirty() else {
         return;
     };
-    // Stub: shell chrome persistence removed until dock_layout wiring (Task 5).
+    let mut preferences = match store.load() {
+        Ok(preferences) => preferences,
+        Err(error) => {
+            eprintln!("opencore: {context}: {error}");
+            pending.borrow_mut().set_latest(layout);
+            return;
+        }
+    };
+    preferences.dock_layout = Some(layout.clone());
+    if let Err(error) = store.save(&preferences) {
+        eprintln!("opencore: {context}: {error}");
+        pending.borrow_mut().set_latest(layout);
+    }
 }
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
@@ -78,9 +93,9 @@ pub struct OpenCoreApp {
     store: Arc<FilePreferencesStore>,
     focus_handle: FocusHandle,
     onboarding_ui: Option<OnboardingUiState>,
-    shell: Option<gpui::Entity<Shell>>,
+    shell: Option<gpui::Entity<ShellWorkspace>>,
     shell_save_task: Option<Task<()>>,
-    pending_shell_save: Rc<RefCell<PendingShellSave>>,
+    pending_shell_save: Rc<RefCell<PendingDockSave>>,
     _shutdown_subscription: gpui::Subscription,
     _window_closed_subscription: gpui::Subscription,
     theme_transition: Option<ThemeTransition>,
@@ -96,7 +111,7 @@ impl OpenCoreApp {
         } else {
             None
         };
-        let pending_shell_save = Rc::new(RefCell::new(PendingShellSave::default()));
+        let pending_shell_save = Rc::new(RefCell::new(PendingDockSave::default()));
         let pending_for_shutdown = pending_shell_save.clone();
         let store_for_shutdown = store.clone();
         // Register directly on App rather than through Context::on_app_quit:
@@ -182,8 +197,8 @@ impl OpenCoreApp {
         self.persistence_error = Some(format!("[ERROR: Could not save settings ({error})]"));
     }
 
-    fn schedule_shell_save(&mut self, chrome: super::shell::ShellChrome, cx: &mut Context<Self>) {
-        self.pending_shell_save.borrow_mut().set_latest(chrome);
+    fn schedule_dock_layout_save(&mut self, layout: DockAreaState, cx: &mut Context<Self>) {
+        self.pending_shell_save.borrow_mut().set_latest(layout);
         self.shell_save_task = Some(cx.spawn(async move |view, cx| {
             cx.background_executor().timer(SHELL_SAVE_DEBOUNCE).await;
             let _ = view.update(cx, |app, _| app.flush_shell_save());
@@ -196,33 +211,38 @@ impl OpenCoreApp {
             return;
         }
 
-        let preferences = self.state.preferences.clone();
-        match self.store.save(&preferences) {
+        let layout = self.pending_shell_save.borrow().latest.clone();
+        self.state.preferences.dock_layout = Some(layout);
+        match self.store.save(&self.state.preferences) {
             Ok(()) => {
                 self.pending_shell_save.borrow_mut().dirty = false;
                 self.persistence_error = None;
             }
             Err(error) => {
                 self.pending_shell_save.borrow_mut().mark_dirty();
-                self.record_persistence_error("save shell", error);
+                self.record_persistence_error("save dock layout", error);
             }
         }
         self.shell_save_task = None;
     }
 
-    fn ensure_shell(&mut self, cx: &mut Context<Self>) -> gpui::Entity<Shell> {
+    fn ensure_shell(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::Entity<ShellWorkspace> {
         if let Some(shell) = self.shell.as_ref() {
             return shell.clone();
         }
 
-        let chrome = super::shell::ShellChrome::default().sanitized_persisted();
+        let saved = self.state.preferences.dock_layout.clone();
         let view = cx.entity().downgrade();
-        let save: ShellSaveFn = Rc::new(move |chrome, app| {
+        let save: DockSaveFn = Rc::new(move |layout, app| {
             let _ = view.update(app, |app, cx| {
-                app.schedule_shell_save(chrome, cx);
+                app.schedule_dock_layout_save(layout, cx);
             });
         });
-        let shell = cx.new(|cx| Shell::new(chrome, save, cx));
+        let shell = cx.new(|cx| ShellWorkspace::new(saved, save, window, cx));
         self.shell = Some(shell.clone());
         shell
     }
@@ -484,7 +504,7 @@ impl Render for OpenCoreApp {
                 ))
             }
             ActiveScreen::Home => {
-                let shell = self.ensure_shell(cx);
+                let shell = self.ensure_shell(window, cx);
                 shell.update(cx, |shell, _| shell.set_theme(theme));
                 div().size_full().child(shell)
             }
@@ -565,6 +585,9 @@ pub fn run_desktop() -> Result<(), AppError> {
                 let bounds = cx.update(|app| window_bounds_for_state(&state, app));
                 let options = WindowOptions {
                     window_bounds: Some(bounds),
+                    #[cfg(not(target_os = "linux"))]
+                    titlebar: Some(gpui_component::TitleBar::title_bar_options()),
+                    #[cfg(target_os = "linux")]
                     titlebar: Some(TitlebarOptions {
                         title: None,
                         appears_transparent: true,
@@ -665,11 +688,12 @@ mod animation_gate_tests {
 }
 
 #[cfg(test)]
-mod shell_persistence_tests {
+mod dock_layout_persistence_tests {
     use super::*;
-    use crate::shared::preferences::{AppPreferences, ShellChrome};
+    use crate::shared::preferences::AppPreferences;
     use crate::shared::theme::ThemeMode;
     use gpui::{AppContext, TestAppContext};
+    use gpui_component::dock::DockAreaState;
     use std::time::Duration;
     use tempfile::TempDir;
 
@@ -681,8 +705,15 @@ mod shell_persistence_tests {
         cx.new(|cx| OpenCoreApp::new(AppState::from_preferences(preferences), store, cx))
     }
 
+    fn marker_layout(version_marker: usize) -> DockAreaState {
+        DockAreaState {
+            version: Some(version_marker),
+            ..Default::default()
+        }
+    }
+
     #[gpui::test]
-    fn shell_snapshot_merges_immediately_and_preserves_unrelated_preferences(
+    fn dock_layout_snapshot_merges_immediately_and_preserves_unrelated_preferences(
         cx: &mut TestAppContext,
     ) {
         let dir = TempDir::new().expect("temp dir");
@@ -695,12 +726,9 @@ mod shell_persistence_tests {
             ..Default::default()
         };
         let app = test_app(cx, store.clone(), preferences);
-        let chrome = ShellChrome {
-            left_width: 333.0,
-            ..Default::default()
-        };
+        let layout = marker_layout(333);
 
-        app.update(cx, |app, cx| app.schedule_shell_save(chrome.clone(), cx));
+        app.update(cx, |app, cx| app.schedule_dock_layout_save(layout.clone(), cx));
         cx.run_until_parked();
         cx.executor().advance_clock(Duration::from_millis(400));
         cx.run_until_parked();
@@ -708,31 +736,30 @@ mod shell_persistence_tests {
         cx.read_entity(&app, |app, _| {
             assert_eq!(app.state.preferences.theme_mode, ThemeMode::Light);
             assert!(app.state.preferences.onboarding_completed);
-            assert!(app.state.preferences.dock_layout.is_none());
+            assert_eq!(
+                app.state.preferences.dock_layout,
+                Some(layout.clone())
+            );
         });
         let saved = store.load().expect("load saved preferences");
         assert_eq!(saved.theme_mode, ThemeMode::Light);
         assert!(saved.onboarding_completed);
-        assert!(saved.dock_layout.is_none());
+        assert_eq!(saved.dock_layout, Some(layout));
     }
 
     #[gpui::test]
-    fn shell_debounce_writes_only_the_latest_snapshot(cx: &mut TestAppContext) {
+    fn dock_layout_debounce_writes_only_the_latest_snapshot(cx: &mut TestAppContext) {
         let dir = TempDir::new().expect("temp dir");
         let path = dir.path().join("preferences.json");
         let store = Arc::new(FilePreferencesStore::at(&path));
         let app = test_app(cx, store.clone(), AppPreferences::default());
-        let first = ShellChrome {
-            left_width: 300.0,
-            ..Default::default()
-        };
-        let mut latest = first.clone();
-        latest.left_width = 360.0;
+        let first = marker_layout(300);
+        let latest = marker_layout(360);
 
-        app.update(cx, |app, cx| app.schedule_shell_save(first, cx));
+        app.update(cx, |app, cx| app.schedule_dock_layout_save(first, cx));
         cx.run_until_parked();
         cx.executor().advance_clock(Duration::from_millis(200));
-        app.update(cx, |app, cx| app.schedule_shell_save(latest.clone(), cx));
+        app.update(cx, |app, cx| app.schedule_dock_layout_save(latest.clone(), cx));
         cx.run_until_parked();
         cx.executor().advance_clock(Duration::from_millis(200));
         cx.run_until_parked();
@@ -741,17 +768,17 @@ mod shell_persistence_tests {
         cx.executor().advance_clock(Duration::from_millis(200));
         cx.run_until_parked();
         let saved = store.load().expect("load saved preferences");
-        assert!(saved.dock_layout.is_none());
+        assert_eq!(saved.dock_layout, Some(latest));
     }
 
     #[gpui::test]
-    fn shell_debounce_records_save_errors(cx: &mut TestAppContext) {
+    fn dock_layout_debounce_records_save_errors(cx: &mut TestAppContext) {
         let dir = TempDir::new().expect("temp dir");
         let store = Arc::new(FilePreferencesStore::at(dir.path()));
         let app = test_app(cx, store, AppPreferences::default());
 
         app.update(cx, |app, cx| {
-            app.schedule_shell_save(ShellChrome::default(), cx)
+            app.schedule_dock_layout_save(marker_layout(1), cx)
         });
         cx.run_until_parked();
         cx.executor().advance_clock(Duration::from_millis(400));
@@ -767,37 +794,38 @@ mod shell_persistence_tests {
     }
 
     #[gpui::test]
-    fn shell_shutdown_flushes_dirty_latest_snapshot_before_debounce(cx: &mut TestAppContext) {
+    fn dock_layout_shutdown_flushes_dirty_latest_snapshot_before_debounce(
+        cx: &mut TestAppContext,
+    ) {
         let dir = TempDir::new().expect("temp dir");
         let path = dir.path().join("preferences.json");
         let store = Arc::new(FilePreferencesStore::at(&path));
         let app = test_app(cx, store.clone(), AppPreferences::default());
-        let latest = ShellChrome {
-            left_width: 372.0,
-            right_open: true,
-            ..Default::default()
-        };
+        let latest = marker_layout(372);
 
-        app.update(cx, |app, cx| app.schedule_shell_save(latest.clone(), cx));
+        app.update(cx, |app, cx| app.schedule_dock_layout_save(latest.clone(), cx));
         cx.run_until_parked();
 
         cx.update(|gpui| gpui.shutdown());
 
         let saved = store.load().expect("load shutdown-flushed preferences");
-        assert!(saved.dock_layout.is_none());
+        assert_eq!(saved.dock_layout, Some(latest));
     }
 }
 
 #[cfg(all(test, debug_assertions))]
 mod reset_tests {
     use super::*;
-    use crate::shared::preferences::ShellChrome;
     use gpui::{AppContext, TestAppContext};
     use std::time::Duration;
     use tempfile::TempDir;
 
     #[gpui::test]
     fn successful_reset_clears_existing_shell_entity(cx: &mut TestAppContext) {
+        cx.update(|app| {
+            gpui_component::init(app);
+            register_shell_panels(app);
+        });
         let dir = TempDir::new().expect("temp dir");
         let store = Arc::new(FilePreferencesStore::at(
             dir.path().join("preferences.json"),
@@ -812,8 +840,10 @@ mod reset_tests {
                 cx,
             )
         });
-        let save: ShellSaveFn = Rc::new(|_, _| {});
-        let shell = cx.new(|cx| Shell::new(super::super::shell::ShellChrome::default(), save, cx));
+        let save: DockSaveFn = Rc::new(|_, _| {});
+        let (shell, _) = cx.add_window_view(|window, cx| {
+            ShellWorkspace::new(None, save, window, cx)
+        });
 
         app.update(cx, |app, _| app.shell = Some(shell));
         app.update(cx, |app, _| {
@@ -838,12 +868,12 @@ mod reset_tests {
                 cx,
             )
         });
-        let stale_chrome = ShellChrome {
-            left_width: 399.0,
+        let stale_layout = DockAreaState {
+            version: Some(399),
             ..Default::default()
         };
 
-        app.update(cx, |app, cx| app.schedule_shell_save(stale_chrome, cx));
+        app.update(cx, |app, cx| app.schedule_dock_layout_save(stale_layout, cx));
         cx.run_until_parked();
         app.update(cx, |app, _| {
             app.reset_dev_data_state().expect("reset persistent data");
