@@ -1,10 +1,12 @@
 //! Post-onboarding holy-grail chrome (panels + main tabs).
 
 mod chrome;
+mod panels;
 mod shell_view;
 pub mod tabs;
 pub mod tween;
 
+pub use panels::register_shell_panels;
 pub use chrome::{
     BOTTOM_DEFAULT, RIGHT_DEFAULT, SIDEBAR_DEFAULT, ShellChrome, ShellTabRecord, TITLEBAR_HEIGHT,
     clamp_bottom_height, clamp_right_width, clamp_sidebar_width,

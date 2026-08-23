@@ -25,7 +25,7 @@ use super::onboarding::{
     OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
     onboarding_interactive_root, onboarding_screen, reduce_onboarding,
 };
-use super::shell::{Shell, ShellSaveFn};
+use super::shell::{Shell, ShellSaveFn, register_shell_panels};
 use super::window_placement::center_window;
 
 const SHELL_SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
@@ -556,6 +556,7 @@ pub fn run_desktop() -> Result<(), AppError> {
         .with_assets(crate::shared::assets::AppAssets)
         .run(move |cx| {
             gpui_component::init(cx);
+            register_shell_panels(cx);
             let _ = crate::shared::assets::AppAssets.load_fonts(cx);
             apply_nothing_theme(initial_theme_mode, cx);
 
