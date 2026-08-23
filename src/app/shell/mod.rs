@@ -1,13 +1,12 @@
-//! Post-onboarding holy-grail chrome (Dock workspace + center titlebar tabs).
+//! Post-onboarding holy-grail chrome (Dock workspace + title bar toggles).
 
 mod default_layout;
 mod panels;
-mod titlebar_tabs;
 mod workspace;
 
 pub use default_layout::{
-    BOTTOM_DEFAULT, DOCK_LAYOUT_VERSION, RIGHT_DEFAULT, SIDEBAR_DEFAULT, apply_default_holy_grail,
+    BOTTOM_DEFAULT, DOCK_LAYOUT_VERSION, EDGE_DOCK_TAB_COUNT, RIGHT_DEFAULT, SIDEBAR_DEFAULT,
+    apply_default_holy_grail, dock_item_enables_dnd, dock_item_panel_count,
 };
-pub use panels::{CenterStubHost, register_shell_panels};
-pub use titlebar_tabs::{center_title_bar, render_center_tab_bar};
+pub use panels::register_shell_panels;
 pub use workspace::{DockSaveFn, ShellWorkspace};
