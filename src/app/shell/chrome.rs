@@ -1,13 +1,14 @@
 //! Persisted shell chrome sizes and open flags.
 
 pub use crate::shared::preferences::shell_chrome::{
-    BOTTOM_DEFAULT, RIGHT_DEFAULT, SIDEBAR_DEFAULT, ShellChrome, ShellTabRecord, TITLEBAR_HEIGHT,
-    clamp_bottom_height, clamp_right_width, clamp_sidebar_width,
+    ShellChrome, ShellTabRecord, TITLEBAR_HEIGHT, clamp_bottom_height, clamp_right_width,
+    clamp_sidebar_width,
 };
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::preferences::shell_chrome::{BOTTOM_DEFAULT, RIGHT_DEFAULT, SIDEBAR_DEFAULT};
 
     #[test]
     fn constants_match_plan() {
