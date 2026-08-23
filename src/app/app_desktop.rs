@@ -10,10 +10,10 @@ use gpui::{
     App, AppContext, Context, FocusHandle, IntoElement, ParentElement, Render, Styled, Task,
     WeakEntity, Window, WindowBounds, WindowOptions, div, px, size,
 };
-#[cfg(all(debug_assertions, target_os = "linux"))]
-use gpui::{TitlebarOptions, point};
 #[cfg(debug_assertions)]
 use gpui::{InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point};
+#[cfg(all(debug_assertions, target_os = "linux"))]
+use gpui::{TitlebarOptions, point};
 use gpui_component::Root;
 use gpui_component::dock::DockAreaState;
 
@@ -729,7 +729,9 @@ mod dock_layout_persistence_tests {
         let app = test_app(cx, store.clone(), preferences);
         let layout = marker_layout(333);
 
-        app.update(cx, |app, cx| app.schedule_dock_layout_save(layout.clone(), cx));
+        app.update(cx, |app, cx| {
+            app.schedule_dock_layout_save(layout.clone(), cx)
+        });
         cx.run_until_parked();
 
         cx.read_entity(&app, |app, _| {
@@ -758,7 +760,9 @@ mod dock_layout_persistence_tests {
         app.update(cx, |app, cx| app.schedule_dock_layout_save(first, cx));
         cx.run_until_parked();
         cx.executor().advance_clock(Duration::from_millis(200));
-        app.update(cx, |app, cx| app.schedule_dock_layout_save(latest.clone(), cx));
+        app.update(cx, |app, cx| {
+            app.schedule_dock_layout_save(latest.clone(), cx)
+        });
         cx.run_until_parked();
         cx.executor().advance_clock(Duration::from_millis(200));
         cx.run_until_parked();
@@ -793,16 +797,16 @@ mod dock_layout_persistence_tests {
     }
 
     #[gpui::test]
-    fn dock_layout_shutdown_flushes_dirty_latest_snapshot_before_debounce(
-        cx: &mut TestAppContext,
-    ) {
+    fn dock_layout_shutdown_flushes_dirty_latest_snapshot_before_debounce(cx: &mut TestAppContext) {
         let dir = TempDir::new().expect("temp dir");
         let path = dir.path().join("preferences.json");
         let store = Arc::new(FilePreferencesStore::at(&path));
         let app = test_app(cx, store.clone(), AppPreferences::default());
         let latest = marker_layout(372);
 
-        app.update(cx, |app, cx| app.schedule_dock_layout_save(latest.clone(), cx));
+        app.update(cx, |app, cx| {
+            app.schedule_dock_layout_save(latest.clone(), cx)
+        });
         cx.run_until_parked();
 
         cx.update(|gpui| gpui.shutdown());
@@ -840,9 +844,8 @@ mod reset_tests {
             )
         });
         let save: DockSaveFn = Rc::new(|_, _| {});
-        let (shell, _) = cx.add_window_view(|window, cx| {
-            ShellWorkspace::new(None, save, window, cx)
-        });
+        let (shell, _) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, save, window, cx));
 
         app.update(cx, |app, _| app.shell = Some(shell));
         app.update(cx, |app, _| {
@@ -872,7 +875,9 @@ mod reset_tests {
             ..Default::default()
         };
 
-        app.update(cx, |app, cx| app.schedule_dock_layout_save(stale_layout, cx));
+        app.update(cx, |app, cx| {
+            app.schedule_dock_layout_save(stale_layout, cx)
+        });
         cx.run_until_parked();
         app.update(cx, |app, _| {
             app.reset_dev_data_state().expect("reset persistent data");

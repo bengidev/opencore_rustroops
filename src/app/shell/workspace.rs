@@ -16,8 +16,7 @@ use gpui_component::{
 use crate::shared::theme::OpenCoreTheme;
 
 use super::{
-    DOCK_LAYOUT_VERSION, apply_default_holy_grail, center_title_bar,
-    panels::CenterStubHost,
+    DOCK_LAYOUT_VERSION, apply_default_holy_grail, center_title_bar, panels::CenterStubHost,
 };
 
 const MAIN_DOCK_ID: &str = "main-dock";
@@ -38,9 +37,8 @@ impl ShellWorkspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let dock_area = cx.new(|cx| {
-            DockArea::new(MAIN_DOCK_ID, Some(DOCK_LAYOUT_VERSION), window, cx)
-        });
+        let dock_area =
+            cx.new(|cx| DockArea::new(MAIN_DOCK_ID, Some(DOCK_LAYOUT_VERSION), window, cx));
 
         let center_host = match saved {
             None => apply_default_holy_grail(&dock_area, window, cx),
@@ -76,16 +74,13 @@ impl ShellWorkspace {
         };
 
         let save_for_layout = save.clone();
-        let layout_subscription = cx.subscribe_in(
-            &dock_area,
-            window,
-            move |_, dock_area, event, _, cx| {
+        let layout_subscription =
+            cx.subscribe_in(&dock_area, window, move |_, dock_area, event, _, cx| {
                 if matches!(event, DockEvent::LayoutChanged) {
                     let state = dock_area.read(cx).dump(cx);
                     save_for_layout(state, cx);
                 }
-            },
-        );
+            });
 
         let titlebar_subscription = cx.observe(&center_host, |_, _, cx| {
             cx.notify();
@@ -182,9 +177,7 @@ mod tests {
     use gpui::{App, AppContext, TestAppContext, px};
     use gpui_component::dock::{DockAreaState, DockPlacement};
 
-    use crate::app::shell::{
-        DOCK_LAYOUT_VERSION, SIDEBAR_DEFAULT, register_shell_panels,
-    };
+    use crate::app::shell::{DOCK_LAYOUT_VERSION, SIDEBAR_DEFAULT, register_shell_panels};
 
     use super::{DockSaveFn, ShellWorkspace};
 
@@ -199,7 +192,10 @@ mod tests {
         Rc::new(|_, _| {})
     }
 
-    fn assert_default_holy_grail_layout(dock_area: &gpui::Entity<gpui_component::dock::DockArea>, cx: &App) {
+    fn assert_default_holy_grail_layout(
+        dock_area: &gpui::Entity<gpui_component::dock::DockArea>,
+        cx: &App,
+    ) {
         let dock = dock_area.read(cx);
         assert!(dock.is_dock_open(DockPlacement::Left, cx));
         assert!(!dock.is_dock_open(DockPlacement::Right, cx));
@@ -232,9 +228,8 @@ mod tests {
     fn dock_load_none_uses_default_layout(cx: &mut TestAppContext) {
         init_shell_panels(cx);
 
-        let (workspace, _) = cx.add_window_view(|window, cx| {
-            ShellWorkspace::new(None, noop_save(), window, cx)
-        });
+        let (workspace, _) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert_default_holy_grail_layout(&workspace.dock_area, cx);
@@ -262,12 +257,12 @@ mod tests {
     fn dock_load_failure_resets_default(cx: &mut TestAppContext) {
         init_shell_panels(cx);
 
-        let (reference, _) = cx.add_window_view(|window, cx| {
-            ShellWorkspace::new(None, noop_save(), window, cx)
-        });
+        let (reference, _) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
 
-        let mut corrupt =
-            cx.read_entity(&reference, |workspace, cx| workspace.dock_area.read(cx).dump(cx));
+        let mut corrupt = cx.read_entity(&reference, |workspace, cx| {
+            workspace.dock_area.read(cx).dump(cx)
+        });
         corrupt.center.panel_name = "nonexistent-panel".into();
 
         let (workspace, _) = cx.add_window_view(|window, cx| {

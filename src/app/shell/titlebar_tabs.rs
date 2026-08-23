@@ -2,10 +2,9 @@
 
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, px};
 use gpui_component::{
-    ActiveTheme as _, Sizable, TitleBar,
+    ActiveTheme as _, IconName, Sizable, TitleBar,
     button::{Button, ButtonVariants as _},
     tab::{Tab, TabBar},
-    IconName,
 };
 
 use super::panels::CenterStubHost;

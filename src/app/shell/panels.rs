@@ -11,11 +11,7 @@ use gpui_component::dock::{
 use serde::{Deserialize, Serialize};
 
 /// Returns the tab index to select after closing `closed` when `len_after` tabs remain.
-pub fn next_active_after_close(
-    active: usize,
-    closed: usize,
-    len_after: usize,
-) -> Option<usize> {
+pub fn next_active_after_close(active: usize, closed: usize, len_after: usize) -> Option<usize> {
     if len_after == 0 {
         return None;
     }
@@ -150,7 +146,7 @@ pub struct CenterStubHost {
 
 impl CenterStubHost {
     pub fn with_initial_tab(cx: &mut Context<Self>) -> Self {
-        let tab = cx.new(|cx| MainStubPanel::new(cx));
+        let tab = cx.new(MainStubPanel::new);
         Self {
             focus_handle: cx.focus_handle(),
             active_ix: 0,
@@ -208,7 +204,7 @@ impl CenterStubHost {
         };
 
         let tabs = if panel_state.children.is_empty() {
-            vec![cx.new(|cx| MainStubPanel::new(cx))]
+            vec![cx.new(MainStubPanel::new)]
         } else {
             panel_state
                 .children
@@ -289,29 +285,33 @@ impl Render for CenterStubHost {
 
 pub fn register_shell_panels(cx: &mut App) {
     register_panel(cx, "left-stub", |_, _, _, _, cx| {
-        Box::new(cx.new(|cx| LeftStubPanel::new(cx)))
+        Box::new(cx.new(LeftStubPanel::new))
     });
     register_panel(cx, "right-stub", |_, _, _, _, cx| {
-        Box::new(cx.new(|cx| RightStubPanel::new(cx)))
+        Box::new(cx.new(RightStubPanel::new))
     });
     register_panel(cx, "bottom-stub", |_, _, _, _, cx| {
-        Box::new(cx.new(|cx| BottomStubPanel::new(cx)))
+        Box::new(cx.new(BottomStubPanel::new))
     });
     register_panel(cx, "main-stub", |_, _, _, _, cx| {
-        Box::new(cx.new(|cx| MainStubPanel::new(cx)))
+        Box::new(cx.new(MainStubPanel::new))
     });
-    register_panel(cx, "center-stub-host", |dock_area, panel_state, info, window, cx| {
-        let host = match info {
-            PanelInfo::Panel(value) if !value.is_null() => {
-                CenterStubHost::from_panel_state(dock_area, panel_state, window, cx)
-            }
-            _ if !panel_state.children.is_empty() => {
-                CenterStubHost::from_panel_state(dock_area, panel_state, window, cx)
-            }
-            _ => cx.new(|cx| CenterStubHost::with_initial_tab(cx)),
-        };
-        Box::new(host)
-    });
+    register_panel(
+        cx,
+        "center-stub-host",
+        |dock_area, panel_state, info, window, cx| {
+            let host = match info {
+                PanelInfo::Panel(value) if !value.is_null() => {
+                    CenterStubHost::from_panel_state(dock_area, panel_state, window, cx)
+                }
+                _ if !panel_state.children.is_empty() => {
+                    CenterStubHost::from_panel_state(dock_area, panel_state, window, cx)
+                }
+                _ => cx.new(CenterStubHost::with_initial_tab),
+            };
+            Box::new(host)
+        },
+    );
 }
 
 #[cfg(test)]
