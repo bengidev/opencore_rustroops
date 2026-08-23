@@ -25,11 +25,27 @@ fn main() {
     }
 
     if patched {
-        invalidate_gpui_component_artifacts(&metadata);
+        for path in patched_paths(&metadata) {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
         println!(
-            "cargo:warning=gpui-component was patched; rebuilding dependency — run `cargo build` once more if the app still shows old dock behavior"
+            "cargo:warning=gpui-component was patched; run `cargo build` once more if the app still shows old dock behavior"
         );
     }
+}
+
+fn patched_paths(metadata: &cargo_metadata::Metadata) -> Vec<std::path::PathBuf> {
+    find_gpui_component_dock_dir(metadata)
+        .map(|dock_dir| {
+            [
+                dock_dir.join("tab_panel.rs"),
+                dock_dir.join("dock.rs"),
+                dock_dir.join("mod.rs"),
+            ]
+            .into_iter()
+            .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn find_gpui_component_dock_dir(metadata: &cargo_metadata::Metadata) -> Option<std::path::PathBuf> {
@@ -45,37 +61,6 @@ fn find_gpui_component_dock_dir(metadata: &cargo_metadata::Metadata) -> Option<s
                 .join("src/dock")
                 .into_std_path_buf()
         })
-}
-
-/// Drop cached gpui-component build artifacts so the next compile picks up patched sources.
-fn invalidate_gpui_component_artifacts(metadata: &cargo_metadata::Metadata) {
-    let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".into());
-    let target = metadata.target_directory.as_std_path();
-    let dirs = [
-        target.join(&profile).join("deps"),
-        target.join(&profile).join(".fingerprint"),
-        target.join(&profile).join("build"),
-    ];
-
-    for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if !name.contains("gpui_component") && !name.contains("gpui-component") {
-                continue;
-            }
-
-            let path = entry.path();
-            if path.is_dir() {
-                std::fs::remove_dir_all(&path).ok();
-            } else {
-                std::fs::remove_file(&path).ok();
-            }
-        }
-    }
 }
 
 fn patch_tab_panel_toolbar(path: &std::path::Path) -> bool {

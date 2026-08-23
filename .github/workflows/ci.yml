@@ -52,6 +52,10 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
+      # build.rs patches gpui-component sources; a warm build applies patches before clippy.
+      - name: cargo build (apply gpui-component patches)
+        run: cargo build -p opencore_rustroops
+
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
 
