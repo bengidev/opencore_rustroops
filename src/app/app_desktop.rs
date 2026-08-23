@@ -198,6 +198,7 @@ impl OpenCoreApp {
     }
 
     fn schedule_dock_layout_save(&mut self, layout: DockAreaState, cx: &mut Context<Self>) {
+        self.state.preferences.dock_layout = Some(layout.clone());
         self.pending_shell_save.borrow_mut().set_latest(layout);
         self.shell_save_task = Some(cx.spawn(async move |view, cx| {
             cx.background_executor().timer(SHELL_SAVE_DEBOUNCE).await;
@@ -730,17 +731,15 @@ mod dock_layout_persistence_tests {
 
         app.update(cx, |app, cx| app.schedule_dock_layout_save(layout.clone(), cx));
         cx.run_until_parked();
-        cx.executor().advance_clock(Duration::from_millis(400));
-        cx.run_until_parked();
 
         cx.read_entity(&app, |app, _| {
             assert_eq!(app.state.preferences.theme_mode, ThemeMode::Light);
             assert!(app.state.preferences.onboarding_completed);
-            assert_eq!(
-                app.state.preferences.dock_layout,
-                Some(layout.clone())
-            );
+            assert_eq!(app.state.preferences.dock_layout, Some(layout.clone()));
         });
+
+        cx.executor().advance_clock(Duration::from_millis(400));
+        cx.run_until_parked();
         let saved = store.load().expect("load saved preferences");
         assert_eq!(saved.theme_mode, ThemeMode::Light);
         assert!(saved.onboarding_completed);
