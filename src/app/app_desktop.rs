@@ -63,26 +63,13 @@ impl PendingShellSave {
 
 fn flush_pending_shell_save(
     pending: &Rc<RefCell<PendingShellSave>>,
-    store: &FilePreferencesStore,
-    context: &str,
+    _store: &FilePreferencesStore,
+    _context: &str,
 ) {
-    let Some(chrome) = pending.borrow_mut().take_dirty() else {
+    let Some(_chrome) = pending.borrow_mut().take_dirty() else {
         return;
     };
-
-    let mut preferences = match store.load() {
-        Ok(preferences) => preferences,
-        Err(error) => {
-            eprintln!("opencore: {context}: {error}");
-            pending.borrow_mut().mark_dirty();
-            return;
-        }
-    };
-    preferences.shell = chrome;
-    if let Err(error) = store.save(&preferences) {
-        eprintln!("opencore: {context}: {error}");
-        pending.borrow_mut().mark_dirty();
-    }
+    // Stub: shell chrome persistence removed until dock_layout wiring (Task 5).
 }
 
 /// Composition-root view: dispatches on [`ActiveScreen`] and owns persisted state.
@@ -196,7 +183,6 @@ impl OpenCoreApp {
     }
 
     fn schedule_shell_save(&mut self, chrome: super::shell::ShellChrome, cx: &mut Context<Self>) {
-        self.state.preferences.shell = chrome.clone();
         self.pending_shell_save.borrow_mut().set_latest(chrome);
         self.shell_save_task = Some(cx.spawn(async move |view, cx| {
             cx.background_executor().timer(SHELL_SAVE_DEBOUNCE).await;
@@ -229,7 +215,7 @@ impl OpenCoreApp {
             return shell.clone();
         }
 
-        let chrome = self.state.preferences.shell.clone().sanitized_persisted();
+        let chrome = super::shell::ShellChrome::default().sanitized_persisted();
         let view = cx.entity().downgrade();
         let save: ShellSaveFn = Rc::new(move |chrome, app| {
             let _ = view.update(app, |app, cx| {
@@ -719,14 +705,14 @@ mod shell_persistence_tests {
         cx.run_until_parked();
 
         cx.read_entity(&app, |app, _| {
-            assert_eq!(app.state.preferences.shell, chrome);
             assert_eq!(app.state.preferences.theme_mode, ThemeMode::Light);
             assert!(app.state.preferences.onboarding_completed);
+            assert!(app.state.preferences.dock_layout.is_none());
         });
         let saved = store.load().expect("load saved preferences");
-        assert_eq!(saved.shell, chrome);
         assert_eq!(saved.theme_mode, ThemeMode::Light);
         assert!(saved.onboarding_completed);
+        assert!(saved.dock_layout.is_none());
     }
 
     #[gpui::test]
@@ -754,7 +740,7 @@ mod shell_persistence_tests {
         cx.executor().advance_clock(Duration::from_millis(200));
         cx.run_until_parked();
         let saved = store.load().expect("load saved preferences");
-        assert_eq!(saved.shell, latest);
+        assert!(saved.dock_layout.is_none());
     }
 
     #[gpui::test]
@@ -797,7 +783,7 @@ mod shell_persistence_tests {
         cx.update(|gpui| gpui.shutdown());
 
         let saved = store.load().expect("load shutdown-flushed preferences");
-        assert_eq!(saved.shell, latest);
+        assert!(saved.dock_layout.is_none());
     }
 }
 

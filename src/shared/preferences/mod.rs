@@ -3,6 +3,7 @@
 //! [`PreferencesStore`] abstracts file and in-memory backends.
 
 use crate::shared::theme::ThemeMode;
+use gpui_component::dock::DockAreaState;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::fs;
@@ -13,7 +14,7 @@ use thiserror::Error;
 pub mod shell_chrome;
 pub use shell_chrome::ShellChrome;
 
-/// Single preferences document (theme, onboarding completion, and shell chrome).
+/// Single preferences document (theme, onboarding completion, and dock layout).
 ///
 /// Unknown JSON fields are ignored on load and dropped on the next save.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -21,7 +22,8 @@ pub use shell_chrome::ShellChrome;
 pub struct AppPreferences {
     pub theme_mode: ThemeMode,
     pub onboarding_completed: bool,
-    pub shell: ShellChrome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dock_layout: Option<DockAreaState>,
 }
 
 /// Errors from loading or saving preferences.
@@ -151,12 +153,32 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn app_preferences_default_has_no_dock_layout() {
+        let prefs = AppPreferences::default();
+        assert!(prefs.dock_layout.is_none());
+        let json = serde_json::to_string(&prefs).expect("serialize");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(value.get("shell"), None);
+    }
+
+    #[test]
+    fn app_preferences_ignores_legacy_shell_field() {
+        let restored: AppPreferences = serde_json::from_str(
+            r#"{"theme_mode":"dark","onboarding_completed":true,"shell":{"left_open":true}}"#,
+        )
+        .expect("deserialize");
+        assert!(restored.onboarding_completed);
+        assert!(restored.dock_layout.is_none());
+    }
+
+    #[test]
     fn app_preferences_default_serializes_to_prd_schema() {
         let json = serde_json::to_string(&AppPreferences::default()).expect("serialize");
         let value: serde_json::Value = serde_json::from_str(&json).expect("parse");
         assert_eq!(value["theme_mode"], "dark");
         assert_eq!(value["onboarding_completed"], false);
-        assert!(value.get("shell").is_some());
+        assert_eq!(value.get("shell"), None);
+        assert_eq!(value.get("dock_layout"), None);
     }
 
     #[test]
@@ -164,7 +186,7 @@ mod tests {
         let prefs = AppPreferences::default();
         assert_eq!(prefs.theme_mode, ThemeMode::Dark);
         assert!(!prefs.onboarding_completed);
-        assert!(prefs.shell.left_open);
+        assert!(prefs.dock_layout.is_none());
     }
 
     #[test]
