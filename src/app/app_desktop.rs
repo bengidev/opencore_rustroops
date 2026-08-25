@@ -855,10 +855,9 @@ mod reset_tests {
             )
         });
         let save: DockSaveFn = Rc::new(|_, _| {});
-        let (shell, _) =
-            cx.add_window_view(|window, cx| {
-                ShellWorkspace::new(None, save, Rc::new(|_, _| {}), window, cx)
-            });
+        let (shell, _) = cx.add_window_view(|window, cx| {
+            ShellWorkspace::new(None, save, Rc::new(|_, _| {}), window, cx)
+        });
 
         app.update(cx, |app, _| app.shell = Some(shell));
         app.update(cx, |app, _| {

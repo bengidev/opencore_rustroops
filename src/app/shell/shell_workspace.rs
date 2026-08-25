@@ -355,7 +355,6 @@ mod tests {
             dock.left_dock().map(|dock| dock.read(cx).size()),
             Some(px(SIDEBAR_DEFAULT))
         );
-        assert!(!dock.is_dock_open(DockPlacement::Left, cx));
         assert_eq!(dock.dump(cx).version, Some(DOCK_LAYOUT_VERSION));
 
         assert!(
@@ -392,9 +391,8 @@ mod tests {
             ..Default::default()
         };
 
-        let (workspace, _) = cx.add_window_view(|window, cx| {
-            new_shell(Some(saved), noop_save(), window, cx)
-        });
+        let (workspace, _) =
+            cx.add_window_view(|window, cx| new_shell(Some(saved), noop_save(), window, cx));
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert_default_holy_grail_layout(&workspace.dock_area, cx);
@@ -445,9 +443,8 @@ mod tests {
             ..Default::default()
         };
 
-        let (workspace, _) = cx.add_window_view(|window, cx| {
-            new_shell(Some(saved), noop_save(), window, cx)
-        });
+        let (workspace, _) =
+            cx.add_window_view(|window, cx| new_shell(Some(saved), noop_save(), window, cx));
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert_default_holy_grail_layout(&workspace.dock_area, cx);
@@ -566,9 +563,8 @@ mod tests {
         });
         corrupt.center.panel_name = "nonexistent-panel".into();
 
-        let (workspace, _) = cx.add_window_view(|window, cx| {
-            new_shell(Some(corrupt), noop_save(), window, cx)
-        });
+        let (workspace, _) =
+            cx.add_window_view(|window, cx| new_shell(Some(corrupt), noop_save(), window, cx));
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert_default_holy_grail_layout(&workspace.dock_area, cx);

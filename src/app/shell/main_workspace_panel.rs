@@ -14,7 +14,7 @@ use gpui_component::{
 };
 
 use crate::shared::theme::{
-    BackgroundToken, BorderToken, ForegroundToken, SpacingToken, TypeRole,
+    BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
 
 use super::workspace_theme::WorkspaceTheme;
@@ -85,7 +85,6 @@ impl Render for MainWorkspacePanel {
         let border_strong = theme.border_token(BorderToken::Strong);
         let primary = theme.foreground(ForegroundToken::Primary);
         let secondary = theme.foreground(ForegroundToken::Secondary);
-        let muted = theme.foreground(ForegroundToken::Muted);
         let mono = mono_family();
         let sans = sans_family();
         let pad = SpacingToken::S4.value();
@@ -119,16 +118,7 @@ impl Render for MainWorkspacePanel {
                     ))
                     .child(quick_actions_row(tertiary, border, primary)),
             )
-            .child(composer_bar(
-                &self.input,
-                surface,
-                border,
-                border_strong,
-                primary,
-                muted,
-                mono,
-                pad,
-            ))
+            .child(composer_bar(&self.input, &theme, mono, pad))
     }
 }
 
@@ -209,16 +199,18 @@ fn quick_actions_row(
 
 fn composer_bar(
     input: &gpui::Entity<InputState>,
-    surface: gpui::Hsla,
-    border: gpui::Hsla,
-    border_strong: gpui::Hsla,
-    primary: gpui::Hsla,
-    muted: gpui::Hsla,
+    theme: &OpenCoreTheme,
     mono: SharedString,
     pad: f32,
 ) -> impl IntoElement {
     const COMPOSER_HEIGHT: f32 = 56.;
     const COMPOSER_TEXT: f32 = 16.;
+
+    let surface = theme.surface(BackgroundToken::Secondary);
+    let border = theme.border_token(BorderToken::Default);
+    let border_strong = theme.border_token(BorderToken::Strong);
+    let primary = theme.foreground(ForegroundToken::Primary);
+    let muted = theme.foreground(ForegroundToken::Muted);
 
     v_flex()
         .w_full()
