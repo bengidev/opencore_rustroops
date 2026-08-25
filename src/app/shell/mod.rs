@@ -1,6 +1,8 @@
 //! Post-onboarding holy-grail chrome (Dock workspace + title bar toggles).
 
 mod default_layout;
+mod dock_animation;
+mod dock_tween;
 mod layout;
 mod panels;
 mod workspace;
