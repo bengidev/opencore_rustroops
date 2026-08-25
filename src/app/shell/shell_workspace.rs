@@ -14,6 +14,8 @@ use gpui_component::{
     h_flex,
 };
 
+use crate::app::gpui_callbacks::WindowAppHandler;
+use crate::app::welcome::welcome_theme_toggle::theme_toggle_button;
 use crate::shared::theme::OpenCoreTheme;
 
 use super::shell_dock_animation::{
@@ -33,6 +35,7 @@ pub struct ShellWorkspace {
     layout: ShellLayout,
     dock_tweens: DockTweenState,
     workspace_theme: WorkspaceTheme,
+    on_toggle_theme: WindowAppHandler,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -40,6 +43,7 @@ impl ShellWorkspace {
     pub fn new(
         saved: Option<DockAreaState>,
         save: DockSaveFn,
+        on_toggle_theme: WindowAppHandler,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -114,6 +118,7 @@ impl ShellWorkspace {
             layout,
             dock_tweens: DockTweenState::default(),
             workspace_theme,
+            on_toggle_theme,
             _subscriptions: vec![layout_subscription],
         }
     }
@@ -196,6 +201,9 @@ impl Render for ShellWorkspace {
             window.request_animation_frame();
         }
 
+        let theme = self.workspace_theme.get();
+        let on_toggle_theme = self.on_toggle_theme.clone();
+
         div()
             .size_full()
             .min_w_0()
@@ -204,13 +212,18 @@ impl Render for ShellWorkspace {
             .flex_col()
             .child(
                 TitleBar::new()
-                    .child(title_bar_dock_toggle(
-                        "toggle-left-dock",
-                        IconName::PanelLeft,
-                        "Toggle Left Dock",
-                        DockPlacement::Left,
-                        cx,
-                    ))
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(title_bar_dock_toggle(
+                                "toggle-left-dock",
+                                IconName::PanelLeft,
+                                "Toggle Left Dock",
+                                DockPlacement::Left,
+                                cx,
+                            ))
+                            .child(theme_toggle_button(theme, on_toggle_theme)),
+                    )
                     .trailing(
                         h_flex()
                             .gap_1()
@@ -251,6 +264,7 @@ mod tests {
     };
     use gpui_component::dock::{DockAreaState, DockPlacement};
 
+    use crate::app::gpui_callbacks::WindowAppHandler;
     use crate::app::shell::{
         DOCK_LAYOUT_VERSION, RIGHT_DEFAULT, SIDEBAR_DEFAULT, register_shell_panels,
     };
@@ -266,6 +280,19 @@ mod tests {
 
     fn noop_save() -> DockSaveFn {
         Rc::new(|_, _| {})
+    }
+
+    fn noop_toggle_theme() -> WindowAppHandler {
+        Rc::new(|_, _| {})
+    }
+
+    fn new_shell(
+        saved: Option<DockAreaState>,
+        save: DockSaveFn,
+        window: &mut gpui::Window,
+        cx: &mut gpui::Context<ShellWorkspace>,
+    ) -> ShellWorkspace {
+        ShellWorkspace::new(saved, save, noop_toggle_theme(), window, cx)
     }
 
     fn click_title_bar_dock_toggle(cx: &mut VisualTestContext, button_id: &'static str) {
@@ -366,7 +393,7 @@ mod tests {
         };
 
         let (workspace, _) = cx.add_window_view(|window, cx| {
-            ShellWorkspace::new(Some(saved), noop_save(), window, cx)
+            new_shell(Some(saved), noop_save(), window, cx)
         });
 
         cx.read_entity(&workspace, |workspace, cx| {
@@ -389,7 +416,7 @@ mod tests {
             ..Default::default()
         };
 
-        let _ = cx.add_window_view(|window, cx| ShellWorkspace::new(Some(saved), save, window, cx));
+        let _ = cx.add_window_view(|window, cx| new_shell(Some(saved), save, window, cx));
 
         let persisted = saved_layout
             .borrow()
@@ -403,7 +430,7 @@ mod tests {
         init_shell_panels(cx);
 
         let (workspace, _) =
-            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+            cx.add_window_view(|window, cx| new_shell(None, noop_save(), window, cx));
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert_default_holy_grail_layout(&workspace.dock_area, cx);
@@ -419,7 +446,7 @@ mod tests {
         };
 
         let (workspace, _) = cx.add_window_view(|window, cx| {
-            ShellWorkspace::new(Some(saved), noop_save(), window, cx)
+            new_shell(Some(saved), noop_save(), window, cx)
         });
 
         cx.read_entity(&workspace, |workspace, cx| {
@@ -432,7 +459,7 @@ mod tests {
         init_shell_panels(cx);
 
         let (workspace, cx) =
-            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+            cx.add_window_view(|window, cx| new_shell(None, noop_save(), window, cx));
 
         let toggles = [
             ("toggle-left-dock", DockPlacement::Left),
@@ -465,7 +492,7 @@ mod tests {
         init_shell_panels(cx);
 
         let (workspace, _) =
-            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+            cx.add_window_view(|window, cx| new_shell(None, noop_save(), window, cx));
 
         cx.read_entity(&workspace, |workspace, _| {
             let layout = workspace.layout();
@@ -483,7 +510,7 @@ mod tests {
         init_shell_panels(cx);
 
         let (workspace, cx) =
-            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+            cx.add_window_view(|window, cx| new_shell(None, noop_save(), window, cx));
 
         click_title_bar_dock_toggle(cx, "toggle-right-dock");
         cx.run_until_parked();
@@ -503,7 +530,7 @@ mod tests {
         init_shell_panels(cx);
 
         let (workspace, cx) =
-            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+            cx.add_window_view(|window, cx| new_shell(None, noop_save(), window, cx));
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert!(
@@ -532,7 +559,7 @@ mod tests {
         init_shell_panels(cx);
 
         let (reference, _) =
-            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+            cx.add_window_view(|window, cx| new_shell(None, noop_save(), window, cx));
 
         let mut corrupt = cx.read_entity(&reference, |workspace, cx| {
             workspace.dock_area.read(cx).dump(cx)
@@ -540,7 +567,7 @@ mod tests {
         corrupt.center.panel_name = "nonexistent-panel".into();
 
         let (workspace, _) = cx.add_window_view(|window, cx| {
-            ShellWorkspace::new(Some(corrupt), noop_save(), window, cx)
+            new_shell(Some(corrupt), noop_save(), window, cx)
         });
 
         cx.read_entity(&workspace, |workspace, cx| {

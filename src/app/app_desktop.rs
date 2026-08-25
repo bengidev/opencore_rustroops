@@ -249,7 +249,13 @@ impl OpenCoreApp {
                 });
             });
         });
-        let shell = cx.new(|cx| ShellWorkspace::new(saved, save, window, cx));
+        let view = cx.entity().downgrade();
+        let on_toggle_theme = Rc::new(move |_: &mut Window, cx: &mut App| {
+            let _ = view.update(cx, |app, cx| {
+                app.toggle_theme(cx);
+            });
+        });
+        let shell = cx.new(|cx| ShellWorkspace::new(saved, save, on_toggle_theme, window, cx));
         self.shell = Some(shell.clone());
         shell
     }
@@ -850,7 +856,9 @@ mod reset_tests {
         });
         let save: DockSaveFn = Rc::new(|_, _| {});
         let (shell, _) =
-            cx.add_window_view(|window, cx| ShellWorkspace::new(None, save, window, cx));
+            cx.add_window_view(|window, cx| {
+                ShellWorkspace::new(None, save, Rc::new(|_, _| {}), window, cx)
+            });
 
         app.update(cx, |app, _| app.shell = Some(shell));
         app.update(cx, |app, _| {
