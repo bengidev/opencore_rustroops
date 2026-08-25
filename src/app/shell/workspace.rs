@@ -132,6 +132,7 @@ fn title_bar_dock_toggle(
     let button_id = format!("{id}-btn");
     div()
         .id(id)
+        .debug_selector(|| id.to_string())
         .occlude()
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_double_click(|_, _, cx| cx.stop_propagation())
@@ -197,7 +198,10 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use gpui::{App, AppContext, TestAppContext, px};
+    use gpui::{
+        App, AppContext, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, TestAppContext,
+        VisualTestContext, px,
+    };
     use gpui_component::dock::{DockAreaState, DockPlacement};
 
     use crate::app::shell::{DOCK_LAYOUT_VERSION, SIDEBAR_DEFAULT, register_shell_panels};
@@ -213,6 +217,50 @@ mod tests {
 
     fn noop_save() -> DockSaveFn {
         Rc::new(|_, _| {})
+    }
+
+    fn click_title_bar_dock_toggle(cx: &mut VisualTestContext, button_id: &'static str) {
+        let button_bounds = cx
+            .debug_bounds(button_id)
+            .unwrap_or_else(|| panic!("{button_id} should be visible in title bar"));
+        cx.simulate_click(button_bounds.center(), Modifiers::none());
+        cx.run_until_parked();
+    }
+
+    fn double_click_title_bar_dock_toggle(cx: &mut VisualTestContext, button_id: &'static str) {
+        let center = cx
+            .debug_bounds(button_id)
+            .unwrap_or_else(|| panic!("{button_id} should be visible in title bar"))
+            .center();
+        let modifiers = Modifiers::none();
+
+        cx.simulate_event(MouseDownEvent {
+            position: center,
+            modifiers,
+            button: MouseButton::Left,
+            click_count: 1,
+            first_mouse: true,
+        });
+        cx.simulate_event(MouseUpEvent {
+            position: center,
+            modifiers,
+            button: MouseButton::Left,
+            click_count: 1,
+        });
+        cx.simulate_event(MouseDownEvent {
+            position: center,
+            modifiers,
+            button: MouseButton::Left,
+            click_count: 2,
+            first_mouse: false,
+        });
+        cx.simulate_event(MouseUpEvent {
+            position: center,
+            modifiers,
+            button: MouseButton::Left,
+            click_count: 2,
+        });
+        cx.run_until_parked();
     }
 
     fn assert_default_holy_grail_layout(
@@ -330,46 +378,65 @@ mod tests {
     }
 
     #[gpui::test]
-    fn dock_toggle_open_state_tracks_rapid_clicks(cx: &mut TestAppContext) {
+    fn title_bar_dock_toggle_clicks_flip_open_state(cx: &mut TestAppContext) {
         init_shell_panels(cx);
 
         let (workspace, cx) =
             cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
 
-        let placements = [
-            DockPlacement::Left,
-            DockPlacement::Bottom,
-            DockPlacement::Right,
+        let toggles = [
+            ("toggle-left-dock", DockPlacement::Left),
+            ("toggle-bottom-dock", DockPlacement::Bottom),
+            ("toggle-right-dock", DockPlacement::Right),
         ];
 
         for _ in 0..8 {
-            for placement in placements {
+            for (button_id, placement) in toggles {
                 let open_before = cx.read_entity(&workspace, |workspace, cx| {
-                    workspace
-                        .dock_area
-                        .read(cx)
-                        .is_dock_open(placement, cx)
+                    workspace.dock_area.read(cx).is_dock_open(placement, cx)
                 });
 
-                workspace.update_in(cx, |workspace, window, cx| {
-                    workspace.dock_area.update(cx, |dock, cx| {
-                        dock.toggle_dock(placement, window, cx);
-                    });
-                });
+                click_title_bar_dock_toggle(cx, button_id);
 
                 let open_after = cx.read_entity(&workspace, |workspace, cx| {
-                    workspace
-                        .dock_area
-                        .read(cx)
-                        .is_dock_open(placement, cx)
+                    workspace.dock_area.read(cx).is_dock_open(placement, cx)
                 });
 
                 assert_ne!(
                     open_before, open_after,
-                    "{placement:?} should flip after each toggle"
+                    "{placement:?} should flip after title bar click"
                 );
             }
         }
+    }
+
+    #[gpui::test]
+    fn title_bar_dock_toggle_double_click_toggles_once(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, cx) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+
+        cx.read_entity(&workspace, |workspace, cx| {
+            assert!(
+                workspace
+                    .dock_area
+                    .read(cx)
+                    .is_dock_open(DockPlacement::Left, cx)
+            );
+        });
+
+        double_click_title_bar_dock_toggle(cx, "toggle-left-dock");
+
+        cx.read_entity(&workspace, |workspace, cx| {
+            assert!(
+                !workspace
+                    .dock_area
+                    .read(cx)
+                    .is_dock_open(DockPlacement::Left, cx),
+                "double-click should apply only the first click"
+            );
+        });
     }
 
     #[gpui::test]
