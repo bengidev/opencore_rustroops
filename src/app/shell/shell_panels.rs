@@ -6,6 +6,9 @@ use gpui::{
 };
 use gpui_component::dock::{Panel, PanelEvent, register_panel};
 
+use super::main_workspace_panel::MainWorkspacePanel;
+use super::workspace_theme::workspace_theme;
+
 macro_rules! stub_panel {
     ($struct_name:ident, $panel_name:literal, $label:literal) => {
         pub struct $struct_name {
@@ -76,7 +79,6 @@ macro_rules! stub_panel {
 stub_panel!(LeftStubPanel, "left-stub", "LEFT");
 stub_panel!(RightStubPanel, "right-stub", "RIGHT");
 stub_panel!(BottomStubPanel, "bottom-stub", "BOTTOM");
-stub_panel!(MainStubPanel, "main-stub", "MAIN");
 
 pub fn register_shell_panels(cx: &mut App) {
     register_panel(cx, "left-stub", |_, _, _, _, cx| {
@@ -88,7 +90,7 @@ pub fn register_shell_panels(cx: &mut App) {
     register_panel(cx, "bottom-stub", |_, _, _, _, cx| {
         Box::new(cx.new(BottomStubPanel::new))
     });
-    register_panel(cx, "main-stub", |_, _, _, _, cx| {
-        Box::new(cx.new(MainStubPanel::new))
+    register_panel(cx, "main-stub", |_, _, _, window, cx| {
+        Box::new(cx.new(|cx| MainWorkspacePanel::new(window, workspace_theme(), cx)))
     });
 }

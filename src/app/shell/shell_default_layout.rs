@@ -3,9 +3,11 @@
 use gpui::{App, AppContext, Edges, Entity, Window, px};
 use gpui_component::dock::{DockArea, DockItem};
 
-use super::shell_panels::{BottomStubPanel, LeftStubPanel, MainStubPanel, RightStubPanel};
+use super::main_workspace_panel::MainWorkspacePanel;
+use super::shell_panels::{BottomStubPanel, LeftStubPanel, RightStubPanel};
+use super::workspace_theme::workspace_theme;
 
-pub const DOCK_LAYOUT_VERSION: usize = 7;
+pub const DOCK_LAYOUT_VERSION: usize = 8;
 pub const SIDEBAR_DEFAULT: f32 = 256.0;
 pub const RIGHT_DEFAULT: f32 = 320.0;
 pub const BOTTOM_DEFAULT: f32 = 220.0;
@@ -37,10 +39,9 @@ pub fn apply_default_holy_grail(dock_area: &Entity<DockArea>, window: &mut Windo
     let weak = dock_area.downgrade();
     let center = wrap_for_dnd(
         DockItem::tabs(
-            vec![
-                std::sync::Arc::new(cx.new(MainStubPanel::new)),
-                std::sync::Arc::new(cx.new(|cx| MainStubPanel::with_title("MAIN 2", cx))),
-            ],
+            vec![std::sync::Arc::new(cx.new(|cx| {
+                MainWorkspacePanel::new(window, workspace_theme(), cx)
+            }))],
             &weak,
             window,
             cx,
@@ -95,7 +96,7 @@ pub fn apply_default_holy_grail(dock_area: &Entity<DockArea>, window: &mut Windo
     dock_area.update(cx, |dock, cx| {
         dock.set_version(DOCK_LAYOUT_VERSION, window, cx);
         dock.set_center(center, window, cx);
-        dock.set_left_dock(left, Some(px(SIDEBAR_DEFAULT)), true, window, cx);
+        dock.set_left_dock(left, Some(px(SIDEBAR_DEFAULT)), false, window, cx);
         dock.set_right_dock(right, Some(px(RIGHT_DEFAULT)), false, window, cx);
         dock.set_bottom_dock(bottom, Some(px(BOTTOM_DEFAULT)), false, window, cx);
         dock.set_toggle_button_visible(false, cx);
@@ -142,7 +143,7 @@ mod tests {
         assert_eq!(SIDEBAR_DEFAULT, 256.0);
         assert_eq!(RIGHT_DEFAULT, 320.0);
         assert_eq!(BOTTOM_DEFAULT, 220.0);
-        assert_eq!(DOCK_LAYOUT_VERSION, 7);
+        assert_eq!(DOCK_LAYOUT_VERSION, 8);
         assert_eq!(EDGE_DOCK_TAB_COUNT, 2);
     }
 }

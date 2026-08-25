@@ -1,5 +1,6 @@
 //! Post-welcome holy-grail chrome (Dock workspace + title bar toggles).
 
+mod main_workspace_panel;
 mod shell_default_layout;
 mod shell_dock_animation;
 mod shell_dock_tween;
