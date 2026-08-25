@@ -56,8 +56,8 @@ mod tests {
             .find(|t| !t.mode.is_dark())
             .expect("light");
         let dark = set.themes.iter().find(|t| t.mode.is_dark()).expect("dark");
-        assert_eq!(light.radius, Some(6));
-        assert_eq!(dark.radius, Some(6));
+        assert_eq!(light.radius, Some(0));
+        assert_eq!(dark.radius, Some(0));
         assert_eq!(light.shadow, Some(false));
         assert_eq!(dark.shadow, Some(false));
         assert_eq!(light.colors.background.as_deref(), Some("#F5F5F5"));

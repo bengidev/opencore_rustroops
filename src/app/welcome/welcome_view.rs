@@ -1,5 +1,5 @@
 #![allow(clippy::redundant_clone)]
-//! Onboarding view — immersive monochrome landing ported to GPUI.
+//! Welcome view — immersive monochrome landing ported to GPUI.
 
 use gpui::{
     BoxShadow, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
@@ -15,8 +15,8 @@ use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
 
-use super::onboarding_theme_toggle::theme_toggle_button;
-use super::onboarding_ui_state::OnboardingUiState;
+use super::welcome_theme_toggle::theme_toggle_button;
+use super::welcome_ui_state::WelcomeUiState;
 
 const HERO_MAX_WIDTH: f32 = 680.0;
 const HERO_GLOW_INSET_H: f32 = 44.0;
@@ -32,7 +32,7 @@ const HERO_MIN_SIZE: f32 = 220.0;
 const TITLEBAR_CONTROLS_INSET: f32 = 88.0;
 const TITLEBAR_HEIGHT: f32 = 38.0;
 
-fn onboarding_drag_should_start(pointer_down: bool, pointer_moved: bool) -> bool {
+fn welcome_drag_should_start(pointer_down: bool, pointer_moved: bool) -> bool {
     pointer_down && pointer_moved
 }
 
@@ -43,13 +43,13 @@ fn responsive_hero_size(available_width: f32, available_height: f32) -> f32 {
 }
 
 #[derive(Clone)]
-pub struct OnboardingCallbacks {
+pub struct WelcomeCallbacks {
     pub on_enter: WindowAppHandler,
     pub on_toggle_theme: WindowAppHandler,
 }
 
-/// Focusable shell for onboarding keyboard input (Enter to complete).
-pub fn onboarding_interactive_root(
+/// Focusable shell for welcome keyboard input (Enter to complete).
+pub fn welcome_interactive_root(
     focus_handle: &FocusHandle,
     on_enter: WindowAppHandler,
     content: impl IntoElement,
@@ -70,7 +70,7 @@ pub fn onboarding_interactive_root(
     let on_drag_move = {
         let drag_pending = drag_pending.clone();
         move |_: &gpui::MouseMoveEvent, window: &mut Window, _cx: &mut gpui::App| {
-            if onboarding_drag_should_start(drag_pending.replace(false), true) {
+            if welcome_drag_should_start(drag_pending.replace(false), true) {
                 window.start_window_move();
             }
         }
@@ -104,11 +104,11 @@ pub fn onboarding_interactive_root(
         )
 }
 
-/// Full-screen onboarding scene matching the reference layout.
-pub fn onboarding_screen(
+/// Full-screen welcome landing scene.
+pub fn welcome_screen(
     theme: OpenCoreTheme,
-    ui: &OnboardingUiState,
-    callbacks: OnboardingCallbacks,
+    ui: &WelcomeUiState,
+    callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
     viewport: WindowViewport,
 ) -> impl IntoElement {
@@ -130,8 +130,8 @@ fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
 
 fn main_column(
     theme: OpenCoreTheme,
-    ui: &OnboardingUiState,
-    callbacks: OnboardingCallbacks,
+    ui: &WelcomeUiState,
+    callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
     hero_size: f32,
 ) -> impl IntoElement {
@@ -176,7 +176,7 @@ fn main_column(
         .child(centered_content)
 }
 
-fn header_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
+fn header_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let muted = theme.foreground(ForegroundToken::Muted);
     let mono = SharedString::from("Space Mono");
@@ -219,14 +219,13 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         .right(px(HERO_GLOW_INSET_H))
         .top(px(HERO_GLOW_INSET_TOP))
         .bottom(px(HERO_GLOW_INSET_BOTTOM))
-        .rounded(px(160.))
         .shadow(vec![
             BoxShadow::new(px(0.), px(0.), accent.opacity(0.16)).blur_radius(px(72.)),
             BoxShadow::new(px(0.), px(0.), accent.opacity(0.08)).blur_radius(px(144.)),
         ])
 }
 
-fn hero_block(theme: OpenCoreTheme, ui: &OnboardingUiState, hero_size: f32) -> impl IntoElement {
+fn hero_block(theme: OpenCoreTheme, ui: &WelcomeUiState, hero_size: f32) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let ascii_color = theme.foreground(ForegroundToken::Primary);
@@ -312,7 +311,6 @@ fn ascii_box(
         .w(px(size))
         .h(px(size))
         .child(ascii)
-        .rounded(px(8.))
         .border_1()
         .border_color(border)
         .bg(surface)
@@ -324,7 +322,7 @@ fn mono_family() -> SharedString {
     SharedString::from("Space Mono")
 }
 
-fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl IntoElement {
+fn action_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoElement {
     let spacing = theme.spacing;
     let on_enter = callbacks.on_enter;
     div()
@@ -346,15 +344,15 @@ fn action_row(theme: OpenCoreTheme, callbacks: OnboardingCallbacks) -> impl Into
 
 #[cfg(test)]
 mod tests {
-    use super::super::ascii_galaxy::{COLS, ROWS};
+    use super::super::welcome_ascii_galaxy::{COLS, ROWS};
     use super::*;
     use gpui::Keystroke;
 
     #[test]
-    fn onboarding_titlebar_drag_starts_only_after_pointer_moves() {
-        assert!(!onboarding_drag_should_start(false, true));
-        assert!(!onboarding_drag_should_start(true, false));
-        assert!(onboarding_drag_should_start(true, true));
+    fn welcome_titlebar_drag_starts_only_after_pointer_moves() {
+        assert!(!welcome_drag_should_start(false, true));
+        assert!(!welcome_drag_should_start(true, false));
+        assert!(welcome_drag_should_start(true, true));
     }
 
     fn enter_key_event(is_held: bool) -> KeyDownEvent {

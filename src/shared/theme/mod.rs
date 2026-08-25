@@ -1,15 +1,15 @@
 //! Design tokens resolved from [`ThemeMode`].
 //!
-//! Monochrome palette ported from the reference onboarding implementation.
+//! Monochrome palette for welcome and shell surfaces.
 
-mod nothing_gpui;
-mod transition;
+mod theme_nothing_gpui;
+mod theme_transition;
 
 use gpui::Hsla;
 use serde::{Deserialize, Serialize};
 
-pub use nothing_gpui::apply_nothing_theme;
-pub use transition::{
+pub use theme_nothing_gpui::apply_nothing_theme;
+pub use theme_transition::{
     THEME_TRANSITION_DURATION, ThemeTransition, ease_out_resize, ease_out_strong, mix_light_for,
 };
 
@@ -204,7 +204,7 @@ impl OpenCoreTheme {
     }
 
     pub fn control_radius(&self) -> f32 {
-        6.0
+        0.0
     }
 
     pub fn rgba_foreground(&self, token: ForegroundToken) -> ThemeRgba {
@@ -392,11 +392,11 @@ mod tests {
     }
 
     #[test]
-    fn control_radius_is_six_px() {
+    fn control_radius_is_zero_px() {
         let dark = OpenCoreTheme::resolve(ThemeMode::Dark);
         let light = OpenCoreTheme::resolve(ThemeMode::Light);
-        assert_eq!(dark.control_radius(), 6.0);
-        assert_eq!(light.control_radius(), 6.0);
+        assert_eq!(dark.control_radius(), 0.0);
+        assert_eq!(light.control_radius(), 0.0);
     }
 
     #[test]

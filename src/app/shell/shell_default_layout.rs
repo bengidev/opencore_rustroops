@@ -3,7 +3,7 @@
 use gpui::{App, AppContext, Edges, Entity, Window, px};
 use gpui_component::dock::{DockArea, DockItem};
 
-use super::panels::{BottomStubPanel, LeftStubPanel, MainStubPanel, RightStubPanel};
+use super::shell_panels::{BottomStubPanel, LeftStubPanel, MainStubPanel, RightStubPanel};
 
 pub const DOCK_LAYOUT_VERSION: usize = 7;
 pub const SIDEBAR_DEFAULT: f32 = 256.0;

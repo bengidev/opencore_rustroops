@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use super::ThemeMode;
 
-/// CSS `cubic-bezier(0.23, 1, 0.32, 1)` — Emil's strong ease-out.
+/// CSS `cubic-bezier(0.23, 1, 0.32, 1)` strong ease-out.
 const EASE_OUT_X1: f32 = 0.23;
 const EASE_OUT_Y1: f32 = 1.0;
 const EASE_OUT_X2: f32 = 0.32;

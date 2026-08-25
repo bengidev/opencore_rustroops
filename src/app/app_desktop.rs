@@ -1,5 +1,5 @@
 //! **Facade** for the GPU runtime: boots preferences, opens one window, and routes
-//! [`super::ActiveScreen`] without closing between onboarding and home.
+//! [`super::ActiveScreen`] without closing between welcome and home.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -24,12 +24,12 @@ use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
-use super::onboarding::{
-    OnboardingCallbacks, OnboardingCommand, OnboardingOutcome, OnboardingUiState,
-    onboarding_interactive_root, onboarding_screen, reduce_onboarding,
-};
 use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
 use super::viewport::WindowViewport;
+use super::welcome::{
+    WelcomeCallbacks, WelcomeCommand, WelcomeOutcome, WelcomeUiState, reduce_welcome,
+    welcome_interactive_root, welcome_screen,
+};
 use super::window_placement::center_window;
 
 const SHELL_SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
@@ -93,7 +93,7 @@ pub struct OpenCoreApp {
     state: AppState,
     store: Arc<FilePreferencesStore>,
     focus_handle: FocusHandle,
-    onboarding_ui: Option<OnboardingUiState>,
+    welcome_ui: Option<WelcomeUiState>,
     shell: Option<gpui::Entity<ShellWorkspace>>,
     shell_save_task: Option<Task<()>>,
     pending_shell_save: Rc<RefCell<PendingDockSave>>,
@@ -107,8 +107,8 @@ pub struct OpenCoreApp {
 
 impl OpenCoreApp {
     fn new(state: AppState, store: Arc<FilePreferencesStore>, cx: &mut Context<Self>) -> Self {
-        let onboarding_ui = if state.active_screen == ActiveScreen::Onboarding {
-            Some(OnboardingUiState::new())
+        let welcome_ui = if state.active_screen == ActiveScreen::Welcome {
+            Some(WelcomeUiState::new())
         } else {
             None
         };
@@ -143,7 +143,7 @@ impl OpenCoreApp {
             state,
             store,
             focus_handle: cx.focus_handle(),
-            onboarding_ui,
+            welcome_ui,
             shell: None,
             shell_save_task: None,
             pending_shell_save,
@@ -187,8 +187,8 @@ impl OpenCoreApp {
         cx.notify();
     }
 
-    fn ensure_onboarding_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(ui) = self.onboarding_ui.as_mut() {
+    fn ensure_welcome_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(ui) = self.welcome_ui.as_mut() {
             ui.ensure_initial_focus(window, &self.focus_handle, cx);
         }
     }
@@ -254,26 +254,26 @@ impl OpenCoreApp {
         shell
     }
 
-    fn apply_onboarding_command(
+    fn apply_welcome_command(
         &mut self,
-        command: OnboardingCommand,
+        command: WelcomeCommand,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let outcome = reduce_onboarding(command);
+        let outcome = reduce_welcome(command);
         match self
             .state
-            .apply_onboarding_outcome(outcome, self.store.as_ref())
+            .apply_welcome_outcome(outcome, self.store.as_ref())
         {
             Ok(()) => {
                 self.persistence_error = None;
-                if outcome != OnboardingOutcome::Pending {
-                    self.onboarding_ui = None;
+                if outcome != WelcomeOutcome::Pending {
+                    self.welcome_ui = None;
                     self.finish_screen_transition(window, cx);
                 }
             }
             Err(error) => {
-                self.record_persistence_error("complete onboarding", error);
+                self.record_persistence_error("complete welcome", error);
                 cx.notify();
             }
         }
@@ -303,14 +303,14 @@ impl OpenCoreApp {
         }
     }
 
-    /// Resets persisted preferences to defaults and routes back to onboarding.
+    /// Resets persisted preferences to defaults and routes back to welcome (dev tooling).
     ///
     /// Called by the debug reset overlay.
     #[cfg(debug_assertions)]
     fn reset_dev_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.reset_dev_data_state() {
             Ok(()) => {
-                self.ensure_onboarding_focus(window, cx);
+                self.ensure_welcome_focus(window, cx);
                 self.finish_screen_transition(window, cx);
             }
             Err(error) => {
@@ -326,19 +326,19 @@ impl OpenCoreApp {
         self.shell_save_task.take();
         self.pending_shell_save.borrow_mut().clear();
         self.shell = None;
-        self.onboarding_ui = Some(OnboardingUiState::new());
+        self.welcome_ui = Some(WelcomeUiState::new());
         self.persistence_error = None;
         Ok(())
     }
 }
 
-impl OnboardingCallbacks {
+impl WelcomeCallbacks {
     pub fn from_app(view: WeakEntity<OpenCoreApp>) -> Self {
         let on_enter = {
             let view = view.clone();
             Rc::new(move |window: &mut Window, cx: &mut App| {
                 let _ = view.update(cx, |app, cx| {
-                    app.apply_onboarding_command(OnboardingCommand::EnterPressed, window, cx);
+                    app.apply_welcome_command(WelcomeCommand::EnterPressed, window, cx);
                 });
             })
         };
@@ -481,20 +481,18 @@ impl Render for OpenCoreApp {
         let now = Instant::now();
         self.settle_theme_transition(now);
         let theme = self.visual_theme(now);
-        if should_request_frame(&self.onboarding_ui, self.theme_transition.as_ref(), now) {
+        if should_request_frame(&self.welcome_ui, self.theme_transition.as_ref(), now) {
             window.request_animation_frame();
         }
 
         let content = match self.state.active_screen {
-            ActiveScreen::Onboarding => {
-                let _ = self
-                    .onboarding_ui
-                    .get_or_insert_with(OnboardingUiState::new);
-                if let Some(ui) = self.onboarding_ui.as_mut() {
+            ActiveScreen::Welcome => {
+                let _ = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
+                if let Some(ui) = self.welcome_ui.as_mut() {
                     ui.tick(now);
                 }
-                let ui = self.onboarding_ui.as_ref().expect("inserted");
-                let callbacks = OnboardingCallbacks::from_app(cx.entity().downgrade());
+                let ui = self.welcome_ui.as_ref().expect("inserted");
+                let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
 
@@ -502,10 +500,10 @@ impl Render for OpenCoreApp {
                     .size_full()
                     .min_w_0()
                     .min_h_0()
-                    .child(onboarding_interactive_root(
+                    .child(welcome_interactive_root(
                         &self.focus_handle,
                         on_enter,
-                        onboarding_screen(
+                        welcome_screen(
                             theme,
                             ui,
                             callbacks,
@@ -555,16 +553,16 @@ impl Render for OpenCoreApp {
     }
 }
 
-fn should_request_onboarding_animation(onboarding_ui: &Option<OnboardingUiState>) -> bool {
-    onboarding_ui.is_some()
+fn should_request_welcome_animation(welcome_ui: &Option<WelcomeUiState>) -> bool {
+    welcome_ui.is_some()
 }
 
 fn should_request_frame(
-    onboarding_ui: &Option<OnboardingUiState>,
+    welcome_ui: &Option<WelcomeUiState>,
     theme_transition: Option<&ThemeTransition>,
     now: Instant,
 ) -> bool {
-    should_request_onboarding_animation(onboarding_ui)
+    should_request_welcome_animation(welcome_ui)
         || theme_transition.is_some_and(|tx| tx.is_active(now))
 }
 
@@ -604,12 +602,12 @@ pub fn run_desktop() -> Result<(), AppError> {
                     ..Default::default()
                 };
 
-                let starts_onboarding = state.active_screen == ActiveScreen::Onboarding;
+                let starts_welcome = state.active_screen == ActiveScreen::Welcome;
                 cx.open_window(options, |window, cx| {
                     let view = cx.new(|cx| OpenCoreApp::new(state, store, cx));
-                    if starts_onboarding {
+                    if starts_welcome {
                         view.update(cx, |app, cx| {
-                            app.ensure_onboarding_focus(window, cx);
+                            app.ensure_welcome_focus(window, cx);
                         });
                     }
                     cx.new(|cx| Root::new(view, window, cx))
@@ -626,7 +624,7 @@ pub fn run_desktop() -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::app::app_state::{
-        HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH, ONBOARDING_WINDOW_HEIGHT, ONBOARDING_WINDOW_WIDTH,
+        HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH, WELCOME_WINDOW_HEIGHT, WELCOME_WINDOW_WIDTH,
     };
     use crate::shared::preferences::{AppPreferences, InMemoryPreferencesStore};
     use crate::shared::theme::ThemeMode;
@@ -636,7 +634,7 @@ mod tests {
         let state = AppState::from_preferences(AppPreferences::default());
         assert_eq!(
             state.initial_window_size(),
-            (ONBOARDING_WINDOW_WIDTH, ONBOARDING_WINDOW_HEIGHT)
+            (WELCOME_WINDOW_WIDTH, WELCOME_WINDOW_HEIGHT)
         );
     }
 
@@ -657,7 +655,7 @@ mod tests {
     fn take_pending_window_resize_clears_intent() {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
-        state.complete_onboarding(&store).expect("complete");
+        state.complete_welcome(&store).expect("complete");
         assert!(state.pending_window_resize.is_some());
         let intent = state.take_pending_window_resize().expect("intent");
         assert_eq!(intent.width, HOME_WINDOW_WIDTH);
@@ -671,10 +669,10 @@ mod animation_gate_tests {
 
     #[test]
     fn onboarding_animation_gate_follows_ui_presence() {
-        assert!(should_request_onboarding_animation(&Some(
-            OnboardingUiState::new()
+        assert!(should_request_welcome_animation(&Some(
+            WelcomeUiState::new()
         )));
-        assert!(!should_request_onboarding_animation(&None));
+        assert!(!should_request_welcome_animation(&None));
     }
 
     #[test]

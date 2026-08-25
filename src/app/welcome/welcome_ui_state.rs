@@ -1,18 +1,18 @@
-//! Interactive onboarding UI state (keyboard focus + ASCII hero animation).
+//! Interactive welcome UI state (keyboard focus + ASCII hero animation).
 
 use std::time::Instant;
 
 use gpui::{App, FocusHandle, Window};
 
-use super::ascii_galaxy::{DEFAULT_SEED, GalaxyAscii};
+use super::welcome_ascii_galaxy::{DEFAULT_SEED, GalaxyAscii};
 
-pub struct OnboardingUiState {
+pub struct WelcomeUiState {
     galaxy: GalaxyAscii,
     last_tick: Instant,
     focus_claimed: bool,
 }
 
-impl OnboardingUiState {
+impl WelcomeUiState {
     pub fn new() -> Self {
         let mut galaxy = GalaxyAscii::new(DEFAULT_SEED);
         let _ = galaxy.tick(0.0);
@@ -36,7 +36,7 @@ impl OnboardingUiState {
         self.galaxy.last_frame()
     }
 
-    /// Requests keyboard focus once per onboarding session.
+    /// Requests keyboard focus once per welcome session.
     pub fn ensure_initial_focus(
         &mut self,
         window: &mut Window,

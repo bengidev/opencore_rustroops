@@ -7,8 +7,8 @@
       "mode": "light",
       "font.family": "Space Grotesk",
       "mono_font.family": "Space Mono",
-      "radius": 6,
-      "radius.lg": 6,
+      "radius": 0,
+      "radius.lg": 0,
       "shadow": false,
       "colors": {
         "background": "#F5F5F5",
@@ -46,8 +46,8 @@
       "mode": "dark",
       "font.family": "Space Grotesk",
       "mono_font.family": "Space Mono",
-      "radius": 6,
-      "radius.lg": 6,
+      "radius": 0,
+      "radius.lg": 0,
       "shadow": false,
       "colors": {
         "background": "#000000",

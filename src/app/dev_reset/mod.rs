@@ -37,7 +37,7 @@ pub struct DevResetState {
 
 impl Default for DevResetState {
     fn default() -> Self {
-        // Bottom-right of the smaller (onboarding) window: 960×740
+        // Bottom-right of the smaller (welcome) window: 960×740
         Self {
             origin: Point {
                 x: px(960.0 - EDGE_INSET - FAB_WIDTH),
@@ -109,7 +109,6 @@ pub fn dev_reset_fab(
     let surface = theme.surface(BackgroundToken::Tertiary);
     let foreground = theme.foreground(ForegroundToken::Primary);
     let border = theme.border_token(BorderToken::Strong);
-    let radius = px(theme.control_radius().min(8.0));
     let on_drag_start = callbacks.on_drag_start.clone();
 
     div()
@@ -120,7 +119,6 @@ pub fn dev_reset_fab(
         .py(px(6.))
         .border_1()
         .border_color(border)
-        .rounded(radius)
         .bg(surface)
         .text_size(px(11.))
         .font_family(SharedString::from("Menlo"))
