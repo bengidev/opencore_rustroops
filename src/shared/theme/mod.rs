@@ -9,7 +9,9 @@ use gpui::Hsla;
 use serde::{Deserialize, Serialize};
 
 pub use nothing_gpui::apply_nothing_theme;
-pub use transition::{THEME_TRANSITION_DURATION, ThemeTransition, mix_light_for};
+pub use transition::{
+    THEME_TRANSITION_DURATION, ThemeTransition, ease_out_resize, ease_out_strong, mix_light_for,
+};
 
 pub const ACCENT_RED: u32 = 0xD7_19_21;
 pub const SUCCESS_GREEN: u32 = 0x4A_9E_5C;

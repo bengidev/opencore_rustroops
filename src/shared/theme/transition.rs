@@ -36,6 +36,11 @@ pub fn ease_out_strong(t: f32) -> f32 {
     )
 }
 
+/// Standard ease-out for panel resize — `cubic-bezier(0, 0, 0.58, 1)`.
+pub fn ease_out_resize(t: f32) -> f32 {
+    unit_bezier(0.0, 0.0, 0.58, 1.0, t.clamp(0.0, 1.0))
+}
+
 /// In-flight theme morph. Retargets from the current mix when toggled mid-way.
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeTransition {

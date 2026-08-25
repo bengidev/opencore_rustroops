@@ -1,6 +1,7 @@
 //! Dock-based shell workspace: title bar dock toggles and DockArea body.
 
 use std::rc::Rc;
+use std::time::Instant;
 
 use gpui::{
     App, AppContext, ClickEvent, Context, Edges, Entity, InteractiveElement, IntoElement,
@@ -15,6 +16,10 @@ use gpui_component::{
 
 use crate::shared::theme::OpenCoreTheme;
 
+use super::dock_animation::{
+    DockTweenState, layout_with_animated_docks, start_dock_toggle_tween, tick_dock_tweens,
+};
+use super::layout::ShellLayout;
 use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
 
 const MAIN_DOCK_ID: &str = "main-dock";
@@ -24,6 +29,8 @@ pub type DockSaveFn = Rc<dyn Fn(DockAreaState, &mut App)>;
 
 pub struct ShellWorkspace {
     dock_area: Entity<DockArea>,
+    layout: ShellLayout,
+    dock_tweens: DockTweenState,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -96,10 +103,18 @@ impl ShellWorkspace {
                 }
             });
 
+        let layout = ShellLayout::from_window_and_dock(window, &dock_area, cx);
+
         Self {
             dock_area,
+            layout,
+            dock_tweens: DockTweenState::default(),
             _subscriptions: vec![layout_subscription],
         }
+    }
+
+    pub fn layout(&self) -> ShellLayout {
+        self.layout
     }
 
     pub fn set_theme(&mut self, _theme: OpenCoreTheme) {}
@@ -148,17 +163,34 @@ fn title_bar_dock_toggle(
                     if event.click_count() > 1 {
                         return;
                     }
-                    this.dock_area.update(cx, |area, cx| {
-                        area.toggle_dock(placement, window, cx);
-                    });
+                    start_dock_toggle_tween(
+                        &this.dock_area,
+                        &mut this.dock_tweens,
+                        placement,
+                        Instant::now(),
+                        window,
+                        cx,
+                    );
                 })),
         )
 }
 
 impl Render for ShellWorkspace {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let now = Instant::now();
+        let base_layout = ShellLayout::from_window_and_dock(window, &self.dock_area, cx);
+        let (left, right, bottom, needs_frame) =
+            tick_dock_tweens(&self.dock_area, &mut self.dock_tweens, now, window, cx);
+        self.layout = layout_with_animated_docks(base_layout, left, right, bottom);
+
+        if needs_frame || self.dock_tweens.any_active(now) {
+            window.request_animation_frame();
+        }
+
         div()
             .size_full()
+            .min_w_0()
+            .min_h_0()
             .flex()
             .flex_col()
             .child(
@@ -170,7 +202,7 @@ impl Render for ShellWorkspace {
                         DockPlacement::Left,
                         cx,
                     ))
-                    .child(
+                    .trailing(
                         h_flex()
                             .gap_1()
                             .child(title_bar_dock_toggle(
@@ -189,7 +221,13 @@ impl Render for ShellWorkspace {
                             )),
                     ),
             )
-            .child(div().flex_1().min_h_0().child(self.dock_area.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .child(self.dock_area.clone()),
+            )
     }
 }
 
@@ -204,7 +242,9 @@ mod tests {
     };
     use gpui_component::dock::{DockAreaState, DockPlacement};
 
-    use crate::app::shell::{DOCK_LAYOUT_VERSION, SIDEBAR_DEFAULT, register_shell_panels};
+    use crate::app::shell::{
+        DOCK_LAYOUT_VERSION, RIGHT_DEFAULT, SIDEBAR_DEFAULT, register_shell_panels,
+    };
 
     use super::{DockSaveFn, ShellWorkspace};
 
@@ -408,6 +448,47 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[gpui::test]
+    fn shell_layout_reflects_default_open_docks(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, _) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+
+        cx.read_entity(&workspace, |workspace, _| {
+            let layout = workspace.layout();
+            assert!(layout.viewport.width > 0.0);
+            assert!(layout.viewport.height > 0.0);
+            assert_eq!(layout.left_dock, SIDEBAR_DEFAULT);
+            assert_eq!(layout.right_dock, 0.0);
+            assert_eq!(layout.bottom_dock, 0.0);
+            assert_eq!(
+                layout.center_width,
+                (layout.viewport.width - layout.left_dock).max(0.0)
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn shell_layout_updates_when_right_dock_toggles(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, cx) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+
+        click_title_bar_dock_toggle(cx, "toggle-right-dock");
+        cx.run_until_parked();
+
+        cx.read_entity(&workspace, |workspace, _| {
+            let layout = workspace.layout();
+            assert_eq!(layout.right_dock, RIGHT_DEFAULT);
+            assert_eq!(
+                layout.center_width,
+                (layout.viewport.width - layout.left_dock - layout.right_dock).max(0.0)
+            );
+        });
     }
 
     #[gpui::test]

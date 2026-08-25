@@ -9,6 +9,7 @@ mod dev_reset;
 mod gpui_callbacks;
 mod onboarding;
 pub mod shell;
+mod viewport;
 mod window_placement;
 
 pub use app_boot::boot_screen;
