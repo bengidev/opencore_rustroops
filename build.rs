@@ -377,7 +377,7 @@ fn patch_title_bar_drag_spacer(path: &std::path::Path) -> bool {
         );
     }
 
-    let patched = content.replace(needle, &replacement);
+    let patched = content.replace(needle, replacement);
 
     std::fs::write(path, patched).unwrap_or_else(|error| {
         panic!("failed to write {}: {error}", path.display());
