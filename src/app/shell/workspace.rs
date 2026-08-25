@@ -1,6 +1,7 @@
 //! Dock-based shell workspace: title bar dock toggles and DockArea body.
 
 use std::rc::Rc;
+use std::time::Instant;
 
 use gpui::{
     App, AppContext, ClickEvent, Context, Edges, Entity, InteractiveElement, IntoElement,
@@ -15,6 +16,7 @@ use gpui_component::{
 
 use crate::shared::theme::OpenCoreTheme;
 
+use super::dock_animation::{DockTweenState, layout_with_animated_docks, start_dock_toggle_tween, tick_dock_tweens};
 use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
 use super::layout::ShellLayout;
 
@@ -26,6 +28,7 @@ pub type DockSaveFn = Rc<dyn Fn(DockAreaState, &mut App)>;
 pub struct ShellWorkspace {
     dock_area: Entity<DockArea>,
     layout: ShellLayout,
+    dock_tweens: DockTweenState,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -103,6 +106,7 @@ impl ShellWorkspace {
         Self {
             dock_area,
             layout,
+            dock_tweens: DockTweenState::default(),
             _subscriptions: vec![layout_subscription],
         }
     }
@@ -157,16 +161,34 @@ fn title_bar_dock_toggle(
                     if event.click_count() > 1 {
                         return;
                     }
-                    this.dock_area.update(cx, |area, cx| {
-                        area.toggle_dock(placement, window, cx);
-                    });
+                    start_dock_toggle_tween(
+                        &this.dock_area,
+                        &mut this.dock_tweens,
+                        placement,
+                        Instant::now(),
+                        window,
+                        cx,
+                    );
                 })),
         )
 }
 
 impl Render for ShellWorkspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.layout = ShellLayout::from_window_and_dock(window, &self.dock_area, cx);
+        let now = Instant::now();
+        let base_layout = ShellLayout::from_window_and_dock(window, &self.dock_area, cx);
+        let (left, right, bottom, needs_frame) = tick_dock_tweens(
+            &self.dock_area,
+            &mut self.dock_tweens,
+            now,
+            window,
+            cx,
+        );
+        self.layout = layout_with_animated_docks(base_layout, left, right, bottom);
+
+        if needs_frame || self.dock_tweens.any_active(now) {
+            window.request_animation_frame();
+        }
 
         div()
             .size_full()
@@ -183,7 +205,7 @@ impl Render for ShellWorkspace {
                         DockPlacement::Left,
                         cx,
                     ))
-                    .child(
+                    .trailing(
                         h_flex()
                             .gap_1()
                             .child(title_bar_dock_toggle(
