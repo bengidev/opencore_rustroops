@@ -16,10 +16,10 @@ use gpui_component::{
 
 use crate::shared::theme::OpenCoreTheme;
 
-use super::dock_animation::{
+use super::shell_dock_animation::{
     DockTweenState, layout_with_animated_docks, start_dock_toggle_tween, tick_dock_tweens,
 };
-use super::layout::ShellLayout;
+use super::shell_layout::ShellLayout;
 use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
 
 const MAIN_DOCK_ID: &str = "main-dock";
