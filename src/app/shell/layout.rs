@@ -38,26 +38,36 @@ impl ShellLayout {
             center_height: (viewport.height - title_bar - bottom_dock).max(0.0),
         }
     }
+
+    /// Recompute center metrics from animated dock sizes during a toggle tween.
+    pub fn with_animated_docks(mut self, left: f32, right: f32, bottom: f32) -> Self {
+        let title_bar = TITLE_BAR_HEIGHT.as_f32();
+        self.left_dock = left;
+        self.right_dock = right;
+        self.bottom_dock = bottom;
+        self.center_width = (self.viewport.width - left - right).max(0.0);
+        self.center_height = (self.viewport.height - title_bar - bottom).max(0.0);
+        self
+    }
 }
 
 fn dock_open_width(dock: &DockArea, placement: DockPlacement, cx: &App) -> f32 {
-    if !dock.is_dock_open(placement, cx) {
-        return 0.0;
-    }
-    let size = match placement {
-        DockPlacement::Left => dock.left_dock().map(|panel| panel.read(cx).size()),
-        DockPlacement::Right => dock.right_dock().map(|panel| panel.read(cx).size()),
+    let panel = match placement {
+        DockPlacement::Left => dock.left_dock(),
+        DockPlacement::Right => dock.right_dock(),
         DockPlacement::Bottom | DockPlacement::Center => None,
     };
-    size.map(|pixels| pixels.as_f32()).unwrap_or(0.0)
+    panel
+        .map(|panel| panel.read(cx).display_size().as_f32())
+        .unwrap_or(0.0)
 }
 
 fn dock_open_height(dock: &DockArea, placement: DockPlacement, cx: &App) -> f32 {
-    if placement != DockPlacement::Bottom || !dock.is_dock_open(placement, cx) {
+    if placement != DockPlacement::Bottom {
         return 0.0;
     }
     dock.bottom_dock()
-        .map(|panel| panel.read(cx).size().as_f32())
+        .map(|panel| panel.read(cx).display_size().as_f32())
         .unwrap_or(0.0)
 }
 
