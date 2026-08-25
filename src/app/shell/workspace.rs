@@ -16,9 +16,11 @@ use gpui_component::{
 
 use crate::shared::theme::OpenCoreTheme;
 
-use super::dock_animation::{DockTweenState, layout_with_animated_docks, start_dock_toggle_tween, tick_dock_tweens};
-use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
+use super::dock_animation::{
+    DockTweenState, layout_with_animated_docks, start_dock_toggle_tween, tick_dock_tweens,
+};
 use super::layout::ShellLayout;
+use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
 
 const MAIN_DOCK_ID: &str = "main-dock";
 
@@ -177,13 +179,8 @@ impl Render for ShellWorkspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
         let base_layout = ShellLayout::from_window_and_dock(window, &self.dock_area, cx);
-        let (left, right, bottom, needs_frame) = tick_dock_tweens(
-            &self.dock_area,
-            &mut self.dock_tweens,
-            now,
-            window,
-            cx,
-        );
+        let (left, right, bottom, needs_frame) =
+            tick_dock_tweens(&self.dock_area, &mut self.dock_tweens, now, window, cx);
         self.layout = layout_with_animated_docks(base_layout, left, right, bottom);
 
         if needs_frame || self.dock_tweens.any_active(now) {
@@ -224,7 +221,13 @@ impl Render for ShellWorkspace {
                             )),
                     ),
             )
-            .child(div().flex_1().min_h_0().min_w_0().child(self.dock_area.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .child(self.dock_area.clone()),
+            )
     }
 }
 

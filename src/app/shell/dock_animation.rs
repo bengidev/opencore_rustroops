@@ -35,16 +35,20 @@ impl DockTweenState {
     }
 
     pub fn any_active(&self, now: Instant) -> bool {
-        [DockPlacement::Left, DockPlacement::Right, DockPlacement::Bottom]
-            .into_iter()
-            .any(|placement| self.tween(placement).is_some_and(|tween| tween.is_active(now)))
+        [
+            DockPlacement::Left,
+            DockPlacement::Right,
+            DockPlacement::Bottom,
+        ]
+        .into_iter()
+        .any(|placement| {
+            self.tween(placement)
+                .is_some_and(|tween| tween.is_active(now))
+        })
     }
 }
 
-pub fn dock_entity<'a>(
-    dock_area: &'a DockArea,
-    placement: DockPlacement,
-) -> Option<&'a Entity<Dock>> {
+pub fn dock_entity(dock_area: &DockArea, placement: DockPlacement) -> Option<&Entity<Dock>> {
     match placement {
         DockPlacement::Left => dock_area.left_dock(),
         DockPlacement::Right => dock_area.right_dock(),
@@ -121,7 +125,11 @@ pub fn tick_dock_tweens(
     let mut right = dock_display_size(dock_area, DockPlacement::Right, tweens.right, now, cx);
     let mut bottom = dock_display_size(dock_area, DockPlacement::Bottom, tweens.bottom, now, cx);
 
-    for placement in [DockPlacement::Left, DockPlacement::Right, DockPlacement::Bottom] {
+    for placement in [
+        DockPlacement::Left,
+        DockPlacement::Right,
+        DockPlacement::Bottom,
+    ] {
         let slot = tweens.tween_mut(placement);
         let Some(tween) = *slot else {
             continue;
@@ -144,8 +152,12 @@ pub fn tick_dock_tweens(
             finish_dock_tween(dock_area, placement, tween, window, cx);
             *slot = None;
             match placement {
-                DockPlacement::Left => left = dock_display_size(dock_area, placement, None, now, cx),
-                DockPlacement::Right => right = dock_display_size(dock_area, placement, None, now, cx),
+                DockPlacement::Left => {
+                    left = dock_display_size(dock_area, placement, None, now, cx)
+                }
+                DockPlacement::Right => {
+                    right = dock_display_size(dock_area, placement, None, now, cx)
+                }
                 DockPlacement::Bottom => {
                     bottom = dock_display_size(dock_area, placement, None, now, cx);
                 }
@@ -166,11 +178,11 @@ pub fn dock_display_size(
 ) -> f32 {
     let Some(tween) = tween else {
         let dock = dock_area.read(cx);
-        return dock_entity(&dock, placement)
+        return dock_entity(dock, placement)
             .map(|entity| entity.read(cx))
             .map(|dock| {
-                if dock.is_open() || dock_clip_size(&dock) > f32::EPSILON {
-                    dock_clip_size(&dock)
+                if dock.is_open() || dock_clip_size(dock) > f32::EPSILON {
+                    dock_clip_size(dock)
                 } else {
                     0.0
                 }
@@ -192,7 +204,7 @@ pub fn start_dock_toggle_tween<T: gpui::Render>(
     let is_open = dock.is_dock_open(placement, cx);
     let will_open = dock_toggle_will_open(tweens, placement, is_open, now);
     let from = dock_display_size(dock_area, placement, tweens.tween(placement), now, cx);
-    let rest = dock_entity(&dock, placement)
+    let rest = dock_entity(dock, placement)
         .map(|entity| entity.read(cx))
         .map(dock_rest_size)
         .unwrap_or(0.0);
@@ -223,14 +235,19 @@ fn dock_toggle_will_open(
     is_open: bool,
     now: Instant,
 ) -> bool {
-    if let Some(tween) = tweens.tween(placement) {
-        if tween.is_active(now) {
-            return tween.to <= f32::EPSILON;
-        }
+    if let Some(tween) = tweens.tween(placement)
+        && tween.is_active(now)
+    {
+        return tween.to <= f32::EPSILON;
     }
     !is_open
 }
 
-pub fn layout_with_animated_docks(layout: ShellLayout, left: f32, right: f32, bottom: f32) -> ShellLayout {
+pub fn layout_with_animated_docks(
+    layout: ShellLayout,
+    left: f32,
+    right: f32,
+    bottom: f32,
+) -> ShellLayout {
     layout.with_animated_docks(left, right, bottom)
 }

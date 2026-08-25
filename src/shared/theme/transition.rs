@@ -36,7 +36,7 @@ pub fn ease_out_strong(t: f32) -> f32 {
     )
 }
 
-/// Standard ease-out for panel resize — comet `EASE_OUT` / `cubic-bezier(0, 0, 0.58, 1)`.
+/// Standard ease-out for panel resize — `cubic-bezier(0, 0, 0.58, 1)`.
 pub fn ease_out_resize(t: f32) -> f32 {
     unit_bezier(0.0, 0.0, 0.58, 1.0, t.clamp(0.0, 1.0))
 }

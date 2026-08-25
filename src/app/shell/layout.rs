@@ -18,16 +18,12 @@ pub struct ShellLayout {
 }
 
 impl ShellLayout {
-    pub fn from_window_and_dock(
-        window: &Window,
-        dock_area: &Entity<DockArea>,
-        cx: &App,
-    ) -> Self {
+    pub fn from_window_and_dock(window: &Window, dock_area: &Entity<DockArea>, cx: &App) -> Self {
         let viewport = WindowViewport::from_window(window);
         let dock = dock_area.read(cx);
-        let left_dock = dock_open_width(&dock, DockPlacement::Left, cx);
-        let right_dock = dock_open_width(&dock, DockPlacement::Right, cx);
-        let bottom_dock = dock_open_height(&dock, DockPlacement::Bottom, cx);
+        let left_dock = dock_open_width(dock, DockPlacement::Left, cx);
+        let right_dock = dock_open_width(dock, DockPlacement::Right, cx);
+        let bottom_dock = dock_open_height(dock, DockPlacement::Bottom, cx);
         let title_bar = TITLE_BAR_HEIGHT.as_f32();
         Self {
             viewport,
@@ -89,8 +85,8 @@ mod tests {
             center_height: 0.0,
         };
         let center_width = (layout.viewport.width - layout.left_dock - layout.right_dock).max(0.0);
-        let center_height = (layout.viewport.height - TITLE_BAR_HEIGHT.as_f32() - layout.bottom_dock)
-            .max(0.0);
+        let center_height =
+            (layout.viewport.height - TITLE_BAR_HEIGHT.as_f32() - layout.bottom_dock).max(0.0);
         assert_eq!(center_width, 744.0);
         assert_eq!(center_height, 546.0);
     }
@@ -109,8 +105,8 @@ mod tests {
             center_height: 0.0,
         };
         let center_width = (layout.viewport.width - layout.left_dock - layout.right_dock).max(0.0);
-        let center_height = (layout.viewport.height - TITLE_BAR_HEIGHT.as_f32() - layout.bottom_dock)
-            .max(0.0);
+        let center_height =
+            (layout.viewport.height - TITLE_BAR_HEIGHT.as_f32() - layout.bottom_dock).max(0.0);
         assert_eq!(center_width, 0.0);
         assert_eq!(center_height, 0.0);
     }

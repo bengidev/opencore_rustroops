@@ -498,17 +498,21 @@ impl Render for OpenCoreApp {
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
 
-                div().size_full().min_w_0().min_h_0().child(onboarding_interactive_root(
-                    &self.focus_handle,
-                    on_enter,
-                    onboarding_screen(
-                        theme,
-                        ui,
-                        callbacks,
-                        persistence_error,
-                        WindowViewport::from_window(window),
-                    ),
-                ))
+                div()
+                    .size_full()
+                    .min_w_0()
+                    .min_h_0()
+                    .child(onboarding_interactive_root(
+                        &self.focus_handle,
+                        on_enter,
+                        onboarding_screen(
+                            theme,
+                            ui,
+                            callbacks,
+                            persistence_error,
+                            WindowViewport::from_window(window),
+                        ),
+                    ))
             }
             ActiveScreen::Home => {
                 let shell = self.ensure_shell(window, cx);
@@ -521,10 +525,7 @@ impl Render for OpenCoreApp {
         {
             // Update FAB bounds for edge damping to the current window size.
             let window_bounds = window.viewport_size();
-            let bounds = (
-                window_bounds.width.as_f32(),
-                window_bounds.height.as_f32(),
-            );
+            let bounds = (window_bounds.width.as_f32(), window_bounds.height.as_f32());
             let callbacks = DevResetCallbacks::from_app(cx.entity().downgrade(), bounds);
             // Snapshot the state so the element borrows don't clash with `&mut self`.
             let state_snapshot = self.dev_reset_state.clone();

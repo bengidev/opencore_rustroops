@@ -211,7 +211,8 @@ fn patch_dock_animated_clip(path: &std::path::Path) -> bool {
     });
 
     if content.contains(PATCH_MARKER_ANIMATED_CLIP) {
-        return patch_dock_animated_clip_from_state(path)
+        return patch_dock_animated_clip_doc_comment(path)
+            | patch_dock_animated_clip_from_state(path)
             | patch_dock_display_size_closed(path);
     }
 
@@ -232,13 +233,11 @@ fn patch_dock_animated_clip(path: &std::path::Path) -> bool {
 
     let set_size_needle = "    pub fn set_size(&mut self, size: Pixels, _: &mut Window, cx: &mut Context<Self>) {\n        // opencore_allow_zero_dock_size\n        self.size = if size <= px(0.) { px(0.) } else { size.max(PANEL_MIN_SIZE) };\n        cx.notify();\n    }\n\n    /// Set the open state of the Dock.\n";
     let set_size_replacement = format!(
-        "    pub fn set_size(&mut self, size: Pixels, _: &mut Window, cx: &mut Context<Self>) {{\n        // opencore_allow_zero_dock_size\n        self.size = if size <= px(0.) {{ px(0.) }} else {{ size.max(PANEL_MIN_SIZE) }};\n        cx.notify();\n    }}\n\n    /// Outer clip size during show/hide tweens (comet `pane_container` pattern).\n    pub fn set_animated_size(&mut self, size: Option<Pixels>, cx: &mut Context<Self>) {{\n        self.animated_size = size;\n        cx.notify();\n    }}\n\n    pub fn clear_animated_size(&mut self, cx: &mut Context<Self>) {{\n        if self.animated_size.is_some() {{\n            self.animated_size = None;\n            cx.notify();\n        }}\n    }}\n\n    pub fn display_size(&self) -> Pixels {{\n        // {PATCH_MARKER_ANIMATED_CLIP}\n        if !self.open {{\n            return self.animated_size.unwrap_or(px(0.));\n        }}\n        self.animated_size.unwrap_or(self.size)\n    }}\n\n    /// Set the open state of the Dock.\n"
+        "    pub fn set_size(&mut self, size: Pixels, _: &mut Window, cx: &mut Context<Self>) {{\n        // opencore_allow_zero_dock_size\n        self.size = if size <= px(0.) {{ px(0.) }} else {{ size.max(PANEL_MIN_SIZE) }};\n        cx.notify();\n    }}\n\n    /// Outer clip size during show/hide tweens (animated outer clip, fixed inner panel).\n    pub fn set_animated_size(&mut self, size: Option<Pixels>, cx: &mut Context<Self>) {{\n        self.animated_size = size;\n        cx.notify();\n    }}\n\n    pub fn clear_animated_size(&mut self, cx: &mut Context<Self>) {{\n        if self.animated_size.is_some() {{\n            self.animated_size = None;\n            cx.notify();\n        }}\n    }}\n\n    pub fn display_size(&self) -> Pixels {{\n        // {PATCH_MARKER_ANIMATED_CLIP}\n        if !self.open {{\n            return self.animated_size.unwrap_or(px(0.));\n        }}\n        self.animated_size.unwrap_or(self.size)\n    }}\n\n    /// Set the open state of the Dock.\n"
     );
 
     let render_needle = "impl Render for Dock {\n    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {\n        // opencore_hide_closed_bottom_dock\n        if !self.open {\n            return div();\n        }\n\n        let cache_style = StyleRefinement::default().absolute().size_full();\n\n        div()\n            .relative()\n            .overflow_hidden()\n            .map(|this| match self.placement {\n                DockPlacement::Left | DockPlacement::Right => this.h_flex().h_full().w(self.size),\n                DockPlacement::Bottom => this.w_full().h(self.size),\n                DockPlacement::Center => unreachable!(),\n            })\n            .map(|this| match &self.panel {\n                DockItem::Split { view, .. } => this.child(view.clone()),\n                DockItem::Tabs { view, .. } => this.child(view.clone()),\n                DockItem::Panel { view, .. } => this.child(view.clone().view().cached(cache_style)),\n                // Not support to render Tiles and Tile into Dock\n                DockItem::Tiles { .. } => this,\n            })\n            .child(self.render_resize_handle(window, cx))\n            .child(DockElement {\n                view: cx.entity().clone(),\n            })\n    }\n}\n";
-    let render_replacement = format!(
-        "impl Render for Dock {{\n    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {{\n        let outer = self.display_size();\n        // opencore_hide_closed_bottom_dock\n        if !self.open && outer <= px(0.) {{\n            return div();\n        }}\n\n        let cache_style = StyleRefinement::default().absolute().size_full();\n        let inner = self.size;\n\n        div()\n            .relative()\n            .flex_none()\n            .overflow_hidden()\n            .map(|this| match self.placement {{\n                DockPlacement::Left | DockPlacement::Right => this.h_flex().h_full().w(outer),\n                DockPlacement::Bottom => this.w_full().h(outer),\n                DockPlacement::Center => unreachable!(),\n            }})\n            .child(\n                div()\n                    .relative()\n                    .overflow_hidden()\n                    .map(|this| match self.placement {{\n                        DockPlacement::Left | DockPlacement::Right => this.h_flex().h_full().w(inner),\n                        DockPlacement::Bottom => this.w_full().h(inner),\n                        DockPlacement::Center => unreachable!(),\n                    }})\n                    .map(|this| match &self.panel {{\n                        DockItem::Split {{ view, .. }} => this.child(view.clone()),\n                        DockItem::Tabs {{ view, .. }} => this.child(view.clone()),\n                        DockItem::Panel {{ view, .. }} => this.child(view.clone().view().cached(cache_style)),\n                        // Not support to render Tiles and Tile into Dock\n                        DockItem::Tiles {{ .. }} => this,\n                    }})\n                    .child(self.render_resize_handle(window, cx))\n                    .child(DockElement {{\n                        view: cx.entity().clone(),\n                    }}),\n            )\n    }}\n}}\n"
-    );
+    let render_replacement = "impl Render for Dock {\n    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {\n        let outer = self.display_size();\n        // opencore_hide_closed_bottom_dock\n        if !self.open && outer <= px(0.) {\n            return div();\n        }\n\n        let cache_style = StyleRefinement::default().absolute().size_full();\n        let inner = self.size;\n\n        div()\n            .relative()\n            .flex_none()\n            .overflow_hidden()\n            .map(|this| match self.placement {\n                DockPlacement::Left | DockPlacement::Right => this.h_flex().h_full().w(outer),\n                DockPlacement::Bottom => this.w_full().h(outer),\n                DockPlacement::Center => unreachable!(),\n            })\n            .child(\n                div()\n                    .relative()\n                    .overflow_hidden()\n                    .map(|this| match self.placement {\n                        DockPlacement::Left | DockPlacement::Right => this.h_flex().h_full().w(inner),\n                        DockPlacement::Bottom => this.w_full().h(inner),\n                        DockPlacement::Center => unreachable!(),\n                    })\n                    .map(|this| match &self.panel {\n                        DockItem::Split { view, .. } => this.child(view.clone()),\n                        DockItem::Tabs { view, .. } => this.child(view.clone()),\n                        DockItem::Panel { view, .. } => this.child(view.clone().view().cached(cache_style)),\n                        // Not support to render Tiles and Tile into Dock\n                        DockItem::Tiles { .. } => this,\n                    })\n                    .child(self.render_resize_handle(window, cx))\n                    .child(DockElement {\n                        view: cx.entity().clone(),\n                    }),\n            )\n    }\n}\n".to_string();
 
     if !content.contains(struct_needle) {
         panic!(
@@ -277,6 +276,27 @@ fn patch_dock_animated_clip(path: &std::path::Path) -> bool {
         .replace(from_state_needle, &from_state_replacement)
         .replace(set_size_needle, &set_size_replacement)
         .replace(render_needle, &render_replacement);
+
+    std::fs::write(path, patched).unwrap_or_else(|error| {
+        panic!("failed to write {}: {error}", path.display());
+    });
+
+    true
+}
+
+fn patch_dock_animated_clip_doc_comment(path: &std::path::Path) -> bool {
+    let content = std::fs::read_to_string(path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", path.display());
+    });
+
+    let needle = "/// Outer clip size during show/hide tweens (comet `pane_container` pattern).";
+    if !content.contains(needle) {
+        return false;
+    }
+
+    let replacement =
+        "/// Outer clip size during show/hide tweens (animated outer clip, fixed inner panel).";
+    let patched = content.replace(needle, replacement);
 
     std::fs::write(path, patched).unwrap_or_else(|error| {
         panic!("failed to write {}: {error}", path.display());
@@ -414,9 +434,7 @@ fn patch_dock_area_bottom_animating_px(path: &std::path::Path) -> bool {
     }
 
     let needle = "dock.is_open() || dock.display_size() > px(0.)";
-    let replacement = format!(
-        "dock.is_open() || dock.display_size() > gpui::px(0.) // {marker}"
-    );
+    let replacement = format!("dock.is_open() || dock.display_size() > gpui::px(0.) // {marker}");
 
     if !content.contains(needle) {
         return false;
@@ -475,15 +493,14 @@ fn patch_title_bar_trailing(path: &std::path::Path) -> bool {
         "    children: SmallVec<[AnyElement; 1]>,\n    // {PATCH_MARKER_TITLE_BAR_TRAILING}\n    trailing_children: SmallVec<[AnyElement; 1]>,\n    on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>>,\n"
     );
 
-    let init_needle = "            children: SmallVec::new(),\n            on_close_window: None,\n";
+    let init_needle =
+        "            children: SmallVec::new(),\n            on_close_window: None,\n";
     let init_replacement = format!(
         "            children: SmallVec::new(),\n            // {PATCH_MARKER_TITLE_BAR_TRAILING}\n            trailing_children: SmallVec::new(),\n            on_close_window: None,\n"
     );
 
     let method_needle = "    /// Add custom for close window event, default is None, then click X button will call `window.remove_window()`.\n    /// Linux only, this will do nothing on other platforms.\n    pub fn on_close_window(\n";
-    let method_replacement = format!(
-        "    /// Trailing title-bar controls (right side, before platform window controls).\n    pub fn trailing(mut self, element: impl IntoElement) -> Self {{\n        self.trailing_children.push(element.into_any_element());\n        self\n    }}\n\n    /// Add custom for close window event, default is None, then click X button will call `window.remove_window()`.\n    /// Linux only, this will do nothing on other platforms.\n    pub fn on_close_window(\n"
-    );
+    let method_replacement = "    /// Trailing title-bar controls (right side, before platform window controls).\n    pub fn trailing(mut self, element: impl IntoElement) -> Self {\n        self.trailing_children.push(element.into_any_element());\n        self\n    }\n\n    /// Add custom for close window event, default is None, then click X button will call `window.remove_window()`.\n    /// Linux only, this will do nothing on other platforms.\n    pub fn on_close_window(\n".to_string();
 
     let render_needle = "                )\n                .child(WindowControls {\n                    on_close_window: self.on_close_window,\n                }),\n        )\n    }\n}\n";
     let render_replacement = format!(

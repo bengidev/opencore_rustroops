@@ -1,4 +1,4 @@
-//! Manual dock size tweens for panel show/hide (comet / zeron pattern).
+//! Manual dock size tweens for panel show/hide.
 //!
 //! GPUI has no CSS transitions. Width and height are eased over 200ms with a
 //! standard ease-out, evaluated each render — never via `with_animation`, so
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::shared::theme::ease_out_resize;
 
-/// Panel collapse/expand duration — matches comet [`RESIZE`].
+/// Panel collapse/expand duration for dock toggles.
 pub const DOCK_TOGGLE_DURATION: Duration = if cfg!(test) {
     Duration::ZERO
 } else {

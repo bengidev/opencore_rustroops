@@ -4,12 +4,12 @@
 mod app_boot;
 mod app_desktop;
 mod app_state;
-mod viewport;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
 mod onboarding;
 pub mod shell;
+mod viewport;
 mod window_placement;
 
 pub use app_boot::boot_screen;

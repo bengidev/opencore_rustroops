@@ -11,6 +11,6 @@ pub use default_layout::{
     BOTTOM_DEFAULT, DOCK_LAYOUT_VERSION, EDGE_DOCK_TAB_COUNT, RIGHT_DEFAULT, SIDEBAR_DEFAULT,
     apply_default_holy_grail, dock_item_enables_dnd, dock_item_panel_count,
 };
-pub use panels::register_shell_panels;
 pub use layout::ShellLayout;
+pub use panels::register_shell_panels;
 pub use workspace::{DockSaveFn, ShellWorkspace};
