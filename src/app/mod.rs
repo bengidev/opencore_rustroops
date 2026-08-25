@@ -7,9 +7,9 @@ mod app_state;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
-mod welcome;
 pub mod shell;
 mod viewport;
+mod welcome;
 mod window_placement;
 
 pub use app_boot::boot_screen;
@@ -105,9 +105,7 @@ mod tests {
     fn completing_onboarding_persists_and_routes_to_home() {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
-        state
-            .complete_welcome(&store)
-            .expect("complete onboarding");
+        state.complete_welcome(&store).expect("complete welcome");
 
         assert!(state.preferences.onboarding_completed);
         assert_eq!(state.active_screen, ActiveScreen::Home);
@@ -119,9 +117,7 @@ mod tests {
     fn completing_onboarding_records_window_resize_intent() {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
-        state
-            .complete_welcome(&store)
-            .expect("complete onboarding");
+        state.complete_welcome(&store).expect("complete welcome");
 
         let intent = state.pending_window_resize.expect("resize intent recorded");
         assert_eq!(intent.width, HOME_WINDOW_WIDTH);

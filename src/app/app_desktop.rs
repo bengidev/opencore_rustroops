@@ -1,5 +1,5 @@
 //! **Facade** for the GPU runtime: boots preferences, opens one window, and routes
-//! [`super::ActiveScreen`] without closing between onboarding and home.
+//! [`super::ActiveScreen`] without closing between welcome and home.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -24,12 +24,12 @@ use super::AppError;
 use super::app_state::{ActiveScreen, AppState};
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
-use super::welcome::{
-    WelcomeCallbacks, WelcomeCommand, WelcomeOutcome, WelcomeUiState,
-    welcome_interactive_root, welcome_screen, reduce_welcome,
-};
 use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
 use super::viewport::WindowViewport;
+use super::welcome::{
+    WelcomeCallbacks, WelcomeCommand, WelcomeOutcome, WelcomeUiState, reduce_welcome,
+    welcome_interactive_root, welcome_screen,
+};
 use super::window_placement::center_window;
 
 const SHELL_SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
@@ -273,7 +273,7 @@ impl OpenCoreApp {
                 }
             }
             Err(error) => {
-                self.record_persistence_error("complete onboarding", error);
+                self.record_persistence_error("complete welcome", error);
                 cx.notify();
             }
         }
@@ -303,7 +303,7 @@ impl OpenCoreApp {
         }
     }
 
-    /// Resets persisted preferences to defaults and routes back to onboarding.
+    /// Resets persisted preferences to defaults and routes back to welcome (dev tooling).
     ///
     /// Called by the debug reset overlay.
     #[cfg(debug_assertions)]
@@ -487,9 +487,7 @@ impl Render for OpenCoreApp {
 
         let content = match self.state.active_screen {
             ActiveScreen::Welcome => {
-                let _ = self
-                    .welcome_ui
-                    .get_or_insert_with(WelcomeUiState::new);
+                let _ = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
                 if let Some(ui) = self.welcome_ui.as_mut() {
                     ui.tick(now);
                 }

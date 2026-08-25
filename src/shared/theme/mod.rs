@@ -1,6 +1,6 @@
 //! Design tokens resolved from [`ThemeMode`].
 //!
-//! Monochrome palette ported from the reference onboarding implementation.
+//! Monochrome palette for welcome and shell surfaces.
 
 mod theme_nothing_gpui;
 mod theme_transition;

@@ -5,7 +5,7 @@ use super::welcome::WelcomeOutcome;
 use crate::shared::preferences::{AppPreferences, PreferencesError, PreferencesStore};
 use crate::shared::theme::ThemeMode;
 
-/// Welcome window width (reference layout proportions).
+/// Welcome window width (960×740 landing layout).
 pub const WELCOME_WINDOW_WIDTH: u32 = 960;
 
 /// Welcome window height.
@@ -24,7 +24,7 @@ pub enum ActiveScreen {
     Home,
 }
 
-/// Window dimensions to apply when onboarding completes (GPUI layer applies in PRD #2).
+/// Window dimensions to apply when welcome completes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowResizeIntent {
     pub width: u32,

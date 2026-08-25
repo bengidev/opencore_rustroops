@@ -104,7 +104,7 @@ pub fn welcome_interactive_root(
         )
 }
 
-/// Full-screen welcome scene matching the reference layout.
+/// Full-screen welcome landing scene.
 pub fn welcome_screen(
     theme: OpenCoreTheme,
     ui: &WelcomeUiState,
