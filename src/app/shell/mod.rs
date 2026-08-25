@@ -1,11 +1,13 @@
 //! Post-welcome holy-grail chrome (Dock workspace + title bar toggles).
 
+mod main_workspace_panel;
 mod shell_default_layout;
 mod shell_dock_animation;
 mod shell_dock_tween;
 mod shell_layout;
 mod shell_panels;
 mod shell_workspace;
+mod workspace_theme;
 
 pub use shell_default_layout::{
     BOTTOM_DEFAULT, DOCK_LAYOUT_VERSION, EDGE_DOCK_TAB_COUNT, RIGHT_DEFAULT, SIDEBAR_DEFAULT,

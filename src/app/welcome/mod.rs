@@ -1,7 +1,7 @@
 //! Welcome command reducer, interactive state, and view.
 
 mod welcome_ascii_galaxy;
-mod welcome_theme_toggle;
+pub mod welcome_theme_toggle;
 mod welcome_ui_state;
 mod welcome_view;
 
