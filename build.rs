@@ -10,6 +10,7 @@ const PATCH_MARKER_BOTTOM_HIDE: &str = "opencore_hide_closed_bottom_dock";
 const PATCH_MARKER_DOCK_AREA_SKIP: &str = "opencore_skip_closed_bottom_dock";
 const PATCH_MARKER_TAB_PANEL_COLLAPSED_BOTTOM: &str = "opencore_hide_collapsed_bottom_tab_bar";
 const PATCH_MARKER_TITLE_BAR_DRAG: &str = "opencore_title_bar_drag_spacer";
+const PATCH_MARKER_TITLE_BAR_LEADING: &str = "opencore_title_bar_leading_click_guard";
 
 fn main() {
     let metadata = cargo_metadata::MetadataCommand::new()
@@ -26,6 +27,7 @@ fn main() {
         patched |= patch_dock_hide_closed_bottom(&dock_dir.join("dock.rs"));
         patched |= patch_dock_area_skip_closed_bottom(&dock_dir.join("mod.rs"));
         patched |= patch_title_bar_drag_spacer(&src_dir.join("title_bar.rs"));
+        patched |= patch_title_bar_leading_click_guard(&src_dir.join("title_bar.rs"));
     }
 
     if patched {
@@ -384,3 +386,46 @@ fn patch_title_bar_drag_spacer(path: &std::path::Path) -> bool {
     true
 }
 
+fn patch_title_bar_leading_click_guard(path: &std::path::Path) -> bool {
+    let content = std::fs::read_to_string(path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", path.display());
+    });
+
+    if content.contains(PATCH_MARKER_TITLE_BAR_LEADING) {
+        return false;
+    }
+
+    let needle = r#"                            h_flex()
+                                .id("bar-leading")
+                                .h_full()
+                                .items_center()
+                                .flex_shrink_0()
+                                .gap_1()
+                                .children(self.children),"#;
+
+    let replacement = r#"                            h_flex()
+                                .id("bar-leading")
+                                // opencore_title_bar_leading_click_guard
+                                .occlude()
+                                .h_full()
+                                .items_center()
+                                .flex_shrink_0()
+                                .gap_1()
+                                .on_double_click(|_, _, cx| cx.stop_propagation())
+                                .children(self.children),"#;
+
+    if !content.contains(needle) {
+        panic!(
+            "gpui-component title_bar.rs changed; update build.rs leading-click patch for {}",
+            path.display()
+        );
+    }
+
+    let patched = content.replace(needle, replacement);
+
+    std::fs::write(path, patched).unwrap_or_else(|error| {
+        panic!("failed to write {}: {error}", path.display());
+    });
+
+    true
+}
