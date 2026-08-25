@@ -2,14 +2,14 @@
 //!
 //! Monochrome palette ported from the reference onboarding implementation.
 
-mod nothing_gpui;
-mod transition;
+mod theme_nothing_gpui;
+mod theme_transition;
 
 use gpui::Hsla;
 use serde::{Deserialize, Serialize};
 
-pub use nothing_gpui::apply_nothing_theme;
-pub use transition::{
+pub use theme_nothing_gpui::apply_nothing_theme;
+pub use theme_transition::{
     THEME_TRANSITION_DURATION, ThemeTransition, ease_out_resize, ease_out_strong, mix_light_for,
 };
 
