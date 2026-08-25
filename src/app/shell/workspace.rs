@@ -122,11 +122,6 @@ fn item_has_main_stub(item: &DockItem, cx: &App) -> bool {
     }
 }
 
-/// Title-bar dock toggle that expands/collapses a dock without zooming the window.
-///
-/// TitleBar treats the strip as a drag/double-click zoom region. Wrapping the
-/// button in an occluding hit target and ignoring the second click of a
-/// double-click keeps a double-tap as a single dock toggle.
 fn title_bar_dock_toggle(
     id: &'static str,
     icon: IconName,
@@ -134,20 +129,21 @@ fn title_bar_dock_toggle(
     placement: DockPlacement,
     cx: &Context<ShellWorkspace>,
 ) -> impl IntoElement {
+    let button_id = format!("{id}-btn");
     div()
         .id(id)
         .occlude()
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_double_click(|_, _, cx| cx.stop_propagation())
         .child(
-            Button::new(id)
+            Button::new(button_id)
                 .ghost()
                 .xsmall()
                 .icon(icon)
                 .tooltip(tooltip)
+                .tab_stop(false)
                 .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                     cx.stop_propagation();
-                    // First click of a double-click already toggled; skip the second.
                     if event.click_count() > 1 {
                         return;
                     }
@@ -331,6 +327,49 @@ mod tests {
         cx.read_entity(&workspace, |workspace, cx| {
             assert_default_holy_grail_layout(&workspace.dock_area, cx);
         });
+    }
+
+    #[gpui::test]
+    fn dock_toggle_open_state_tracks_rapid_clicks(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, cx) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+
+        let placements = [
+            DockPlacement::Left,
+            DockPlacement::Bottom,
+            DockPlacement::Right,
+        ];
+
+        for _ in 0..8 {
+            for placement in placements {
+                let open_before = cx.read_entity(&workspace, |workspace, cx| {
+                    workspace
+                        .dock_area
+                        .read(cx)
+                        .is_dock_open(placement, cx)
+                });
+
+                workspace.update_in(cx, |workspace, window, cx| {
+                    workspace.dock_area.update(cx, |dock, cx| {
+                        dock.toggle_dock(placement, window, cx);
+                    });
+                });
+
+                let open_after = cx.read_entity(&workspace, |workspace, cx| {
+                    workspace
+                        .dock_area
+                        .read(cx)
+                        .is_dock_open(placement, cx)
+                });
+
+                assert_ne!(
+                    open_before, open_after,
+                    "{placement:?} should flip after each toggle"
+                );
+            }
+        }
     }
 
     #[gpui::test]
