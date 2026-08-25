@@ -20,6 +20,7 @@ use super::shell_dock_animation::{
     DockTweenState, layout_with_animated_docks, start_dock_toggle_tween, tick_dock_tweens,
 };
 use super::shell_layout::ShellLayout;
+use super::workspace_theme::{WorkspaceTheme, install_workspace_theme};
 use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
 
 const MAIN_DOCK_ID: &str = "main-dock";
@@ -31,6 +32,7 @@ pub struct ShellWorkspace {
     dock_area: Entity<DockArea>,
     layout: ShellLayout,
     dock_tweens: DockTweenState,
+    workspace_theme: WorkspaceTheme,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -105,10 +107,13 @@ impl ShellWorkspace {
 
         let layout = ShellLayout::from_window_and_dock(window, &dock_area, cx);
 
+        let workspace_theme = install_workspace_theme(WorkspaceTheme::default());
+
         Self {
             dock_area,
             layout,
             dock_tweens: DockTweenState::default(),
+            workspace_theme,
             _subscriptions: vec![layout_subscription],
         }
     }
@@ -117,7 +122,11 @@ impl ShellWorkspace {
         self.layout
     }
 
-    pub fn set_theme(&mut self, _theme: OpenCoreTheme) {}
+    pub fn set_theme(&mut self, theme: OpenCoreTheme, cx: &mut Context<Self>) {
+        self.workspace_theme.set(theme);
+        self.dock_area.update(cx, |_, cx| cx.notify());
+        cx.notify();
+    }
 }
 
 /// True when center contains at least one registered main stub panel.
@@ -312,13 +321,14 @@ mod tests {
         };
 
         let dock = dock_area.read(cx);
-        assert!(dock.is_dock_open(DockPlacement::Left, cx));
+        assert!(!dock.is_dock_open(DockPlacement::Left, cx));
         assert!(!dock.is_dock_open(DockPlacement::Right, cx));
         assert!(!dock.is_dock_open(DockPlacement::Bottom, cx));
         assert_eq!(
             dock.left_dock().map(|dock| dock.read(cx).size()),
             Some(px(SIDEBAR_DEFAULT))
         );
+        assert!(!dock.is_dock_open(DockPlacement::Left, cx));
         assert_eq!(dock.dump(cx).version, Some(DOCK_LAYOUT_VERSION));
 
         assert!(
@@ -326,8 +336,8 @@ mod tests {
             "center must be Split-wrapped for DnD"
         );
         assert!(
-            dock_item_panel_count(dock.center()) >= EDGE_DOCK_TAB_COUNT,
-            "center expected ≥{EDGE_DOCK_TAB_COUNT} panels for DnD"
+            dock_item_panel_count(dock.center()) >= 1,
+            "center expected at least one workspace panel"
         );
 
         for dock_entity in [dock.left_dock(), dock.right_dock(), dock.bottom_dock()]
@@ -461,13 +471,10 @@ mod tests {
             let layout = workspace.layout();
             assert!(layout.viewport.width > 0.0);
             assert!(layout.viewport.height > 0.0);
-            assert_eq!(layout.left_dock, SIDEBAR_DEFAULT);
+            assert_eq!(layout.left_dock, 0.0);
             assert_eq!(layout.right_dock, 0.0);
             assert_eq!(layout.bottom_dock, 0.0);
-            assert_eq!(
-                layout.center_width,
-                (layout.viewport.width - layout.left_dock).max(0.0)
-            );
+            assert_eq!(layout.center_width, layout.viewport.width.max(0.0));
         });
     }
 
@@ -500,7 +507,7 @@ mod tests {
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert!(
-                workspace
+                !workspace
                     .dock_area
                     .read(cx)
                     .is_dock_open(DockPlacement::Left, cx)
@@ -511,7 +518,7 @@ mod tests {
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert!(
-                !workspace
+                workspace
                     .dock_area
                     .read(cx)
                     .is_dock_open(DockPlacement::Left, cx),

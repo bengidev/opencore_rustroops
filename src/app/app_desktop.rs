@@ -514,7 +514,7 @@ impl Render for OpenCoreApp {
             }
             ActiveScreen::Home => {
                 let shell = self.ensure_shell(window, cx);
-                shell.update(cx, |shell, _| shell.set_theme(theme));
+                shell.update(cx, |shell, cx| shell.set_theme(theme, cx));
                 div().size_full().min_w_0().min_h_0().child(shell)
             }
         };
