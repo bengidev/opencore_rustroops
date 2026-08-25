@@ -10,6 +10,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
+use crate::app::viewport::WindowViewport;
 use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
@@ -109,7 +110,7 @@ pub fn onboarding_screen(
     ui: &OnboardingUiState,
     callbacks: OnboardingCallbacks,
     persistence_error: Option<&str>,
-    window_size: gpui::Size<gpui::Pixels>,
+    viewport: WindowViewport,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
 
@@ -118,7 +119,7 @@ pub fn onboarding_screen(
         ui,
         callbacks,
         persistence_error,
-        responsive_hero_size(window_size.width.as_f32(), window_size.height.as_f32()),
+        responsive_hero_size(viewport.width, viewport.height),
     ))
 }
 
