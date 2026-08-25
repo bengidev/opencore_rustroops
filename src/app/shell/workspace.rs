@@ -122,11 +122,6 @@ fn item_has_main_stub(item: &DockItem, cx: &App) -> bool {
     }
 }
 
-/// Title-bar dock toggle that expands/collapses a dock without zooming the window.
-///
-/// TitleBar treats the strip as a drag/double-click zoom region. Wrapping the
-/// button in an occluding hit target and ignoring the second click of a
-/// double-click keeps a double-tap as a single dock toggle.
 fn title_bar_dock_toggle(
     id: &'static str,
     icon: IconName,
@@ -134,20 +129,22 @@ fn title_bar_dock_toggle(
     placement: DockPlacement,
     cx: &Context<ShellWorkspace>,
 ) -> impl IntoElement {
+    let button_id = format!("{id}-btn");
     div()
         .id(id)
+        .debug_selector(|| id.to_string())
         .occlude()
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_double_click(|_, _, cx| cx.stop_propagation())
         .child(
-            Button::new(id)
+            Button::new(button_id)
                 .ghost()
                 .xsmall()
                 .icon(icon)
                 .tooltip(tooltip)
+                .tab_stop(false)
                 .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                     cx.stop_propagation();
-                    // First click of a double-click already toggled; skip the second.
                     if event.click_count() > 1 {
                         return;
                     }
@@ -201,7 +198,10 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use gpui::{App, AppContext, TestAppContext, px};
+    use gpui::{
+        App, AppContext, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, TestAppContext,
+        VisualTestContext, px,
+    };
     use gpui_component::dock::{DockAreaState, DockPlacement};
 
     use crate::app::shell::{DOCK_LAYOUT_VERSION, SIDEBAR_DEFAULT, register_shell_panels};
@@ -217,6 +217,50 @@ mod tests {
 
     fn noop_save() -> DockSaveFn {
         Rc::new(|_, _| {})
+    }
+
+    fn click_title_bar_dock_toggle(cx: &mut VisualTestContext, button_id: &'static str) {
+        let button_bounds = cx
+            .debug_bounds(button_id)
+            .unwrap_or_else(|| panic!("{button_id} should be visible in title bar"));
+        cx.simulate_click(button_bounds.center(), Modifiers::none());
+        cx.run_until_parked();
+    }
+
+    fn double_click_title_bar_dock_toggle(cx: &mut VisualTestContext, button_id: &'static str) {
+        let center = cx
+            .debug_bounds(button_id)
+            .unwrap_or_else(|| panic!("{button_id} should be visible in title bar"))
+            .center();
+        let modifiers = Modifiers::none();
+
+        cx.simulate_event(MouseDownEvent {
+            position: center,
+            modifiers,
+            button: MouseButton::Left,
+            click_count: 1,
+            first_mouse: true,
+        });
+        cx.simulate_event(MouseUpEvent {
+            position: center,
+            modifiers,
+            button: MouseButton::Left,
+            click_count: 1,
+        });
+        cx.simulate_event(MouseDownEvent {
+            position: center,
+            modifiers,
+            button: MouseButton::Left,
+            click_count: 2,
+            first_mouse: false,
+        });
+        cx.simulate_event(MouseUpEvent {
+            position: center,
+            modifiers,
+            button: MouseButton::Left,
+            click_count: 2,
+        });
+        cx.run_until_parked();
     }
 
     fn assert_default_holy_grail_layout(
@@ -330,6 +374,68 @@ mod tests {
 
         cx.read_entity(&workspace, |workspace, cx| {
             assert_default_holy_grail_layout(&workspace.dock_area, cx);
+        });
+    }
+
+    #[gpui::test]
+    fn title_bar_dock_toggle_clicks_flip_open_state(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, cx) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+
+        let toggles = [
+            ("toggle-left-dock", DockPlacement::Left),
+            ("toggle-bottom-dock", DockPlacement::Bottom),
+            ("toggle-right-dock", DockPlacement::Right),
+        ];
+
+        for _ in 0..8 {
+            for (button_id, placement) in toggles {
+                let open_before = cx.read_entity(&workspace, |workspace, cx| {
+                    workspace.dock_area.read(cx).is_dock_open(placement, cx)
+                });
+
+                click_title_bar_dock_toggle(cx, button_id);
+
+                let open_after = cx.read_entity(&workspace, |workspace, cx| {
+                    workspace.dock_area.read(cx).is_dock_open(placement, cx)
+                });
+
+                assert_ne!(
+                    open_before, open_after,
+                    "{placement:?} should flip after title bar click"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn title_bar_dock_toggle_double_click_toggles_once(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, cx) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+
+        cx.read_entity(&workspace, |workspace, cx| {
+            assert!(
+                workspace
+                    .dock_area
+                    .read(cx)
+                    .is_dock_open(DockPlacement::Left, cx)
+            );
+        });
+
+        double_click_title_bar_dock_toggle(cx, "toggle-left-dock");
+
+        cx.read_entity(&workspace, |workspace, cx| {
+            assert!(
+                !workspace
+                    .dock_area
+                    .read(cx)
+                    .is_dock_open(DockPlacement::Left, cx),
+                "double-click should apply only the first click"
+            );
         });
     }
 
