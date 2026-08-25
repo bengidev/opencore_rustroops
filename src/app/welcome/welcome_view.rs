@@ -219,7 +219,6 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         .right(px(HERO_GLOW_INSET_H))
         .top(px(HERO_GLOW_INSET_TOP))
         .bottom(px(HERO_GLOW_INSET_BOTTOM))
-        .rounded(px(160.))
         .shadow(vec![
             BoxShadow::new(px(0.), px(0.), accent.opacity(0.16)).blur_radius(px(72.)),
             BoxShadow::new(px(0.), px(0.), accent.opacity(0.08)).blur_radius(px(144.)),
@@ -312,7 +311,6 @@ fn ascii_box(
         .w(px(size))
         .h(px(size))
         .child(ascii)
-        .rounded(px(8.))
         .border_1()
         .border_color(border)
         .bg(surface)
