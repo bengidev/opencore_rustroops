@@ -8,6 +8,6 @@ pub fn boot_screen(preferences: &AppPreferences) -> ActiveScreen {
     if preferences.onboarding_completed {
         ActiveScreen::Home
     } else {
-        ActiveScreen::Onboarding
+        ActiveScreen::Welcome
     }
 }

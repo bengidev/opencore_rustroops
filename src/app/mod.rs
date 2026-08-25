@@ -1,4 +1,4 @@
-//! Application composition root (**Facade**): boot routing, onboarding completion,
+//! Application composition root (**Facade**): boot routing, welcome completion,
 //! preferences I/O, and desktop window lifecycle.
 
 mod app_boot;
@@ -7,17 +7,17 @@ mod app_state;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
-mod onboarding;
+mod welcome;
 pub mod shell;
 mod viewport;
 mod window_placement;
 
 pub use app_boot::boot_screen;
 pub use app_state::{
-    ActiveScreen, AppState, HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH, ONBOARDING_WINDOW_HEIGHT,
-    ONBOARDING_WINDOW_WIDTH, WindowResizeIntent,
+    ActiveScreen, AppState, HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH, WELCOME_WINDOW_HEIGHT,
+    WELCOME_WINDOW_WIDTH, WindowResizeIntent,
 };
-pub use onboarding::{OnboardingCommand, OnboardingOutcome, reduce_onboarding};
+pub use welcome::{WelcomeCommand, WelcomeOutcome, reduce_welcome};
 
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use thiserror::Error;
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn boot_screen_shows_onboarding_when_incomplete() {
         let prefs = AppPreferences::default();
-        assert_eq!(boot_screen(&prefs), ActiveScreen::Onboarding);
+        assert_eq!(boot_screen(&prefs), ActiveScreen::Welcome);
     }
 
     #[test]
@@ -78,7 +78,7 @@ mod tests {
                 onboarding_completed: false,
                 ..Default::default()
             };
-            assert_eq!(boot_screen(&incomplete), ActiveScreen::Onboarding);
+            assert_eq!(boot_screen(&incomplete), ActiveScreen::Welcome);
 
             let complete = AppPreferences {
                 theme_mode: theme,
@@ -98,7 +98,7 @@ mod tests {
         };
         let state = AppState::from_preferences(prefs);
         assert_eq!(state.theme_mode(), ThemeMode::Light);
-        assert_eq!(state.active_screen, ActiveScreen::Onboarding);
+        assert_eq!(state.active_screen, ActiveScreen::Welcome);
     }
 
     #[test]
@@ -106,7 +106,7 @@ mod tests {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
         state
-            .complete_onboarding(&store)
+            .complete_welcome(&store)
             .expect("complete onboarding");
 
         assert!(state.preferences.onboarding_completed);
@@ -120,7 +120,7 @@ mod tests {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
         state
-            .complete_onboarding(&store)
+            .complete_welcome(&store)
             .expect("complete onboarding");
 
         let intent = state.pending_window_resize.expect("resize intent recorded");
@@ -133,7 +133,7 @@ mod tests {
         let incomplete = AppState::from_preferences(AppPreferences::default());
         assert_eq!(
             incomplete.initial_window_size(),
-            (ONBOARDING_WINDOW_WIDTH, ONBOARDING_WINDOW_HEIGHT)
+            (WELCOME_WINDOW_WIDTH, WELCOME_WINDOW_HEIGHT)
         );
 
         let complete = AppState::from_preferences(AppPreferences {
@@ -150,8 +150,8 @@ mod tests {
     #[test]
     fn onboarding_enter_yields_completed_outcome() {
         assert_eq!(
-            reduce_onboarding(OnboardingCommand::EnterPressed),
-            OnboardingOutcome::Completed
+            reduce_welcome(WelcomeCommand::EnterPressed),
+            WelcomeOutcome::Completed
         );
     }
 
@@ -167,25 +167,25 @@ mod tests {
             .reset_persistent_data(&store)
             .expect("reset persistent data");
 
-        assert_eq!(state.active_screen, ActiveScreen::Onboarding);
+        assert_eq!(state.active_screen, ActiveScreen::Welcome);
         assert!(!state.preferences.onboarding_completed);
         let loaded = store.load().expect("load");
         assert_eq!(loaded, AppPreferences::default());
         let intent = state
             .pending_window_resize
             .expect("onboarding resize intent");
-        assert_eq!(intent.width, ONBOARDING_WINDOW_WIDTH);
-        assert_eq!(intent.height, ONBOARDING_WINDOW_HEIGHT);
+        assert_eq!(intent.width, WELCOME_WINDOW_WIDTH);
+        assert_eq!(intent.height, WELCOME_WINDOW_HEIGHT);
     }
 
     #[test]
     fn app_handles_onboarding_completion_via_store() {
         let store = InMemoryPreferencesStore::new();
         let mut state = AppState::from_preferences(AppPreferences::default());
-        let outcome = reduce_onboarding(OnboardingCommand::EnterPressed);
-        assert_eq!(outcome, OnboardingOutcome::Completed);
+        let outcome = reduce_welcome(WelcomeCommand::EnterPressed);
+        assert_eq!(outcome, WelcomeOutcome::Completed);
         state
-            .apply_onboarding_outcome(outcome, &store)
+            .apply_welcome_outcome(outcome, &store)
             .expect("apply outcome");
 
         assert_eq!(state.active_screen, ActiveScreen::Home);
