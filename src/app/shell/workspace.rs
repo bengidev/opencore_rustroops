@@ -16,6 +16,7 @@ use gpui_component::{
 use crate::shared::theme::OpenCoreTheme;
 
 use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
+use super::layout::ShellLayout;
 
 const MAIN_DOCK_ID: &str = "main-dock";
 
@@ -24,6 +25,7 @@ pub type DockSaveFn = Rc<dyn Fn(DockAreaState, &mut App)>;
 
 pub struct ShellWorkspace {
     dock_area: Entity<DockArea>,
+    layout: ShellLayout,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -96,10 +98,17 @@ impl ShellWorkspace {
                 }
             });
 
+        let layout = ShellLayout::from_window_and_dock(window, &dock_area, cx);
+
         Self {
             dock_area,
+            layout,
             _subscriptions: vec![layout_subscription],
         }
+    }
+
+    pub fn layout(&self) -> ShellLayout {
+        self.layout
     }
 
     pub fn set_theme(&mut self, _theme: OpenCoreTheme) {}
@@ -156,9 +165,13 @@ fn title_bar_dock_toggle(
 }
 
 impl Render for ShellWorkspace {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.layout = ShellLayout::from_window_and_dock(window, &self.dock_area, cx);
+
         div()
             .size_full()
+            .min_w_0()
+            .min_h_0()
             .flex()
             .flex_col()
             .child(
@@ -189,7 +202,7 @@ impl Render for ShellWorkspace {
                             )),
                     ),
             )
-            .child(div().flex_1().min_h_0().child(self.dock_area.clone()))
+            .child(div().flex_1().min_h_0().min_w_0().child(self.dock_area.clone()))
     }
 }
 
@@ -204,7 +217,9 @@ mod tests {
     };
     use gpui_component::dock::{DockAreaState, DockPlacement};
 
-    use crate::app::shell::{DOCK_LAYOUT_VERSION, SIDEBAR_DEFAULT, register_shell_panels};
+    use crate::app::shell::{
+        DOCK_LAYOUT_VERSION, RIGHT_DEFAULT, SIDEBAR_DEFAULT, register_shell_panels,
+    };
 
     use super::{DockSaveFn, ShellWorkspace};
 
@@ -408,6 +423,47 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[gpui::test]
+    fn shell_layout_reflects_default_open_docks(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, _) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+
+        cx.read_entity(&workspace, |workspace, _| {
+            let layout = workspace.layout();
+            assert!(layout.viewport.width > 0.0);
+            assert!(layout.viewport.height > 0.0);
+            assert_eq!(layout.left_dock, SIDEBAR_DEFAULT);
+            assert_eq!(layout.right_dock, 0.0);
+            assert_eq!(layout.bottom_dock, 0.0);
+            assert_eq!(
+                layout.center_width,
+                (layout.viewport.width - layout.left_dock).max(0.0)
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn shell_layout_updates_when_right_dock_toggles(cx: &mut TestAppContext) {
+        init_shell_panels(cx);
+
+        let (workspace, cx) =
+            cx.add_window_view(|window, cx| ShellWorkspace::new(None, noop_save(), window, cx));
+
+        click_title_bar_dock_toggle(cx, "toggle-right-dock");
+        cx.run_until_parked();
+
+        cx.read_entity(&workspace, |workspace, _| {
+            let layout = workspace.layout();
+            assert_eq!(layout.right_dock, RIGHT_DEFAULT);
+            assert_eq!(
+                layout.center_width,
+                (layout.viewport.width - layout.left_dock - layout.right_dock).max(0.0)
+            );
+        });
     }
 
     #[gpui::test]
