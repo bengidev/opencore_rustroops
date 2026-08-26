@@ -3,8 +3,9 @@
 use gpui::{App, AppContext, Edges, Entity, Window, px};
 use gpui_component::dock::{DockArea, DockItem};
 
+use super::left_sidebar::LeftSidebarPanel;
 use super::main_workspace_panel::MainWorkspacePanel;
-use super::shell_panels::{BottomStubPanel, LeftStubPanel, RightStubPanel};
+use super::shell_panels::{BottomStubPanel, FilesStubPanel, RightStubPanel};
 use super::workspace_theme::workspace_theme;
 
 pub const DOCK_LAYOUT_VERSION: usize = 8;
@@ -53,8 +54,8 @@ pub fn apply_default_holy_grail(dock_area: &Entity<DockArea>, window: &mut Windo
     let left = wrap_for_dnd(
         DockItem::tabs(
             vec![
-                std::sync::Arc::new(cx.new(LeftStubPanel::new)),
-                std::sync::Arc::new(cx.new(|cx| LeftStubPanel::with_title("FILES", cx))),
+                std::sync::Arc::new(cx.new(|cx| LeftSidebarPanel::new(window, workspace_theme(), cx))),
+                std::sync::Arc::new(cx.new(FilesStubPanel::new)),
             ],
             &weak,
             window,
