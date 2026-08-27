@@ -366,7 +366,19 @@ mod tests {
             "center expected at least one workspace panel"
         );
 
-        for dock_entity in [dock.left_dock(), dock.right_dock(), dock.bottom_dock()]
+        if let Some(left) = dock.left_dock() {
+            let panel = left.read(cx).panel();
+            assert!(
+                dock_item_enables_dnd(panel),
+                "left dock must be Split-wrapped for DnD"
+            );
+            assert!(
+                dock_item_panel_count(panel) >= 1,
+                "left dock expected threads-only panel"
+            );
+        }
+
+        for dock_entity in [dock.right_dock(), dock.bottom_dock()]
             .into_iter()
             .flatten()
         {
