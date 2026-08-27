@@ -1,6 +1,8 @@
-//! Search row with new-thread affordance.
+//! Search row with clear affordance and new-thread action.
 
-use gpui::{Entity, InteractiveElement, IntoElement, ParentElement, Styled, div, px};
+use gpui::{
+    App, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div, px,
+};
 use gpui_component::{
     Icon, IconName, Sizable,
     button::{Button, ButtonRounded, ButtonVariants as _},
@@ -14,7 +16,13 @@ use crate::shared::theme::{
 
 use super::super::tokens::{ICON_BUTTON_SIZE, SEARCH_ROW_HEIGHT};
 
-pub fn sidebar_search_row(search: &Entity<InputState>, theme: &OpenCoreTheme) -> impl IntoElement {
+pub fn sidebar_search_row(
+    search: &Entity<InputState>,
+    query: &str,
+    theme: &OpenCoreTheme,
+    on_clear: impl Fn(&mut Window, &mut App) + 'static,
+    on_new_thread: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
     let surface = theme.surface(BackgroundToken::Secondary);
     let border = theme.border_token(BorderToken::Default);
     let muted = theme.foreground(ForegroundToken::Muted);
@@ -59,19 +67,34 @@ pub fn sidebar_search_row(search: &Entity<InputState>, theme: &OpenCoreTheme) ->
                                 .appearance(false)
                                 .cleanable(false),
                         ),
-                ),
+                )
+                .children(if !query.is_empty() {
+                    Some(
+                        Button::new("left-sidebar-clear-search")
+                            .ghost()
+                            .rounded(ButtonRounded::None)
+                            .tooltip("Clear search")
+                            .icon(Icon::new(IconName::Close).text_color(muted))
+                            .h(px(20.))
+                            .w(px(20.))
+                            .on_click(move |_, window, cx| on_clear(window, cx)),
+                    )
+                } else {
+                    None
+                }),
         )
         .child(
             Button::new("left-sidebar-new-thread")
                 .ghost()
                 .rounded(ButtonRounded::None)
                 .tooltip("New thread")
-                .icon(Icon::new(IconName::Inbox).text_color(primary))
+                .icon(Icon::new(IconName::File).text_color(primary))
                 .h(px(ICON_BUTTON_SIZE))
                 .w(px(ICON_BUTTON_SIZE))
                 .flex_shrink_0()
                 .border_1()
                 .border_color(border)
-                .bg(surface),
+                .bg(surface)
+                .on_click(move |_, window, cx| on_new_thread(window, cx)),
         )
 }

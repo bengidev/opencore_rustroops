@@ -1,7 +1,5 @@
 //! Empty states for zero-project and zero-thread shelves.
 
-#![allow(dead_code)]
-
 use gpui::{IntoElement, ParentElement, SharedString, Styled, div, px, relative};
 use gpui_component::{
     Icon, IconName,
@@ -33,7 +31,10 @@ pub fn sidebar_empty_state(message: &str, theme: &OpenCoreTheme) -> impl IntoEle
         )
 }
 
-pub fn sidebar_add_project_button(theme: &OpenCoreTheme) -> impl IntoElement {
+pub fn sidebar_add_project_button(
+    theme: &OpenCoreTheme,
+    on_click: impl Fn(&mut gpui::Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
     let surface = theme.surface(BackgroundToken::Secondary);
     let border = theme.border_token(BorderToken::Default);
     let muted = theme.foreground(ForegroundToken::Muted);
@@ -50,6 +51,7 @@ pub fn sidebar_add_project_button(theme: &OpenCoreTheme) -> impl IntoElement {
         .border_1()
         .border_color(border)
         .bg(surface)
+        .on_click(move |_, window, cx| on_click(window, cx))
 }
 
 fn mono_family() -> SharedString {
