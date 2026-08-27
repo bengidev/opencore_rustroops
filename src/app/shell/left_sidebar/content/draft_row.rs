@@ -1,30 +1,29 @@
 //! Draft row for unsent composer sessions — matches active card row interaction.
 
-use std::rc::Rc;
-
 use gpui::{
     App, AppContext, ClickEvent, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px, relative, prelude::FluentBuilder as _,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder as _, px, relative,
 };
 use gpui_component::{
-    Icon, IconName, Sizable,
+    Icon, IconName,
     button::{Button, ButtonRounded, ButtonVariants as _},
     h_flex, v_flex,
 };
 
 use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme, TypeRole};
 
-use super::pinned_drag::{PinnedRowDragUi, PinnedThreadDrag, ThreadDragScope};
-use super::super::demo_data::{DemoDraft, DEMO_PROJECTS};
+use super::super::demo_data::{DEMO_PROJECTS, DemoDraft};
 use super::super::surfaces::{
-    project_favicon_color, row_active_bg, row_hover_bg, row_selected_bg,
+    draft_bg, draft_bg_hover, project_favicon_color, row_active_bg, row_hover_bg, row_selected_bg,
 };
 use super::super::tokens::{FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD};
+use super::callbacks::{ThreadDragOverCallback, ThreadDropCallback, ThreadIdCallback};
+use super::pinned_drag::{PinnedRowDragUi, PinnedThreadDrag, ThreadDragScope};
 
 pub struct DraftRowDragActions {
-    pub on_drag_start: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_drag_over: Rc<dyn Fn(String, bool, &mut Window, &mut App)>,
-    pub on_drop: Rc<dyn Fn(String, String, &mut Window, &mut App)>,
+    pub on_drag_start: ThreadIdCallback,
+    pub on_drag_over: ThreadDragOverCallback,
+    pub on_drop: ThreadDropCallback,
 }
 
 pub fn sidebar_draft_row(
@@ -53,10 +52,7 @@ pub fn sidebar_draft_row(
     } else if is_selected {
         (row_selected_bg(theme), primary)
     } else {
-        (
-            theme.surface(BackgroundToken::Primary),
-            primary.alpha(0.9),
-        )
+        (draft_bg(theme), primary.alpha(0.9))
     };
 
     let draft_id = draft.id.to_string();
@@ -104,7 +100,7 @@ pub fn sidebar_draft_row(
             )
         })
         .when(!is_active && !is_selected, |row| {
-            row.hover(|style| style.bg(row_hover_bg(theme)))
+            row.hover(|style| style.bg(draft_bg_hover(theme)))
         })
         .when(row_drag.is_source, |row| row.opacity(0.45))
         .on_drag(
@@ -134,8 +130,7 @@ pub fn sidebar_draft_row(
                 value
                     .downcast_ref::<PinnedThreadDrag>()
                     .is_some_and(|drag| {
-                        drag.thread_id != self_id
-                            && drag.scope.allows_drop(drag_scope)
+                        drag.thread_id != self_id && drag.scope.allows_drop(drag_scope)
                     })
             }
         })

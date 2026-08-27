@@ -1,26 +1,20 @@
 //! Thread row surfaces: card layout for inbox/pinned, slim layout for history.
 
-use std::rc::Rc;
-
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Entity, InteractiveElement, IntoElement,
     MouseButton, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
-    div, px, relative, prelude::FluentBuilder as _,
+    div, prelude::FluentBuilder as _, px, relative,
 };
 use gpui_component::{
-    Icon, IconName, Sizable,
-    h_flex,
+    Icon, IconName, Sizable, h_flex,
     input::{Input, InputState},
     menu::{ContextMenuExt as _, PopupMenuItem},
     v_flex,
 };
 
-use crate::shared::theme::{
-    BackgroundToken, ForegroundToken, OpenCoreTheme, TypeRole,
-};
+use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme, TypeRole};
 
-use super::pinned_drag::{PinnedRowDragUi, PinnedThreadDrag, ThreadDragScope};
-use super::super::demo_data::{DemoThread, DEMO_PROJECTS, ThreadShelf, ThreadStatus};
+use super::super::demo_data::{DEMO_PROJECTS, DemoThread, ThreadShelf, ThreadStatus};
 use super::super::state::SidebarViewModel;
 use super::super::surfaces::{
     pr_open_color, project_favicon_color, row_active_bg, row_hover_bg, row_selected_bg,
@@ -29,6 +23,11 @@ use super::super::surfaces::{
 use super::super::tokens::{
     FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD, ROW_HEIGHT_SLIM, ROW_RADIUS,
 };
+use super::callbacks::{
+    ThreadDragOverCallback, ThreadDropCallback, ThreadHoverCallback, ThreadIdCallback,
+    ThreadMoveCallback, ThreadSelectCallback,
+};
+use super::pinned_drag::{PinnedRowDragUi, PinnedThreadDrag, ThreadDragScope};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThreadRowVariant {
@@ -36,21 +35,22 @@ pub enum ThreadRowVariant {
     Slim,
 }
 
+#[derive(Clone)]
 pub struct ThreadRowActions {
-    pub on_activate: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_select: Rc<dyn Fn(String, bool, &mut Window, &mut App)>,
-    pub on_hover: Rc<dyn Fn(Option<String>, &mut Window, &mut App)>,
-    pub on_move_thread: Rc<dyn Fn(String, isize, &mut Window, &mut App)>,
-    pub on_pin: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_unpin: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_settle: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_unsettle: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_rename: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_archive: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_unarchive: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_pinned_drag_start: Rc<dyn Fn(String, &mut Window, &mut App)>,
-    pub on_pinned_drag_over: Rc<dyn Fn(String, bool, &mut Window, &mut App)>,
-    pub on_pinned_drop: Rc<dyn Fn(String, String, &mut Window, &mut App)>,
+    pub on_activate: ThreadIdCallback,
+    pub on_select: ThreadSelectCallback,
+    pub on_hover: ThreadHoverCallback,
+    pub on_move_thread: ThreadMoveCallback,
+    pub on_pin: ThreadIdCallback,
+    pub on_unpin: ThreadIdCallback,
+    pub on_settle: ThreadIdCallback,
+    pub on_unsettle: ThreadIdCallback,
+    pub on_rename: ThreadIdCallback,
+    pub on_archive: ThreadIdCallback,
+    pub on_unarchive: ThreadIdCallback,
+    pub on_pinned_drag_start: ThreadIdCallback,
+    pub on_pinned_drag_over: ThreadDragOverCallback,
+    pub on_pinned_drop: ThreadDropCallback,
 }
 
 pub fn sidebar_thread_row(
@@ -64,30 +64,26 @@ pub fn sidebar_thread_row(
     scroll_anchor: Option<gpui::ScrollAnchor>,
 ) -> AnyElement {
     match variant {
-        ThreadRowVariant::Card => {
-            card_row(
-                thread,
-                view,
-                theme,
-                actions,
-                rename_input,
-                pinned_drag,
-                scroll_anchor,
-            )
-            .into_any_element()
-        }
-        ThreadRowVariant::Slim => {
-            slim_row(
-                thread,
-                view,
-                theme,
-                actions,
-                rename_input,
-                pinned_drag,
-                scroll_anchor,
-            )
-            .into_any_element()
-        }
+        ThreadRowVariant::Card => card_row(
+            thread,
+            view,
+            theme,
+            actions,
+            rename_input,
+            pinned_drag,
+            scroll_anchor,
+        )
+        .into_any_element(),
+        ThreadRowVariant::Slim => slim_row(
+            thread,
+            view,
+            theme,
+            actions,
+            rename_input,
+            pinned_drag,
+            scroll_anchor,
+        )
+        .into_any_element(),
     }
 }
 
@@ -96,7 +92,7 @@ pub fn sidebar_show_more_button(
     on_show_more: impl Fn(&mut gpui::Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let muted = theme.foreground(ForegroundToken::Muted);
-  div()
+    div()
         .id("left-sidebar-show-more-settled")
         .w_full()
         .py(px(8.))
@@ -106,7 +102,9 @@ pub fn sidebar_show_more_button(
         .text_size(px(TypeRole::LabelMd.size()))
         .text_color(muted)
         .hover(|style| style.text_color(theme.foreground(ForegroundToken::Primary)))
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| on_show_more(window, cx))
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            on_show_more(window, cx)
+        })
         .child("Show more")
 }
 
@@ -126,9 +124,15 @@ fn row_surface(
     let recede = view.should_recede(thread);
 
     let (bg, text) = if is_active {
-        (row_active_bg(theme), theme.foreground(ForegroundToken::Primary))
+        (
+            row_active_bg(theme),
+            theme.foreground(ForegroundToken::Primary),
+        )
     } else if is_selected {
-        (row_selected_bg(theme), theme.foreground(ForegroundToken::Primary))
+        (
+            row_selected_bg(theme),
+            theme.foreground(ForegroundToken::Primary),
+        )
     } else {
         (
             theme.surface(BackgroundToken::Primary),
@@ -144,25 +148,14 @@ fn row_surface(
     let on_select = actions.on_select.clone();
     let on_activate = actions.on_activate.clone();
     let on_hover = actions.on_hover.clone();
-    let on_move_thread = actions.on_move_thread.clone();
-    let on_pin = actions.on_pin.clone();
-    let on_unpin = actions.on_unpin.clone();
-    let on_settle = actions.on_settle.clone();
-    let on_unsettle = actions.on_unsettle.clone();
-    let on_rename = actions.on_rename.clone();
-    let on_archive = actions.on_archive.clone();
-    let on_unarchive = actions.on_unarchive.clone();
     let on_pinned_drag_start = actions.on_pinned_drag_start.clone();
     let on_pinned_drag_over = actions.on_pinned_drag_over.clone();
     let on_pinned_drop = actions.on_pinned_drop.clone();
     let is_pinned = view.effective_shelf(thread) == ThreadShelf::Pinned;
     let is_settled = view.effective_shelf(thread) == ThreadShelf::Settled;
     let is_archived = view.is_archived(thread);
-    let drag_scope = ThreadDragScope::from_thread(
-        thread.id,
-        view.effective_shelf(thread),
-        is_archived,
-    );
+    let drag_scope =
+        ThreadDragScope::from_thread(thread.id, view.effective_shelf(thread), is_archived);
     let menu_title = view.display_title(thread);
     let row_drag = pinned_drag.unwrap_or_default();
     let drop_line_color: gpui::Hsla = gpui::rgb(0x3B82F6).into();
@@ -177,8 +170,12 @@ fn row_surface(
         .min_w_0()
         .relative()
         .flex()
-        .when(is_card, |row| row.h(px(height)).items_start().overflow_x_hidden())
-        .when(!is_card, |row| row.h(px(height)).items_center().overflow_hidden())
+        .when(is_card, |row| {
+            row.h(px(height)).items_start().overflow_x_hidden()
+        })
+        .when(!is_card, |row| {
+            row.h(px(height)).items_center().overflow_hidden()
+        })
         .bg(bg)
         .text_color(text)
         .cursor_pointer()
@@ -239,8 +236,7 @@ fn row_surface(
                 value
                     .downcast_ref::<PinnedThreadDrag>()
                     .is_some_and(|drag| {
-                        drag.thread_id != self_id
-                            && drag.scope.allows_drop(self_scope)
+                        drag.thread_id != self_id && drag.scope.allows_drop(self_scope)
                     })
             }
         })
@@ -294,7 +290,11 @@ fn row_surface(
             let hover_id = thread_id.clone();
             move |hovered, window, cx| {
                 on_hover(
-                    if *hovered { Some(hover_id.clone()) } else { None },
+                    if *hovered {
+                        Some(hover_id.clone())
+                    } else {
+                        None
+                    },
                     window,
                     cx,
                 );
@@ -316,39 +316,23 @@ fn row_surface(
             }
         })
         .context_menu({
-            let on_move_thread = on_move_thread.clone();
-            let on_pin = on_pin.clone();
-            let on_unpin = on_unpin.clone();
-            let on_settle = on_settle.clone();
-            let on_unsettle = on_unsettle.clone();
-            let on_rename = on_rename.clone();
-            let on_archive = on_archive.clone();
-            let on_unarchive = on_unarchive.clone();
+            let actions = actions.clone();
             let menu_id = thread_id.clone();
             let menu_title = menu_title.clone();
-            let is_pinned = is_pinned;
-            let is_settled = is_settled;
-            let is_archived = is_archived;
-            let can_move_up = view.can_move_thread(&thread_id, -1);
-            let can_move_down = view.can_move_thread(&thread_id, 1);
+            let menu_state = ThreadContextMenuState {
+                is_pinned,
+                is_settled,
+                is_archived,
+                can_move_up: view.can_move_thread(&thread_id, -1),
+                can_move_down: view.can_move_thread(&thread_id, 1),
+            };
             move |menu, window, cx| {
                 build_thread_context_menu(
                     menu,
                     menu_id.clone(),
                     menu_title.clone(),
-                    is_pinned,
-                    is_settled,
-                    is_archived,
-                    can_move_up,
-                    can_move_down,
-                    &on_move_thread,
-                    &on_pin,
-                    &on_unpin,
-                    &on_settle,
-                    &on_unsettle,
-                    &on_rename,
-                    &on_archive,
-                    &on_unarchive,
+                    menu_state,
+                    &actions,
                     window,
                     cx,
                 )
@@ -357,31 +341,36 @@ fn row_surface(
         .child(content)
 }
 
-pub(crate) fn build_thread_context_menu(
-    mut menu: gpui_component::menu::PopupMenu,
-    menu_id: String,
-    menu_title: String,
+#[derive(Clone, Copy)]
+struct ThreadContextMenuState {
     is_pinned: bool,
     is_settled: bool,
     is_archived: bool,
     can_move_up: bool,
     can_move_down: bool,
-    on_move_thread: &Rc<dyn Fn(String, isize, &mut Window, &mut App)>,
-    on_pin: &Rc<dyn Fn(String, &mut Window, &mut App)>,
-    on_unpin: &Rc<dyn Fn(String, &mut Window, &mut App)>,
-    on_settle: &Rc<dyn Fn(String, &mut Window, &mut App)>,
-    on_unsettle: &Rc<dyn Fn(String, &mut Window, &mut App)>,
-    on_rename: &Rc<dyn Fn(String, &mut Window, &mut App)>,
-    on_archive: &Rc<dyn Fn(String, &mut Window, &mut App)>,
-    on_unarchive: &Rc<dyn Fn(String, &mut Window, &mut App)>,
+}
+
+fn build_thread_context_menu(
+    mut menu: gpui_component::menu::PopupMenu,
+    menu_id: String,
+    menu_title: String,
+    state: ThreadContextMenuState,
+    actions: &ThreadRowActions,
     _window: &mut Window,
     _cx: &mut Context<gpui_component::menu::PopupMenu>,
 ) -> gpui_component::menu::PopupMenu {
+    let ThreadContextMenuState {
+        is_pinned,
+        is_settled,
+        is_archived,
+        can_move_up,
+        can_move_down,
+    } = state;
     menu = menu.label(menu_title);
 
     if can_move_up {
         let up_id = menu_id.clone();
-        let on_move_up = on_move_thread.clone();
+        let on_move_up = actions.on_move_thread.clone();
         menu = menu.item(
             PopupMenuItem::new("Move up").on_click(move |_, window, cx| {
                 on_move_up(up_id.clone(), -1, window, cx);
@@ -390,7 +379,7 @@ pub(crate) fn build_thread_context_menu(
     }
     if can_move_down {
         let down_id = menu_id.clone();
-        let on_move_down = on_move_thread.clone();
+        let on_move_down = actions.on_move_thread.clone();
         menu = menu.item(
             PopupMenuItem::new("Move down").on_click(move |_, window, cx| {
                 on_move_down(down_id.clone(), 1, window, cx);
@@ -402,75 +391,61 @@ pub(crate) fn build_thread_context_menu(
     }
 
     if is_archived {
-        menu = menu.item(
-            PopupMenuItem::new("Unarchive").on_click({
-                let unarchive_id = menu_id.clone();
-                let on_unarchive = on_unarchive.clone();
-                move |_, window, cx| {
-                    on_unarchive(unarchive_id.clone(), window, cx);
-                }
-            }),
-        );
+        menu = menu.item(PopupMenuItem::new("Unarchive").on_click({
+            let unarchive_id = menu_id.clone();
+            let on_unarchive = actions.on_unarchive.clone();
+            move |_, window, cx| {
+                on_unarchive(unarchive_id.clone(), window, cx);
+            }
+        }));
     } else if is_pinned {
-        menu = menu.item(
-            PopupMenuItem::new("Unpin").on_click({
-                let unpin_id = menu_id.clone();
-                let on_unpin = on_unpin.clone();
-                move |_, window, cx| {
-                    on_unpin(unpin_id.clone(), window, cx);
-                }
-            }),
-        );
+        menu = menu.item(PopupMenuItem::new("Unpin").on_click({
+            let unpin_id = menu_id.clone();
+            let on_unpin = actions.on_unpin.clone();
+            move |_, window, cx| {
+                on_unpin(unpin_id.clone(), window, cx);
+            }
+        }));
     } else if is_settled {
-        menu = menu.item(
-            PopupMenuItem::new("Unsettle").on_click({
-                let unsettle_id = menu_id.clone();
-                let on_unsettle = on_unsettle.clone();
-                move |_, window, cx| {
-                    on_unsettle(unsettle_id.clone(), window, cx);
-                }
-            }),
-        );
+        menu = menu.item(PopupMenuItem::new("Unsettle").on_click({
+            let unsettle_id = menu_id.clone();
+            let on_unsettle = actions.on_unsettle.clone();
+            move |_, window, cx| {
+                on_unsettle(unsettle_id.clone(), window, cx);
+            }
+        }));
     } else {
-        menu = menu.item(
-            PopupMenuItem::new("Pin").on_click({
-                let pin_id = menu_id.clone();
-                let on_pin = on_pin.clone();
-                move |_, window, cx| {
-                    on_pin(pin_id.clone(), window, cx);
-                }
-            }),
-        );
-        menu = menu.item(
-            PopupMenuItem::new("Settle").on_click({
-                let settle_id = menu_id.clone();
-                let on_settle = on_settle.clone();
-                move |_, window, cx| {
-                    on_settle(settle_id.clone(), window, cx);
-                }
-            }),
-        );
-        menu = menu.item(
-            PopupMenuItem::new("Archive").on_click({
-                let archive_id = menu_id.clone();
-                let on_archive = on_archive.clone();
-                move |_, window, cx| {
-                    on_archive(archive_id.clone(), window, cx);
-                }
-            }),
-        );
+        menu = menu.item(PopupMenuItem::new("Pin").on_click({
+            let pin_id = menu_id.clone();
+            let on_pin = actions.on_pin.clone();
+            move |_, window, cx| {
+                on_pin(pin_id.clone(), window, cx);
+            }
+        }));
+        menu = menu.item(PopupMenuItem::new("Settle").on_click({
+            let settle_id = menu_id.clone();
+            let on_settle = actions.on_settle.clone();
+            move |_, window, cx| {
+                on_settle(settle_id.clone(), window, cx);
+            }
+        }));
+        menu = menu.item(PopupMenuItem::new("Archive").on_click({
+            let archive_id = menu_id.clone();
+            let on_archive = actions.on_archive.clone();
+            move |_, window, cx| {
+                on_archive(archive_id.clone(), window, cx);
+            }
+        }));
     }
 
     menu = menu.separator();
-    menu = menu.item(
-        PopupMenuItem::new("Rename").on_click({
-            let rename_id = menu_id;
-            let on_rename = on_rename.clone();
-            move |_, window, cx| {
-                on_rename(rename_id.clone(), window, cx);
-            }
-        }),
-    );
+    menu = menu.item(PopupMenuItem::new("Rename").on_click({
+        let rename_id = menu_id;
+        let on_rename = actions.on_rename.clone();
+        move |_, window, cx| {
+            on_rename(rename_id.clone(), window, cx);
+        }
+    }));
     menu
 }
 
@@ -590,20 +565,18 @@ fn slim_row(
                     .small()
                     .flex_shrink_0(),
             )
-            .child(
-                    title_row(
-                        thread,
-                        view,
-                        &title,
-                        rename_input,
-                        TypeRole::LabelMd,
-                    if recede {
-                        muted.alpha(0.7)
-                    } else {
-                        theme.foreground(ForegroundToken::Primary)
-                    },
-                ),
-            )
+            .child(title_row(
+                thread,
+                view,
+                &title,
+                rename_input,
+                TypeRole::LabelMd,
+                if recede {
+                    muted.alpha(0.7)
+                } else {
+                    theme.foreground(ForegroundToken::Primary)
+                },
+            ))
             .child(status_or_time(thread, view, theme, false)),
     )
 }
@@ -618,23 +591,23 @@ fn title_row(
 ) -> gpui::AnyElement {
     let mono = mono_family();
     let title = title.to_string();
-    if view.is_renaming(thread) {
-        if let Some(rename_input) = rename_input {
-            return div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .child(
-                    Input::new(rename_input)
-                        .w_full()
-                        .h(px(ROW_HEIGHT_SLIM - 4.))
-                        .text_size(px(type_role.size()))
-                        .bordered(false)
-                        .appearance(false)
-                        .cleanable(false),
-                )
-                .into_any_element();
-        }
+    if view.is_renaming(thread)
+        && let Some(rename_input) = rename_input
+    {
+        return div()
+            .flex_1()
+            .min_w_0()
+            .overflow_hidden()
+            .child(
+                Input::new(rename_input)
+                    .w_full()
+                    .h(px(ROW_HEIGHT_SLIM - 4.))
+                    .text_size(px(type_role.size()))
+                    .bordered(false)
+                    .appearance(false)
+                    .cleanable(false),
+            )
+            .into_any_element();
     }
 
     div()
@@ -672,23 +645,21 @@ fn status_or_time(
     let mono = mono_family();
     let dimmed = view.should_recede(thread) && !view.is_active(thread);
 
-    if show_status {
-        if let Some(label) = thread.status.label() {
-            let color = status_color(thread.status, theme, dimmed);
-            return h_flex()
-                .flex_shrink_0()
-                .gap(px(4.))
-                .items_center()
-                .children(status_icon(thread.status, color))
-                .child(
-                    div()
-                        .font_family(mono)
-                        .text_size(px(TypeRole::LabelMd.size()))
-                        .text_color(color)
-                        .child(label),
-                )
-                .into_any_element();
-        }
+    if show_status && let Some(label) = thread.status.label() {
+        let color = status_color(thread.status, theme, dimmed);
+        return h_flex()
+            .flex_shrink_0()
+            .gap(px(4.))
+            .items_center()
+            .children(status_icon(thread.status, color))
+            .child(
+                div()
+                    .font_family(mono)
+                    .text_size(px(TypeRole::LabelMd.size()))
+                    .text_color(color)
+                    .child(label),
+            )
+            .into_any_element();
     }
 
     div()
@@ -733,22 +704,20 @@ fn branch_meta_row(thread: &DemoThread, theme: &OpenCoreTheme) -> impl IntoEleme
         .gap(px(6.))
         .overflow_hidden()
         .text_size(px(TypeRole::LabelMd.size()))
-        .child(
-            thread.branch.map_or_else(
-                || div().flex_1().min_w_0().into_any_element(),
-                |branch| {
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .font_family(mono.clone())
-                        .text_color(muted)
-                        .child(branch)
-                        .into_any_element()
-                },
-            ),
-        )
+        .child(thread.branch.map_or_else(
+            || div().flex_1().min_w_0().into_any_element(),
+            |branch| {
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .font_family(mono.clone())
+                    .text_color(muted)
+                    .child(branch)
+                    .into_any_element()
+            },
+        ))
         .children(terminal_indicator(thread, muted))
         .children(pr_badge(thread, muted, mono.clone()))
         .children(diff_stats(thread, green, red, mono))
