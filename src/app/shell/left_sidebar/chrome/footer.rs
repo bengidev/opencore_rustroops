@@ -1,4 +1,4 @@
-//! T3-style sidebar footer: utilities, back navigation, and update pill stub.
+//! Sidebar footer: utilities, back navigation, and update pill stub.
 
 use gpui::{
     App, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
@@ -23,6 +23,8 @@ pub fn sidebar_chrome_footer(
     theme: &OpenCoreTheme,
     on_back: impl Fn(&mut Window, &mut App) + 'static,
     on_settings: impl Fn(&mut Window, &mut App) + 'static,
+    on_prs: impl Fn(&mut Window, &mut App) + 'static,
+    on_usage: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let surface = theme.surface(BackgroundToken::Primary);
     let border = theme.border_token(BorderToken::Default);
@@ -43,7 +45,9 @@ pub fn sidebar_chrome_footer(
             None
         })
         .children(match mode {
-            FooterMode::Utilities => Some(utilities_cluster(muted, border, surface, on_settings)),
+            FooterMode::Utilities => Some(
+                utilities_cluster(muted, border, surface, on_settings, on_prs, on_usage),
+            ),
             FooterMode::Back => Some(back_button(muted, border, surface, on_back)),
         })
 }
@@ -53,6 +57,8 @@ fn utilities_cluster(
     border: gpui::Hsla,
     surface: gpui::Hsla,
     on_settings: impl Fn(&mut Window, &mut App) + 'static,
+    on_prs: impl Fn(&mut Window, &mut App) + 'static,
+    on_usage: impl Fn(&mut Window, &mut App) + 'static,
 ) -> gpui::AnyElement {
     h_flex()
         .gap(px(SpacingToken::S1.value()))
@@ -72,7 +78,7 @@ fn utilities_cluster(
             muted,
             border,
             surface,
-            |_, _| {},
+            on_prs,
         ))
         .child(utility_icon_button(
             "left-sidebar-usage",
@@ -81,7 +87,7 @@ fn utilities_cluster(
             muted,
             border,
             surface,
-            |_, _| {},
+            on_usage,
         ))
         .into_any_element()
 }
