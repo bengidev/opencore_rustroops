@@ -8,7 +8,7 @@ mod shelf_body;
 mod shelf_header;
 mod thread_row;
 
-pub use draft_row::sidebar_draft_row;
+pub use draft_row::{DraftRowDragActions, sidebar_draft_row};
 pub use pinned_drag::{PinnedDragState, PinnedRowDragUi};
 pub use empty_state::{sidebar_add_project_button, sidebar_empty_state};
 pub use project_scope_row::sidebar_project_scope_row;

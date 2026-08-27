@@ -1,4 +1,4 @@
-//! Row surface colors aligned with t3code sidebar semantic tokens.
+//! Row surface colors for sidebar thread rows.
 
 use gpui::Hsla;
 
