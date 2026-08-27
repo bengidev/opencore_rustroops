@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use gpui::{App, FocusHandle, Window};
 
-use super::welcome_ascii_galaxy::{DEFAULT_SEED, GalaxyAscii};
+use super::ascii_galaxy::{DEFAULT_SEED, GalaxyAscii};
 
 pub struct WelcomeUiState {
     galaxy: GalaxyAscii,
