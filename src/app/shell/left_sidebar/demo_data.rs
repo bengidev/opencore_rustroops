@@ -4,7 +4,6 @@
 pub enum ThreadShelf {
     Pinned,
     Active,
-    Snoozed,
     Settled,
 }
 
@@ -76,8 +75,8 @@ pub const DEMO_PROJECTS: [DemoProject; 2] = [
         favicon_hue: 0xD7_19_21,
     },
     DemoProject {
-        key: "t3code",
-        display_name: "t3code",
+        key: "sample_app",
+        display_name: "sample_app",
         favicon_hue: 0x3B_82_F6,
     },
 ];
@@ -86,10 +85,10 @@ pub const DEMO_DRAFT: DemoDraft = DemoDraft {
     id: "draft-1",
     project_key: "opencore",
     project_title: "opencore_rustroops",
-    preview: "Sketch thread sidebar parity…",
+    preview: "New thread draft…",
 };
 
-pub const DEMO_THREADS: [DemoThread; 14] = [
+pub const DEMO_THREADS: [DemoThread; 15] = [
     DemoThread {
         id: "pinned-1",
         title: "Fix dock layout persistence",
@@ -106,6 +105,23 @@ pub const DEMO_THREADS: [DemoThread; 14] = [
         is_unread: false,
         is_woke: false,
         terminal_process_count: 1,
+    },
+    DemoThread {
+        id: "pinned-2",
+        title: "Pinned thread drag reorder",
+        project_key: "opencore",
+        project_title: "opencore_rustroops",
+        branch: Some("feat/left-sidebar"),
+        shelf: ThreadShelf::Pinned,
+        time_label: "45m",
+        status: ThreadStatus::Ready,
+        pr_number: None,
+        diff_insertions: None,
+        diff_deletions: None,
+        pinned: true,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
     },
     DemoThread {
         id: "active-1",
@@ -144,8 +160,8 @@ pub const DEMO_THREADS: [DemoThread; 14] = [
     DemoThread {
         id: "active-3",
         title: "Approval gate on deploy",
-        project_key: "t3code",
-        project_title: "t3code",
+        project_key: "sample_app",
+        project_title: "sample_app",
         branch: Some("feat/deploy"),
         shelf: ThreadShelf::Active,
         time_label: "45m",
@@ -159,13 +175,13 @@ pub const DEMO_THREADS: [DemoThread; 14] = [
         terminal_process_count: 0,
     },
     DemoThread {
-        id: "snoozed-1",
+        id: "active-4",
         title: "Review gpui-component dock APIs",
-        project_key: "t3code",
-        project_title: "t3code",
+        project_key: "sample_app",
+        project_title: "sample_app",
         branch: Some("research/dock"),
-        shelf: ThreadShelf::Snoozed,
-        time_label: "tomorrow 9a",
+        shelf: ThreadShelf::Active,
+        time_label: "2h",
         status: ThreadStatus::Ready,
         pr_number: None,
         diff_insertions: None,
@@ -263,8 +279,8 @@ pub const DEMO_THREADS: [DemoThread; 14] = [
     DemoThread {
         id: "settled-6",
         title: "Thread sidebar search",
-        project_key: "t3code",
-        project_title: "t3code",
+        project_key: "sample_app",
+        project_title: "sample_app",
         branch: Some("feat/search"),
         shelf: ThreadShelf::Settled,
         time_label: "3w",
@@ -297,8 +313,8 @@ pub const DEMO_THREADS: [DemoThread; 14] = [
     DemoThread {
         id: "settled-8",
         title: "Right panel file tree",
-        project_key: "t3code",
-        project_title: "t3code",
+        project_key: "sample_app",
+        project_title: "sample_app",
         branch: Some("feat/files"),
         shelf: ThreadShelf::Settled,
         time_label: "5w",
