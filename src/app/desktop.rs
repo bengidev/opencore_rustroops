@@ -21,7 +21,7 @@ use crate::shared::preferences::{FilePreferencesStore, PreferencesError, Prefere
 use crate::shared::theme::{OpenCoreTheme, ThemeTransition, apply_nothing_theme};
 
 use super::AppError;
-use super::app_state::{ActiveScreen, AppState};
+use super::state::{ActiveScreen, AppState};
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
 use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
@@ -629,7 +629,7 @@ pub fn run_desktop() -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::app_state::{
+    use crate::app::state::{
         HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH, WELCOME_WINDOW_HEIGHT, WELCOME_WINDOW_WIDTH,
     };
     use crate::shared::preferences::{AppPreferences, InMemoryPreferencesStore};

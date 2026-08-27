@@ -22,7 +22,7 @@ pub(crate) const FAB_HEIGHT: f32 = 28.0;
 /// Bottom-right inset for default position.
 const EDGE_INSET: f32 = 24.0;
 
-/// Drag state for the dev reset FAB, owned by [`crate::app::app_desktop::OpenCoreApp`].
+/// Drag state for the dev reset FAB, owned by [`crate::app::desktop::OpenCoreApp`].
 #[derive(Debug, Clone)]
 pub struct DevResetState {
     /// Current FAB position in window pixels from top-left.

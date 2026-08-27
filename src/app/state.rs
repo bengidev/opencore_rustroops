@@ -1,6 +1,6 @@
 //! Application state held at the composition root.
 
-use super::app_boot::boot_screen;
+use super::boot::boot_screen;
 use super::welcome::WelcomeOutcome;
 use crate::shared::preferences::{AppPreferences, PreferencesError, PreferencesStore};
 use crate::shared::theme::ThemeMode;

@@ -1,9 +1,9 @@
 //! Application composition root (**Facade**): boot routing, welcome completion,
 //! preferences I/O, and desktop window lifecycle.
 
-mod app_boot;
-mod app_desktop;
-mod app_state;
+mod boot;
+mod desktop;
+mod state;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
@@ -12,8 +12,8 @@ mod viewport;
 mod welcome;
 mod window_placement;
 
-pub use app_boot::boot_screen;
-pub use app_state::{
+pub use boot::boot_screen;
+pub use state::{
     ActiveScreen, AppState, HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH, WELCOME_WINDOW_HEIGHT,
     WELCOME_WINDOW_WIDTH, WindowResizeIntent,
 };
@@ -45,7 +45,7 @@ pub fn boot() -> Result<RunningApp, AppError> {
 
 /// Boots the application and runs the desktop window until it closes.
 pub fn run() -> Result<(), AppError> {
-    app_desktop::run_desktop()
+    desktop::run_desktop()
 }
 
 #[cfg(test)]
