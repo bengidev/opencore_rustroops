@@ -16,25 +16,22 @@ use gpui_component::{
 };
 
 use crate::app::shell::workspace_theme::WorkspaceTheme;
-use crate::shared::theme::{
-    BackgroundToken, BorderToken, OpenCoreTheme, SpacingToken, TypeRole,
-};
+use crate::shared::theme::{BackgroundToken, BorderToken, OpenCoreTheme, SpacingToken, TypeRole};
 
 use super::chrome::sidebar_chrome_footer;
 use super::content::{
     DraftRowDragActions, PinnedDragState, PinnedRowDragUi, ShelfTone, ThreadRowActions,
-    ThreadRowVariant, sidebar_add_project_button,
-    sidebar_draft_row, sidebar_empty_state, sidebar_project_scope_row,
-    sidebar_search_result_row, sidebar_search_row, sidebar_shelf_body, sidebar_section_header,
-    sidebar_shelf_header,
-    sidebar_show_more_button, sidebar_thread_row,
+    ThreadRowVariant, sidebar_add_project_button, sidebar_draft_row, sidebar_empty_state,
+    sidebar_project_scope_row, sidebar_search_result_row, sidebar_search_row,
+    sidebar_section_header, sidebar_shelf_body, sidebar_shelf_header, sidebar_show_more_button,
+    sidebar_thread_row,
 };
 use super::demo_data::{DEMO_DRAFT, DEMO_THREADS};
 use super::shelf_tween::{
-    eval_shelf_tween, shelf_content_height_card, shelf_content_height_slim, shelf_expand_progress,
-    ShelfHeightTween,
+    ShelfHeightTween, eval_shelf_tween, shelf_content_height_card, shelf_content_height_slim,
+    shelf_expand_progress,
 };
-use super::state::{demo_draft, FooterBackContext, RevealShelf, SidebarViewModel};
+use super::state::{FooterBackContext, RevealShelf, SidebarViewModel, demo_draft};
 use super::tokens::{CONTENT_INSET, DOCK_RESIZE_GUTTER};
 
 const PANEL_TITLE: &str = "THREADS";
@@ -75,10 +72,13 @@ impl LeftSidebarPanel {
         let rename_subscription = cx.subscribe_in(
             &rename_input,
             window,
-            move |this, _, event, window, cx| {
-                if matches!(event, InputEvent::PressEnter { .. }) {
-                    this.commit_rename(window, cx);
+            move |this, _, event, window, cx| match event {
+                InputEvent::PressEnter { .. } => this.commit_rename(window, cx),
+                InputEvent::Blur => {
+                    this.view.cancel_rename();
+                    cx.notify();
                 }
+                _ => {}
             },
         );
 
@@ -266,12 +266,10 @@ impl LeftSidebarPanel {
         cx: &mut Context<Self>,
     ) {
         let shelf = self.view.reveal_shelf_target(thread_id);
-        self.view.prepare_thread_reveal(thread_id);
         if let Some(shelf) = shelf {
             self.expand_reveal_shelf(shelf, now, cx);
         }
-        self.view.activate_thread(thread_id);
-        self.view.clear_search();
+        self.view.activate_from_search(thread_id);
         self.clear_search_input(window, cx);
         cx.notify();
     }
@@ -480,14 +478,14 @@ impl LeftSidebarPanel {
                 move |target_id: String, insert_after: bool, _window, cx| {
                     panel.update(cx, |panel, cx| {
                         let dragged_id = panel.pinned_dragging_id.clone();
-                        if let Some(dragged_id) = dragged_id {
-                            if !panel.view.can_reorder_threads(&dragged_id, &target_id) {
-                                if panel.pinned_drop_target.is_some() {
-                                    panel.pinned_drop_target = None;
-                                    cx.notify();
-                                }
-                                return;
+                        if let Some(dragged_id) = dragged_id
+                            && !panel.view.can_reorder_threads(&dragged_id, &target_id)
+                        {
+                            if panel.pinned_drop_target.is_some() {
+                                panel.pinned_drop_target = None;
+                                cx.notify();
                             }
+                            return;
                         }
                         let changed = panel.pinned_drop_target.as_ref()
                             != Some(&(target_id.clone(), insert_after));
@@ -514,7 +512,9 @@ impl LeftSidebarPanel {
                             .filter(|(id, _)| id == &target_id)
                             .map(|(_, after)| *after)
                             .unwrap_or(false);
-                        panel.view.reorder_thread(&dragged_id, &target_id, insert_after);
+                        panel
+                            .view
+                            .reorder_thread(&dragged_id, &target_id, insert_after);
                         panel.pinned_dragging_id = None;
                         panel.pinned_drop_target = None;
                         cx.notify();
@@ -548,8 +548,15 @@ impl LeftSidebarPanel {
         }
     }
 
-    fn begin_rename_thread(&mut self, thread_id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let thread = super::demo_data::DEMO_THREADS.iter().find(|t| t.id == thread_id);
+    fn begin_rename_thread(
+        &mut self,
+        thread_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let thread = super::demo_data::DEMO_THREADS
+            .iter()
+            .find(|t| t.id == thread_id);
         if thread.is_none() {
             return;
         }
@@ -709,7 +716,9 @@ impl Render for LeftSidebarPanel {
                     let panel = panel.clone();
                     move |window, cx| {
                         panel.update(cx, |panel, cx| {
-                            panel.view.open_footer_utility(FooterBackContext::PullRequests);
+                            panel
+                                .view
+                                .open_footer_utility(FooterBackContext::PullRequests);
                             cx.notify();
                         });
                         let _ = window;
@@ -766,10 +775,10 @@ fn sidebar_fixed_controls(
             {
                 let panel = panel.clone();
                 move |_window, cx| {
-                        panel.update(cx, |panel, cx| {
-                            panel.view.show_draft();
-                            cx.notify();
-                        });
+                    panel.update(cx, |panel, cx| {
+                        panel.view.show_draft();
+                        cx.notify();
+                    });
                 }
             },
         ))
@@ -788,10 +797,10 @@ fn sidebar_fixed_controls(
             {
                 let panel = panel.clone();
                 move |_window, cx| {
-                        panel.update(cx, |panel, cx| {
-                            panel.view.show_draft();
-                            cx.notify();
-                        });
+                    panel.update(cx, |panel, cx| {
+                        panel.view.show_draft();
+                        cx.notify();
+                    });
                 }
             },
         ))
@@ -853,8 +862,7 @@ fn thread_list(
     let archived_count = archived_threads.len();
     let settled_show_more = view.settled_expanded && view.settled_has_more();
     let pinned_full_height = shelf_content_height_card(pinned_count);
-    let settled_full_height =
-        shelf_content_height_slim(settled_visible_count, settled_show_more);
+    let settled_full_height = shelf_content_height_slim(settled_visible_count, settled_show_more);
     let archived_full_height = shelf_content_height_slim(archived_count, false);
     let pinned_clip = LeftSidebarPanel::shelf_clip_height(
         pinned_height_tween,
@@ -932,45 +940,41 @@ fn thread_list(
         } else {
             None
         })
-        .child(
-            sidebar_shelf_body(
-                "pinned",
-                pinned_clip,
-                pinned_show,
-                pinned_threads
-                    .iter()
-                    .map(|thread| {
-                        let row_drag = Some(drag_state.for_thread(thread.id));
-                        thread_row_with_scroll(
-                            thread,
-                            ThreadRowVariant::Card,
-                            view,
-                            theme,
-                            actions,
-                            rename_input,
-                            row_drag,
-                            scroll_handle,
-                            scroll_anchors,
-                        )
-                        .into_any_element()
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-        )
+        .child(sidebar_shelf_body(
+            "pinned",
+            pinned_clip,
+            pinned_show,
+            pinned_threads
+                .iter()
+                .map(|thread| {
+                    let row_drag = Some(drag_state.for_thread(thread.id));
+                    thread_row_with_scroll(
+                        thread,
+                        ThreadRowVariant::Card,
+                        view,
+                        theme,
+                        actions,
+                        rename_input,
+                        row_drag,
+                        scroll_handle,
+                        scroll_anchors,
+                    )
+                    .into_any_element()
+                })
+                .collect::<Vec<_>>(),
+        ))
         .child(sidebar_section_header("Active", ShelfTone::Active, theme))
-        .children(
-            active_section_rows(
-                view,
-                theme,
-                actions,
-                &draft_drag,
-                &drag_state,
-                rename_input,
-                panel_entity.clone(),
-                scroll_handle,
-                scroll_anchors,
-            ),
-        )
+        .children(active_section_rows(
+            view,
+            theme,
+            actions,
+            &draft_drag,
+            &drag_state,
+            rename_input,
+            panel_entity.clone(),
+            scroll_handle,
+            scroll_anchors,
+        ))
         .children(if show_empty {
             Some(
                 v_flex()
@@ -978,10 +982,10 @@ fn thread_list(
                     .child(sidebar_add_project_button(theme, {
                         let panel = panel_entity.clone();
                         move |_window, cx| {
-                        panel.update(cx, |panel, cx| {
-                            panel.view.show_draft();
-                            cx.notify();
-                        });
+                            panel.update(cx, |panel, cx| {
+                                panel.view.show_draft();
+                                cx.notify();
+                            });
                         }
                     }))
                     .into_any_element(),
@@ -1007,47 +1011,41 @@ fn thread_list(
         } else {
             None
         })
-        .child(
-            sidebar_shelf_body(
-                "settled",
-                settled_clip,
-                settled_show,
-                settled_visible
-                    .iter()
-                    .map(|thread| {
-                        let row_drag = Some(drag_state.for_thread(thread.id));
-                        thread_row_with_scroll(
-                            thread,
-                            ThreadRowVariant::Slim,
-                            view,
-                            theme,
-                            actions,
-                            rename_input,
-                            row_drag,
-                            scroll_handle,
-                            scroll_anchors,
-                        )
-                        .into_any_element()
-                    })
-                    .chain(
-                        settled_show_more
-                            .then(|| {
-                                sidebar_show_more_button(theme, {
-                                    let panel = panel_entity.clone();
-                                    move |_window, cx| {
-                                        panel.update(cx, |panel, cx| {
-                                            panel.view.show_more_settled();
-                                            cx.notify();
-                                        });
-                                    }
-                                })
-                                .into_any_element()
-                            })
-                            .into_iter(),
+        .child(sidebar_shelf_body(
+            "settled",
+            settled_clip,
+            settled_show,
+            settled_visible
+                .iter()
+                .map(|thread| {
+                    let row_drag = Some(drag_state.for_thread(thread.id));
+                    thread_row_with_scroll(
+                        thread,
+                        ThreadRowVariant::Slim,
+                        view,
+                        theme,
+                        actions,
+                        rename_input,
+                        row_drag,
+                        scroll_handle,
+                        scroll_anchors,
                     )
-                    .collect::<Vec<_>>(),
-            ),
-        )
+                    .into_any_element()
+                })
+                .chain(settled_show_more.then(|| {
+                    sidebar_show_more_button(theme, {
+                        let panel = panel_entity.clone();
+                        move |_window, cx| {
+                            panel.update(cx, |panel, cx| {
+                                panel.view.show_more_settled();
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .into_any_element()
+                }))
+                .collect::<Vec<_>>(),
+        ))
         .children(if archived_count > 0 {
             Some(sidebar_shelf_header(
                 &archived_label,
@@ -1066,31 +1064,29 @@ fn thread_list(
         } else {
             None
         })
-        .child(
-            sidebar_shelf_body(
-                "archived",
-                archived_clip,
-                archived_show,
-                archived_threads
-                    .iter()
-                    .map(|thread| {
-                        let row_drag = Some(drag_state.for_thread(thread.id));
-                        thread_row_with_scroll(
-                            thread,
-                            ThreadRowVariant::Slim,
-                            view,
-                            theme,
-                            actions,
-                            rename_input,
-                            row_drag,
-                            scroll_handle,
-                            scroll_anchors,
-                        )
-                        .into_any_element()
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-        )
+        .child(sidebar_shelf_body(
+            "archived",
+            archived_clip,
+            archived_show,
+            archived_threads
+                .iter()
+                .map(|thread| {
+                    let row_drag = Some(drag_state.for_thread(thread.id));
+                    thread_row_with_scroll(
+                        thread,
+                        ThreadRowVariant::Slim,
+                        view,
+                        theme,
+                        actions,
+                        rename_input,
+                        row_drag,
+                        scroll_handle,
+                        scroll_anchors,
+                    )
+                    .into_any_element()
+                })
+                .collect::<Vec<_>>(),
+        ))
         .into_any_element()
 }
 
@@ -1119,24 +1115,19 @@ fn search_results_list(
                 .iter()
                 .map(|thread| {
                     let panel = panel_for_activate.clone();
-                    sidebar_search_result_row(
-                        thread,
-                        view,
-                        theme,
-                        move |id, window, cx| {
-                            let panel_defer = panel.clone();
-                            let scroll_id = id.clone();
-                            panel.update(cx, |panel, cx| {
-                                panel.activate_from_search_animated(&id, Instant::now(), window, cx);
+                    sidebar_search_result_row(thread, view, theme, move |id, window, cx| {
+                        let panel_defer = panel.clone();
+                        let scroll_id = id.clone();
+                        panel.update(cx, |panel, cx| {
+                            panel.activate_from_search_animated(&id, Instant::now(), window, cx);
+                        });
+                        window.defer(cx, move |window, cx| {
+                            panel_defer.update(cx, |panel, cx| {
+                                panel.scroll_to_thread(&scroll_id, window, cx);
+                                cx.notify();
                             });
-                            window.defer(cx, move |window, cx| {
-                                panel_defer.update(cx, |panel, cx| {
-                                    panel.scroll_to_thread(&scroll_id, window, cx);
-                                    cx.notify();
-                                });
-                            });
-                        },
-                    )
+                        });
+                    })
                 })
                 .collect::<Vec<_>>(),
         )
