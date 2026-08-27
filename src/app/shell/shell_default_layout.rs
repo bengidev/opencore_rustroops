@@ -3,11 +3,12 @@
 use gpui::{App, AppContext, Edges, Entity, Window, px};
 use gpui_component::dock::{DockArea, DockItem};
 
+use super::left_sidebar::LeftSidebarPanel;
 use super::main_workspace_panel::MainWorkspacePanel;
-use super::shell_panels::{BottomStubPanel, LeftStubPanel, RightStubPanel};
+use super::shell_panels::{BottomStubPanel, FilesStubPanel, RightStubPanel};
 use super::workspace_theme::workspace_theme;
 
-pub const DOCK_LAYOUT_VERSION: usize = 8;
+pub const DOCK_LAYOUT_VERSION: usize = 9;
 pub const SIDEBAR_DEFAULT: f32 = 256.0;
 pub const RIGHT_DEFAULT: f32 = 320.0;
 pub const BOTTOM_DEFAULT: f32 = 220.0;
@@ -52,10 +53,9 @@ pub fn apply_default_holy_grail(dock_area: &Entity<DockArea>, window: &mut Windo
     );
     let left = wrap_for_dnd(
         DockItem::tabs(
-            vec![
-                std::sync::Arc::new(cx.new(LeftStubPanel::new)),
-                std::sync::Arc::new(cx.new(|cx| LeftStubPanel::with_title("FILES", cx))),
-            ],
+            vec![std::sync::Arc::new(cx.new(|cx| {
+                LeftSidebarPanel::new(window, workspace_theme(), cx)
+            }))],
             &weak,
             window,
             cx,
@@ -67,6 +67,7 @@ pub fn apply_default_holy_grail(dock_area: &Entity<DockArea>, window: &mut Windo
     let right = wrap_for_dnd(
         DockItem::tabs(
             vec![
+                std::sync::Arc::new(cx.new(FilesStubPanel::new)),
                 std::sync::Arc::new(cx.new(RightStubPanel::new)),
                 std::sync::Arc::new(cx.new(|cx| RightStubPanel::with_title("OUTLINE", cx))),
             ],
@@ -143,7 +144,7 @@ mod tests {
         assert_eq!(SIDEBAR_DEFAULT, 256.0);
         assert_eq!(RIGHT_DEFAULT, 320.0);
         assert_eq!(BOTTOM_DEFAULT, 220.0);
-        assert_eq!(DOCK_LAYOUT_VERSION, 8);
+        assert_eq!(DOCK_LAYOUT_VERSION, 9);
         assert_eq!(EDGE_DOCK_TAB_COUNT, 2);
     }
 }

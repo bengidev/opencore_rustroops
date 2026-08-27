@@ -6,6 +6,7 @@ use gpui::{
 };
 use gpui_component::dock::{Panel, PanelEvent, register_panel};
 
+use super::left_sidebar::LeftSidebarPanel;
 use super::main_workspace_panel::MainWorkspacePanel;
 use super::workspace_theme::workspace_theme;
 
@@ -24,6 +25,7 @@ macro_rules! stub_panel {
                 }
             }
 
+            #[allow(dead_code)]
             pub fn with_title(title: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
                 Self {
                     focus_handle: cx.focus_handle(),
@@ -76,13 +78,13 @@ macro_rules! stub_panel {
     };
 }
 
-stub_panel!(LeftStubPanel, "left-stub", "LEFT");
+stub_panel!(FilesStubPanel, "left-files", "FILES");
 stub_panel!(RightStubPanel, "right-stub", "RIGHT");
 stub_panel!(BottomStubPanel, "bottom-stub", "BOTTOM");
 
 pub fn register_shell_panels(cx: &mut App) {
-    register_panel(cx, "left-stub", |_, _, _, _, cx| {
-        Box::new(cx.new(LeftStubPanel::new))
+    register_panel(cx, "left-stub", |_, _, _, window, cx| {
+        Box::new(cx.new(|cx| LeftSidebarPanel::new(window, workspace_theme(), cx)))
     });
     register_panel(cx, "right-stub", |_, _, _, _, cx| {
         Box::new(cx.new(RightStubPanel::new))

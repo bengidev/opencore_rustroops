@@ -213,7 +213,8 @@ fn patch_dock_animated_clip(path: &std::path::Path) -> bool {
     if content.contains(PATCH_MARKER_ANIMATED_CLIP) {
         return patch_dock_animated_clip_doc_comment(path)
             | patch_dock_animated_clip_from_state(path)
-            | patch_dock_display_size_closed(path);
+            | patch_dock_display_size_closed(path)
+            | patch_dock_resize_sync_clip(path);
     }
 
     let struct_needle = "    /// Whether the Dock is resizing\n    resizing: bool,\n}";
@@ -353,6 +354,34 @@ fn patch_dock_display_size_closed(path: &std::path::Path) -> bool {
     let needle = "    pub fn display_size(&self) -> Pixels {\n        self.animated_size.unwrap_or(self.size)\n    }\n";
     let replacement = format!(
         "    pub fn display_size(&self) -> Pixels {{\n        // {marker}\n        if !self.open {{\n            return self.animated_size.unwrap_or(px(0.));\n        }}\n        self.animated_size.unwrap_or(self.size)\n    }}\n"
+    );
+
+    if !content.contains(needle) {
+        return false;
+    }
+
+    let patched = content.replace(needle, &replacement);
+
+    std::fs::write(path, patched).unwrap_or_else(|error| {
+        panic!("failed to write {}: {error}", path.display());
+    });
+
+    true
+}
+
+fn patch_dock_resize_sync_clip(path: &std::path::Path) -> bool {
+    let content = std::fs::read_to_string(path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", path.display());
+    });
+
+    let marker = "opencore_dock_resize_sync_clip";
+    if content.contains(marker) {
+        return false;
+    }
+
+    let needle = "        self.animated_size.unwrap_or(self.size)\n    }\n\n    /// Set the open state of the Dock.\n";
+    let replacement = format!(
+        "        // {marker}\n        if self.resizing {{\n            return self.size;\n        }}\n        self.animated_size.unwrap_or(self.size)\n    }}\n\n    /// Set the open state of the Dock.\n"
     );
 
     if !content.contains(needle) {
