@@ -21,10 +21,10 @@ use crate::shared::preferences::{FilePreferencesStore, PreferencesError, Prefere
 use crate::shared::theme::{OpenCoreTheme, ThemeTransition, apply_nothing_theme};
 
 use super::AppError;
-use super::state::{ActiveScreen, AppState};
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
 use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
+use super::state::{ActiveScreen, AppState};
 use super::viewport::WindowViewport;
 use super::welcome::{
     WelcomeCallbacks, WelcomeCommand, WelcomeOutcome, WelcomeUiState, reduce_welcome,

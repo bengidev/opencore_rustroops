@@ -1,11 +1,11 @@
 //! Post-welcome holy-grail chrome (Dock workspace + title bar toggles).
 
-mod left_sidebar;
-mod main_workspace_panel;
 mod default_layout;
 mod dock_animation;
 mod dock_tween;
 mod layout;
+mod left_sidebar;
+mod main_workspace_panel;
 mod panels;
 mod workspace;
 mod workspace_theme;

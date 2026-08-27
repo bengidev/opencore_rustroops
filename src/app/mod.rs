@@ -3,11 +3,11 @@
 
 mod boot;
 mod desktop;
-mod state;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
 pub mod shell;
+mod state;
 mod viewport;
 mod welcome;
 mod window_placement;
