@@ -12,6 +12,5 @@ pub const SHOW_MORE_HEIGHT: f32 = 32.0;
 pub const ROW_HEIGHT_CARD: f32 = 86.0;
 pub const ICON_BUTTON_SIZE: f32 = 32.0;
 pub const SEARCH_ROW_HEIGHT: f32 = 32.0;
-pub const HEADER_HEIGHT: f32 = 52.0;
 pub const ROW_RADIUS: f32 = 6.0;
 pub const FAVICON_SIZE: f32 = 16.0;
