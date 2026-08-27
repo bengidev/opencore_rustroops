@@ -3,8 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::demo_data::{
-    ALL_PROJECTS_LABEL, DEMO_DRAFT, DEMO_THREADS, DemoDraft, DemoThread, ThreadShelf,
-    ThreadStatus,
+    ALL_PROJECTS_LABEL, DEMO_DRAFT, DEMO_THREADS, DemoDraft, DemoThread, ThreadShelf, ThreadStatus,
 };
 
 pub const SETTLED_PAGE_INITIAL: usize = 10;
@@ -143,8 +142,7 @@ impl SidebarViewModel {
             .filter(|t| !self.is_archived(t))
             .filter(|t| self.matches_scope(t))
             .filter(|t| {
-                query.is_empty()
-                    || self.display_title(t).to_ascii_lowercase().contains(&query)
+                query.is_empty() || self.display_title(t).to_ascii_lowercase().contains(&query)
             })
             .collect()
     }
@@ -280,7 +278,8 @@ impl SidebarViewModel {
     pub fn commit_rename(&mut self, thread_id: &str, title: String) {
         let trimmed = title.trim();
         if !trimmed.is_empty() {
-            self.display_title_overrides.insert(thread_id.to_string(), trimmed.to_string());
+            self.display_title_overrides
+                .insert(thread_id.to_string(), trimmed.to_string());
         }
         self.renaming_thread_id = None;
     }
@@ -305,8 +304,11 @@ impl SidebarViewModel {
         }
         matches!(
             thread.status,
-            ThreadStatus::Ready | ThreadStatus::Working | ThreadStatus::Monitoring
-                | ThreadStatus::Approval | ThreadStatus::Input
+            ThreadStatus::Ready
+                | ThreadStatus::Working
+                | ThreadStatus::Monitoring
+                | ThreadStatus::Approval
+                | ThreadStatus::Input
         )
     }
 
@@ -345,11 +347,7 @@ impl SidebarViewModel {
                 let from = ordered.iter().position(|id| id == &anchor_id);
                 let to = ordered.iter().position(|id| id == thread_id);
                 if let (Some(from), Some(to)) = (from, to) {
-                    let (start, end) = if from <= to {
-                        (from, to)
-                    } else {
-                        (to, from)
-                    };
+                    let (start, end) = if from <= to { (from, to) } else { (to, from) };
                     for id in ordered.iter().take(end + 1).skip(start) {
                         self.selected_thread_ids.insert(id.clone());
                     }
@@ -384,7 +382,12 @@ impl SidebarViewModel {
         if self.archived_thread_ids.contains(dragged_id)
             && self.archived_thread_ids.contains(target_id)
         {
-            reorder_ids(&mut self.archived_order, dragged_id, target_id, insert_after);
+            reorder_ids(
+                &mut self.archived_order,
+                dragged_id,
+                target_id,
+                insert_after,
+            );
             return;
         }
         let dragged_shelf = self.shelf_for_id(dragged_id);
@@ -394,10 +397,6 @@ impl SidebarViewModel {
         }
         let order = self.shelf_order_mut(dragged_shelf);
         reorder_ids(order, dragged_id, target_id, insert_after);
-    }
-
-    pub fn reorder_pinned(&mut self, dragged_id: &str, target_id: &str, insert_after: bool) {
-        self.reorder_thread(dragged_id, target_id, insert_after);
     }
 
     pub fn can_move_thread(&self, thread_id: &str, delta: isize) -> bool {
@@ -435,10 +434,6 @@ impl SidebarViewModel {
                 order.insert(new_pos as usize, id);
             }
         }
-    }
-
-    pub fn move_pinned(&mut self, thread_id: &str, delta: isize) {
-        self.move_thread(thread_id, delta);
     }
 
     pub fn discard_draft(&mut self) {
@@ -557,7 +552,8 @@ impl SidebarViewModel {
 
     fn move_thread_to_shelf(&mut self, thread_id: &str, shelf: ThreadShelf) {
         self.remove_from_shelf_orders(thread_id);
-        self.thread_shelf_overrides.insert(thread_id.to_string(), shelf);
+        self.thread_shelf_overrides
+            .insert(thread_id.to_string(), shelf);
         self.append_to_shelf_order(thread_id, shelf);
     }
 
@@ -671,56 +667,32 @@ mod tests {
     fn pin_moves_thread_to_pinned_shelf() {
         let mut view = SidebarViewModel::new("active-1");
         view.pin_thread("active-2");
-        assert!(view
-            .pinned_threads()
-            .iter()
-            .any(|t| t.id == "active-2"));
-        assert!(!view
-            .active_threads()
-            .iter()
-            .any(|t| t.id == "active-2"));
+        assert!(view.pinned_threads().iter().any(|t| t.id == "active-2"));
+        assert!(!view.active_threads().iter().any(|t| t.id == "active-2"));
     }
 
     #[test]
     fn unpin_moves_thread_back_to_active_list() {
         let mut view = SidebarViewModel::new("active-1");
         view.unpin_thread("pinned-1");
-        assert!(!view
-            .pinned_threads()
-            .iter()
-            .any(|t| t.id == "pinned-1"));
-        assert!(view
-            .active_threads()
-            .iter()
-            .any(|t| t.id == "pinned-1"));
+        assert!(!view.pinned_threads().iter().any(|t| t.id == "pinned-1"));
+        assert!(view.active_threads().iter().any(|t| t.id == "pinned-1"));
     }
 
     #[test]
     fn settle_moves_thread_to_settled_shelf() {
         let mut view = SidebarViewModel::new("active-1");
         view.settle_thread("active-2");
-        assert!(view
-            .settled_threads()
-            .iter()
-            .any(|t| t.id == "active-2"));
-        assert!(!view
-            .active_threads()
-            .iter()
-            .any(|t| t.id == "active-2"));
+        assert!(view.settled_threads().iter().any(|t| t.id == "active-2"));
+        assert!(!view.active_threads().iter().any(|t| t.id == "active-2"));
     }
 
     #[test]
     fn unsettle_moves_thread_back_to_active_list() {
         let mut view = SidebarViewModel::new("active-1");
         view.unsettle_thread("settled-1");
-        assert!(!view
-            .settled_threads()
-            .iter()
-            .any(|t| t.id == "settled-1"));
-        assert!(view
-            .active_threads()
-            .iter()
-            .any(|t| t.id == "settled-1"));
+        assert!(!view.settled_threads().iter().any(|t| t.id == "settled-1"));
+        assert!(view.active_threads().iter().any(|t| t.id == "settled-1"));
     }
 
     #[test]
@@ -745,11 +717,7 @@ mod tests {
     fn reorder_settled_moves_thread_within_settled_list() {
         let mut view = SidebarViewModel::new("active-1");
         view.reorder_thread("settled-1", "settled-2", true);
-        let order: Vec<_> = view
-            .settled_order
-            .iter()
-            .map(|id| id.as_str())
-            .collect();
+        let order: Vec<_> = view.settled_order.iter().map(|id| id.as_str()).collect();
         assert_eq!(order[0], "settled-2");
         assert_eq!(order[1], "settled-1");
     }
@@ -758,12 +726,8 @@ mod tests {
     fn reorder_pinned_moves_thread_relative_to_target() {
         let mut view = SidebarViewModel::new("active-1");
         view.pinned_order = vec!["pinned-1".into(), "pinned-2".into()];
-        view.reorder_pinned("pinned-1", "pinned-2", true);
-        let order: Vec<_> = view
-            .pinned_order
-            .iter()
-            .map(|id| id.as_str())
-            .collect();
+        view.reorder_thread("pinned-1", "pinned-2", true);
+        let order: Vec<_> = view.pinned_order.iter().map(|id| id.as_str()).collect();
         assert_eq!(order, ["pinned-2", "pinned-1"]);
     }
 
@@ -772,11 +736,7 @@ mod tests {
         let mut view = SidebarViewModel::new("active-1");
         view.discard_draft();
         view.reorder_thread("active-1", "active-2", true);
-        let order: Vec<_> = view
-            .active_order
-            .iter()
-            .map(|id| id.as_str())
-            .collect();
+        let order: Vec<_> = view.active_order.iter().map(|id| id.as_str()).collect();
         assert_eq!(order[0], "active-2");
         assert_eq!(order[1], "active-1");
     }
@@ -788,25 +748,13 @@ mod tests {
         assert!(!view.can_move_thread("settled-1", -1));
         assert!(view.can_move_thread("settled-1", 1));
         view.move_thread("settled-1", -1);
-        let order: Vec<_> = view
-            .settled_order
-            .iter()
-            .map(|id| id.as_str())
-            .collect();
+        let order: Vec<_> = view.settled_order.iter().map(|id| id.as_str()).collect();
         assert_eq!(order, ["settled-1", "settled-2"]);
         view.move_thread("settled-2", 1);
-        let order: Vec<_> = view
-            .settled_order
-            .iter()
-            .map(|id| id.as_str())
-            .collect();
+        let order: Vec<_> = view.settled_order.iter().map(|id| id.as_str()).collect();
         assert_eq!(order, ["settled-1", "settled-2"]);
         view.move_thread("settled-1", 1);
-        let order: Vec<_> = view
-            .settled_order
-            .iter()
-            .map(|id| id.as_str())
-            .collect();
+        let order: Vec<_> = view.settled_order.iter().map(|id| id.as_str()).collect();
         assert_eq!(order, ["settled-2", "settled-1"]);
     }
 
@@ -814,14 +762,8 @@ mod tests {
     fn archive_moves_thread_to_archived_shelf() {
         let mut view = SidebarViewModel::new("active-1");
         view.archive_thread("active-2");
-        assert!(view
-            .archived_threads()
-            .iter()
-            .any(|t| t.id == "active-2"));
-        assert!(!view
-            .active_threads()
-            .iter()
-            .any(|t| t.id == "active-2"));
+        assert!(view.archived_threads().iter().any(|t| t.id == "active-2"));
+        assert!(!view.active_threads().iter().any(|t| t.id == "active-2"));
     }
 
     #[test]
@@ -830,20 +772,14 @@ mod tests {
         view.archive_thread("active-2");
         view.unarchive_thread("active-2");
         assert!(view.archived_threads().is_empty());
-        assert!(view
-            .active_threads()
-            .iter()
-            .any(|t| t.id == "active-2"));
+        assert!(view.active_threads().iter().any(|t| t.id == "active-2"));
     }
 
     #[test]
     fn archive_removes_thread_from_lists() {
         let mut view = SidebarViewModel::new("active-1");
         view.archive_thread("active-2");
-        assert!(!view
-            .active_threads()
-            .iter()
-            .any(|t| t.id == "active-2"));
+        assert!(!view.active_threads().iter().any(|t| t.id == "active-2"));
         assert!(view.visible_threads().iter().all(|t| t.id != "active-2"));
     }
 
@@ -856,7 +792,10 @@ mod tests {
         view.activate_from_search("settled-1");
         assert_eq!(view.active_thread_id, "settled-1");
         assert!(view.search_query.is_empty());
-        assert_eq!(view.reveal_shelf_target("settled-1"), Some(RevealShelf::Settled));
+        assert_eq!(
+            view.reveal_shelf_target("settled-1"),
+            Some(RevealShelf::Settled)
+        );
         assert!(view.settled_visible_limit >= 1);
         assert!(!view.settled_expanded);
     }
@@ -867,12 +806,7 @@ mod tests {
         view.begin_rename("active-1");
         view.commit_rename("active-1", "Renamed thread".to_string());
         assert_eq!(
-            view.display_title(
-                DEMO_THREADS
-                    .iter()
-                    .find(|t| t.id == "active-1")
-                    .unwrap()
-            ),
+            view.display_title(DEMO_THREADS.iter().find(|t| t.id == "active-1").unwrap()),
             "Renamed thread"
         );
         assert!(view.renaming_thread_id.is_none());
