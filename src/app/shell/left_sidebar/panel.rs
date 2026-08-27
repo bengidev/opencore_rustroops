@@ -20,7 +20,7 @@ use crate::shared::theme::{
     BackgroundToken, BorderToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
 
-use super::chrome::{sidebar_chrome_footer, sidebar_chrome_header};
+use super::chrome::sidebar_chrome_footer;
 use super::content::{
     DraftRowDragActions, PinnedDragState, PinnedRowDragUi, ShelfTone, ThreadRowActions,
     ThreadRowVariant, sidebar_add_project_button,
@@ -664,7 +664,6 @@ impl Render for LeftSidebarPanel {
             .overflow_hidden()
             .bg(page)
             .track_focus(&self.focus_handle)
-            .child(sidebar_chrome_header(&theme))
             .child(sidebar_fixed_controls(
                 &self.search,
                 view,
