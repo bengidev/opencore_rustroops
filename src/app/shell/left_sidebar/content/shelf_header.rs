@@ -76,7 +76,9 @@ pub fn sidebar_shelf_header(
         .gap(px(8.))
         .overflow_hidden()
         .cursor_pointer()
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| on_toggle(window, cx))
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            on_toggle(window, cx)
+        })
         .child(
             div()
                 .flex_shrink_0()

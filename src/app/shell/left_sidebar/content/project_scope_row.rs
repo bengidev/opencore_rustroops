@@ -65,11 +65,11 @@ pub fn sidebar_project_scope_row(
                     move |menu, _window, _cx| {
                         let mut menu = menu.label("Projects");
                         let on_all = on_scope.clone();
-                        menu = menu.item(
-                            PopupMenuItem::new(ALL_PROJECTS_LABEL).on_click(move |_, window, cx| {
+                        menu = menu.item(PopupMenuItem::new(ALL_PROJECTS_LABEL).on_click(
+                            move |_, window, cx| {
                                 on_all(None, window, cx);
-                            }),
-                        );
+                            },
+                        ));
                         for project in DEMO_PROJECTS {
                             let key = project.key.to_string();
                             let label = project.display_name;

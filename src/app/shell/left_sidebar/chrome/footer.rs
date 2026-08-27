@@ -1,8 +1,6 @@
 //! Sidebar footer: utilities, back navigation, and update pill stub.
 
-use gpui::{
-    App, IntoElement, ParentElement, SharedString, Styled, Window, div, px,
-};
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::{
     Icon, IconName,
     button::{Button, ButtonRounded, ButtonVariants as _},
@@ -10,8 +8,8 @@ use gpui_component::{
 };
 
 use crate::shared::theme::{
-    BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
-    SUCCESS_GREEN,
+    BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SUCCESS_GREEN, SpacingToken,
+    TypeRole,
 };
 
 use super::super::state::FooterMode;
@@ -45,9 +43,14 @@ pub fn sidebar_chrome_footer(
             None
         })
         .children(match mode {
-            FooterMode::Utilities => Some(
-                utilities_cluster(muted, border, surface, on_settings, on_prs, on_usage),
-            ),
+            FooterMode::Utilities => Some(utilities_cluster(
+                muted,
+                border,
+                surface,
+                on_settings,
+                on_prs,
+                on_usage,
+            )),
             FooterMode::Back => Some(back_button(muted, border, surface, on_back)),
         })
 }
@@ -128,13 +131,7 @@ fn update_pill(theme: &OpenCoreTheme, border: gpui::Hsla, surface: gpui::Hsla) -
         .border_color(border)
         .bg(surface)
         .rounded(px(4.))
-        .child(
-            div()
-                .w(px(6.))
-                .h(px(6.))
-                .rounded(px(999.))
-                .bg(dot),
-        )
+        .child(div().w(px(6.)).h(px(6.)).rounded(px(999.)).bg(dot))
         .child(
             div()
                 .font_family(mono_family())

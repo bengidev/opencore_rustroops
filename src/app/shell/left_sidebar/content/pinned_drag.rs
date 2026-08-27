@@ -11,11 +11,7 @@ pub enum ThreadDragScope {
 }
 
 impl ThreadDragScope {
-    pub fn from_thread(
-        _thread_id: &str,
-        effective_shelf: ThreadShelf,
-        is_archived: bool,
-    ) -> Self {
+    pub fn from_thread(_thread_id: &str, effective_shelf: ThreadShelf, is_archived: bool) -> Self {
         if is_archived {
             return Self::Archived;
         }

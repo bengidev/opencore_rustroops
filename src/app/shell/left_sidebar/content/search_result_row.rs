@@ -8,7 +8,7 @@ use gpui_component::{h_flex, v_flex};
 
 use crate::shared::theme::{ForegroundToken, OpenCoreTheme, TypeRole};
 
-use super::super::demo_data::{DemoThread, DEMO_PROJECTS};
+use super::super::demo_data::{DEMO_PROJECTS, DemoThread};
 use super::super::state::SidebarViewModel;
 use super::super::surfaces::{project_favicon_color, row_active_bg, row_hover_bg};
 use super::super::tokens::{FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_SLIM, ROW_RADIUS};

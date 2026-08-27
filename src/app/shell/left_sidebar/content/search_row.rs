@@ -1,8 +1,6 @@
 //! Search row with clear affordance and new-thread action.
 
-use gpui::{
-    App, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div, px,
-};
+use gpui::{App, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div, px};
 use gpui_component::{
     Icon, IconName, Sizable,
     button::{Button, ButtonRounded, ButtonVariants as _},
@@ -54,19 +52,15 @@ pub fn sidebar_search_row(
                         .flex_shrink_0(),
                 )
                 .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .child(
-                            Input::new(search)
-                                .w_full()
-                                .h(px(SEARCH_ROW_HEIGHT - 4.))
-                                .text_size(px(TypeRole::LabelMd.size()))
-                                .bordered(false)
-                                .appearance(false)
-                                .cleanable(false),
-                        ),
+                    div().flex_1().min_w_0().overflow_hidden().child(
+                        Input::new(search)
+                            .w_full()
+                            .h(px(SEARCH_ROW_HEIGHT - 4.))
+                            .text_size(px(TypeRole::LabelMd.size()))
+                            .bordered(false)
+                            .appearance(false)
+                            .cleanable(false),
+                    ),
                 )
                 .children(if !query.is_empty() {
                     Some(
