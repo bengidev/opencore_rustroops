@@ -3,13 +3,14 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ClickEvent, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px, relative,
-    prelude::FluentBuilder as _,
+    AnyElement, App, AppContext, ClickEvent, Context, Entity, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, relative, prelude::FluentBuilder as _,
 };
 use gpui_component::{
     Icon, IconName, Sizable,
     h_flex,
+    input::{Input, InputState},
     menu::{ContextMenuExt as _, PopupMenuItem},
     v_flex,
 };
@@ -18,14 +19,15 @@ use crate::shared::theme::{
     BackgroundToken, ForegroundToken, OpenCoreTheme, TypeRole,
 };
 
-use super::super::demo_data::{DemoThread, DEMO_PROJECTS, ThreadStatus};
+use super::pinned_drag::{PinnedRowDragUi, PinnedThreadDrag, ThreadDragScope};
+use super::super::demo_data::{DemoThread, DEMO_PROJECTS, ThreadShelf, ThreadStatus};
 use super::super::state::SidebarViewModel;
 use super::super::surfaces::{
     pr_open_color, project_favicon_color, row_active_bg, row_hover_bg, row_selected_bg,
     status_color,
 };
 use super::super::tokens::{
-    CONTENT_INSET, FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD, ROW_HEIGHT_SLIM, ROW_RADIUS,
+    FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD, ROW_HEIGHT_SLIM, ROW_RADIUS,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,7 +40,17 @@ pub struct ThreadRowActions {
     pub on_activate: Rc<dyn Fn(String, &mut Window, &mut App)>,
     pub on_select: Rc<dyn Fn(String, bool, &mut Window, &mut App)>,
     pub on_hover: Rc<dyn Fn(Option<String>, &mut Window, &mut App)>,
-    pub on_move_pinned: Rc<dyn Fn(String, isize, &mut Window, &mut App)>,
+    pub on_move_thread: Rc<dyn Fn(String, isize, &mut Window, &mut App)>,
+    pub on_pin: Rc<dyn Fn(String, &mut Window, &mut App)>,
+    pub on_unpin: Rc<dyn Fn(String, &mut Window, &mut App)>,
+    pub on_settle: Rc<dyn Fn(String, &mut Window, &mut App)>,
+    pub on_unsettle: Rc<dyn Fn(String, &mut Window, &mut App)>,
+    pub on_rename: Rc<dyn Fn(String, &mut Window, &mut App)>,
+    pub on_archive: Rc<dyn Fn(String, &mut Window, &mut App)>,
+    pub on_unarchive: Rc<dyn Fn(String, &mut Window, &mut App)>,
+    pub on_pinned_drag_start: Rc<dyn Fn(String, &mut Window, &mut App)>,
+    pub on_pinned_drag_over: Rc<dyn Fn(String, bool, &mut Window, &mut App)>,
+    pub on_pinned_drop: Rc<dyn Fn(String, String, &mut Window, &mut App)>,
 }
 
 pub fn sidebar_thread_row(
@@ -47,21 +59,36 @@ pub fn sidebar_thread_row(
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
     actions: &ThreadRowActions,
+    rename_input: Option<&Entity<InputState>>,
+    pinned_drag: Option<PinnedRowDragUi>,
+    scroll_anchor: Option<gpui::ScrollAnchor>,
 ) -> AnyElement {
     match variant {
-        ThreadRowVariant::Card => card_row(thread, view, theme, actions).into_any_element(),
-        ThreadRowVariant::Slim => slim_row(thread, view, theme, actions).into_any_element(),
+        ThreadRowVariant::Card => {
+            card_row(
+                thread,
+                view,
+                theme,
+                actions,
+                rename_input,
+                pinned_drag,
+                scroll_anchor,
+            )
+            .into_any_element()
+        }
+        ThreadRowVariant::Slim => {
+            slim_row(
+                thread,
+                view,
+                theme,
+                actions,
+                rename_input,
+                pinned_drag,
+                scroll_anchor,
+            )
+            .into_any_element()
+        }
     }
-}
-
-pub fn sidebar_pinned_divider(theme: &OpenCoreTheme) -> impl IntoElement {
-    let border = theme.border_token(crate::shared::theme::BorderToken::Default);
-    div()
-        .id("left-sidebar-pinned-divider")
-        .w_full()
-        .my(px(super::super::tokens::PINNED_DIVIDER_MARGIN))
-        .h(px(1.))
-        .bg(border.alpha(0.6))
 }
 
 pub fn sidebar_show_more_button(
@@ -90,6 +117,8 @@ fn row_surface(
     height: f32,
     variant_key: &str,
     actions: &ThreadRowActions,
+    pinned_drag: Option<PinnedRowDragUi>,
+    scroll_anchor: Option<gpui::ScrollAnchor>,
     content: impl IntoElement,
 ) -> impl IntoElement {
     let is_active = view.is_active(thread);
@@ -115,27 +144,150 @@ fn row_surface(
     let on_select = actions.on_select.clone();
     let on_activate = actions.on_activate.clone();
     let on_hover = actions.on_hover.clone();
-    let on_move_pinned = actions.on_move_pinned.clone();
-    let pinned = thread.pinned;
-    let menu_title = thread.title.to_string();
+    let on_move_thread = actions.on_move_thread.clone();
+    let on_pin = actions.on_pin.clone();
+    let on_unpin = actions.on_unpin.clone();
+    let on_settle = actions.on_settle.clone();
+    let on_unsettle = actions.on_unsettle.clone();
+    let on_rename = actions.on_rename.clone();
+    let on_archive = actions.on_archive.clone();
+    let on_unarchive = actions.on_unarchive.clone();
+    let on_pinned_drag_start = actions.on_pinned_drag_start.clone();
+    let on_pinned_drag_over = actions.on_pinned_drag_over.clone();
+    let on_pinned_drop = actions.on_pinned_drop.clone();
+    let is_pinned = view.effective_shelf(thread) == ThreadShelf::Pinned;
+    let is_settled = view.effective_shelf(thread) == ThreadShelf::Settled;
+    let is_archived = view.is_archived(thread);
+    let drag_scope = ThreadDragScope::from_thread(
+        thread.id,
+        view.effective_shelf(thread),
+        is_archived,
+    );
+    let menu_title = view.display_title(thread);
+    let row_drag = pinned_drag.unwrap_or_default();
+    let drop_line_color: gpui::Hsla = gpui::rgb(0x3B82F6).into();
+    let drag_hover_bg = row_hover_bg(theme);
+
+    let is_card = variant_key == "card";
 
     div()
         .id(format!("left-sidebar-thread-{variant_key}-{}", thread.id))
+        .anchor_scroll(scroll_anchor)
         .w_full()
         .min_w_0()
-        .h(px(height))
+        .relative()
         .flex()
-        .items_center()
-        .overflow_hidden()
-        .rounded(px(ROW_RADIUS))
+        .when(is_card, |row| row.h(px(height)).items_start().overflow_x_hidden())
+        .when(!is_card, |row| row.h(px(height)).items_center().overflow_hidden())
         .bg(bg)
         .text_color(text)
         .cursor_pointer()
+        .when(row_drag.drop_above, |row| {
+            row.child(
+                div()
+                    .absolute()
+                    .top(px(0.))
+                    .left(px(0.))
+                    .right(px(0.))
+                    .h(px(2.))
+                    .bg(drop_line_color),
+            )
+        })
+        .when(row_drag.drop_below, |row| {
+            row.child(
+                div()
+                    .absolute()
+                    .bottom(px(0.))
+                    .left(px(0.))
+                    .right(px(0.))
+                    .h(px(2.))
+                    .bg(drop_line_color),
+            )
+        })
         .when(!is_active && !is_selected, |row| {
             row.hover(|style| style.bg(row_hover_bg(theme)))
         })
         .when(recede && !is_active && !is_selected, |row| {
             row.opacity(0.85)
+        })
+        .when(row_drag.is_source, |row| row.opacity(0.45))
+        .on_drag(
+            PinnedThreadDrag {
+                thread_id: thread_id.clone(),
+                scope: drag_scope,
+                title: menu_title.clone().into(),
+                preview_bg: theme.surface(BackgroundToken::Secondary),
+                preview_text: theme.foreground(ForegroundToken::Primary),
+            },
+            {
+                let on_pinned_drag_start = on_pinned_drag_start.clone();
+                move |drag, _, window, cx| {
+                    cx.stop_propagation();
+                    on_pinned_drag_start(drag.thread_id.clone(), window, cx);
+                    cx.new(|_| PinnedDragPreview {
+                        title: drag.title.clone(),
+                        bg: drag.preview_bg,
+                        text: drag.preview_text,
+                    })
+                }
+            },
+        )
+        .can_drop({
+            let self_id = thread_id.clone();
+            let self_scope = drag_scope;
+            move |value, _, _| {
+                value
+                    .downcast_ref::<PinnedThreadDrag>()
+                    .is_some_and(|drag| {
+                        drag.thread_id != self_id
+                            && drag.scope.allows_drop(self_scope)
+                    })
+            }
+        })
+        .drag_over::<PinnedThreadDrag>({
+            let self_id = thread_id.clone();
+            let self_scope = drag_scope;
+            move |style, drag, _, _| {
+                if drag.thread_id == self_id || !drag.scope.allows_drop(self_scope) {
+                    return style;
+                }
+                style.bg(drag_hover_bg)
+            }
+        })
+        .on_drag_move::<PinnedThreadDrag>({
+            let target_id = thread_id.clone();
+            let self_scope = drag_scope;
+            let on_pinned_drag_over = on_pinned_drag_over.clone();
+            move |event, window, cx| {
+                let drag = event.drag(cx);
+                if drag.thread_id == target_id || !drag.scope.allows_drop(self_scope) {
+                    return;
+                }
+                let pointer = event.event.position;
+                let bounds = event.bounds;
+                if pointer.x < bounds.origin.x
+                    || pointer.x > bounds.origin.x + bounds.size.width
+                    || pointer.y < bounds.origin.y
+                    || pointer.y > bounds.origin.y + bounds.size.height
+                {
+                    return;
+                }
+                let midpoint = bounds.size.height / 2.0;
+                let offset_y = pointer.y - bounds.origin.y;
+                let insert_after = offset_y > midpoint;
+                on_pinned_drag_over(target_id.clone(), insert_after, window, cx);
+            }
+        })
+        .on_drop({
+            let target_id = thread_id.clone();
+            let self_scope = drag_scope;
+            let on_pinned_drop = on_pinned_drop.clone();
+            move |drag: &PinnedThreadDrag, window, cx| {
+                if drag.thread_id == target_id || !drag.scope.allows_drop(self_scope) {
+                    return;
+                }
+                on_pinned_drop(drag.thread_id.clone(), target_id.clone(), window, cx);
+            }
         })
         .on_hover({
             let on_hover = on_hover.clone();
@@ -153,6 +305,9 @@ fn row_surface(
             let on_activate = on_activate.clone();
             let click_id = thread_id.clone();
             move |event: &ClickEvent, window, cx| {
+                if event.click_count() >= 2 {
+                    return;
+                }
                 if event.modifiers().shift {
                     on_select(click_id.clone(), true, window, cx);
                 } else {
@@ -161,34 +316,162 @@ fn row_surface(
             }
         })
         .context_menu({
-            let on_move_pinned = on_move_pinned.clone();
+            let on_move_thread = on_move_thread.clone();
+            let on_pin = on_pin.clone();
+            let on_unpin = on_unpin.clone();
+            let on_settle = on_settle.clone();
+            let on_unsettle = on_unsettle.clone();
+            let on_rename = on_rename.clone();
+            let on_archive = on_archive.clone();
+            let on_unarchive = on_unarchive.clone();
             let menu_id = thread_id.clone();
-            move |menu, _window, _cx| {
-                let mut menu = menu.label(menu_title.clone());
-                if pinned {
-                    let up_id = menu_id.clone();
-                    let down_id = menu_id.clone();
-                    let on_move_up = on_move_pinned.clone();
-                    let on_move_down = on_move_pinned.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new("Move up").on_click(move |_, window, cx| {
-                            on_move_up(up_id.clone(), -1, window, cx);
-                        }),
-                    );
-                    menu = menu.item(
-                        PopupMenuItem::new("Move down").on_click(move |_, window, cx| {
-                            on_move_down(down_id.clone(), 1, window, cx);
-                        }),
-                    );
-                }
-                menu.item(PopupMenuItem::new("Settle"))
-                    .item(PopupMenuItem::new("Snooze"))
-                    .separator()
-                    .item(PopupMenuItem::new("Rename"))
-                    .item(PopupMenuItem::new("Archive"))
+            let menu_title = menu_title.clone();
+            let is_pinned = is_pinned;
+            let is_settled = is_settled;
+            let is_archived = is_archived;
+            let can_move_up = view.can_move_thread(&thread_id, -1);
+            let can_move_down = view.can_move_thread(&thread_id, 1);
+            move |menu, window, cx| {
+                build_thread_context_menu(
+                    menu,
+                    menu_id.clone(),
+                    menu_title.clone(),
+                    is_pinned,
+                    is_settled,
+                    is_archived,
+                    can_move_up,
+                    can_move_down,
+                    &on_move_thread,
+                    &on_pin,
+                    &on_unpin,
+                    &on_settle,
+                    &on_unsettle,
+                    &on_rename,
+                    &on_archive,
+                    &on_unarchive,
+                    window,
+                    cx,
+                )
             }
         })
         .child(content)
+}
+
+pub(crate) fn build_thread_context_menu(
+    mut menu: gpui_component::menu::PopupMenu,
+    menu_id: String,
+    menu_title: String,
+    is_pinned: bool,
+    is_settled: bool,
+    is_archived: bool,
+    can_move_up: bool,
+    can_move_down: bool,
+    on_move_thread: &Rc<dyn Fn(String, isize, &mut Window, &mut App)>,
+    on_pin: &Rc<dyn Fn(String, &mut Window, &mut App)>,
+    on_unpin: &Rc<dyn Fn(String, &mut Window, &mut App)>,
+    on_settle: &Rc<dyn Fn(String, &mut Window, &mut App)>,
+    on_unsettle: &Rc<dyn Fn(String, &mut Window, &mut App)>,
+    on_rename: &Rc<dyn Fn(String, &mut Window, &mut App)>,
+    on_archive: &Rc<dyn Fn(String, &mut Window, &mut App)>,
+    on_unarchive: &Rc<dyn Fn(String, &mut Window, &mut App)>,
+    _window: &mut Window,
+    _cx: &mut Context<gpui_component::menu::PopupMenu>,
+) -> gpui_component::menu::PopupMenu {
+    menu = menu.label(menu_title);
+
+    if can_move_up {
+        let up_id = menu_id.clone();
+        let on_move_up = on_move_thread.clone();
+        menu = menu.item(
+            PopupMenuItem::new("Move up").on_click(move |_, window, cx| {
+                on_move_up(up_id.clone(), -1, window, cx);
+            }),
+        );
+    }
+    if can_move_down {
+        let down_id = menu_id.clone();
+        let on_move_down = on_move_thread.clone();
+        menu = menu.item(
+            PopupMenuItem::new("Move down").on_click(move |_, window, cx| {
+                on_move_down(down_id.clone(), 1, window, cx);
+            }),
+        );
+    }
+    if can_move_up || can_move_down {
+        menu = menu.separator();
+    }
+
+    if is_archived {
+        menu = menu.item(
+            PopupMenuItem::new("Unarchive").on_click({
+                let unarchive_id = menu_id.clone();
+                let on_unarchive = on_unarchive.clone();
+                move |_, window, cx| {
+                    on_unarchive(unarchive_id.clone(), window, cx);
+                }
+            }),
+        );
+    } else if is_pinned {
+        menu = menu.item(
+            PopupMenuItem::new("Unpin").on_click({
+                let unpin_id = menu_id.clone();
+                let on_unpin = on_unpin.clone();
+                move |_, window, cx| {
+                    on_unpin(unpin_id.clone(), window, cx);
+                }
+            }),
+        );
+    } else if is_settled {
+        menu = menu.item(
+            PopupMenuItem::new("Unsettle").on_click({
+                let unsettle_id = menu_id.clone();
+                let on_unsettle = on_unsettle.clone();
+                move |_, window, cx| {
+                    on_unsettle(unsettle_id.clone(), window, cx);
+                }
+            }),
+        );
+    } else {
+        menu = menu.item(
+            PopupMenuItem::new("Pin").on_click({
+                let pin_id = menu_id.clone();
+                let on_pin = on_pin.clone();
+                move |_, window, cx| {
+                    on_pin(pin_id.clone(), window, cx);
+                }
+            }),
+        );
+        menu = menu.item(
+            PopupMenuItem::new("Settle").on_click({
+                let settle_id = menu_id.clone();
+                let on_settle = on_settle.clone();
+                move |_, window, cx| {
+                    on_settle(settle_id.clone(), window, cx);
+                }
+            }),
+        );
+        menu = menu.item(
+            PopupMenuItem::new("Archive").on_click({
+                let archive_id = menu_id.clone();
+                let on_archive = on_archive.clone();
+                move |_, window, cx| {
+                    on_archive(archive_id.clone(), window, cx);
+                }
+            }),
+        );
+    }
+
+    menu = menu.separator();
+    menu = menu.item(
+        PopupMenuItem::new("Rename").on_click({
+            let rename_id = menu_id;
+            let on_rename = on_rename.clone();
+            move |_, window, cx| {
+                on_rename(rename_id.clone(), window, cx);
+            }
+        }),
+    );
+    menu
 }
 
 fn card_row(
@@ -196,11 +479,14 @@ fn card_row(
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
     actions: &ThreadRowActions,
+    rename_input: Option<&Entity<InputState>>,
+    pinned_drag: Option<PinnedRowDragUi>,
+    scroll_anchor: Option<gpui::ScrollAnchor>,
 ) -> impl IntoElement {
     let secondary = theme.foreground(ForegroundToken::Secondary);
-    let muted = theme.foreground(ForegroundToken::Muted);
     let mono = mono_family();
     let recede = view.should_recede(thread);
+    let title = view.display_title(thread);
     let favicon_hue = DEMO_PROJECTS
         .iter()
         .find(|p| p.key == thread.project_key)
@@ -214,25 +500,24 @@ fn card_row(
         ROW_HEIGHT_CARD,
         "card",
         actions,
+        pinned_drag,
+        scroll_anchor,
         div()
             .w_full()
             .min_w_0()
-            .h_full()
-            .overflow_hidden()
             .px(px(ROW_CONTENT_INSET))
-            .py(px(CONTENT_INSET))
+            .py(px(6.))
             .child(
                 v_flex()
                     .w_full()
                     .min_w_0()
-                    .gap(px(4.))
+                    .gap(px(3.))
                     .child(
                         h_flex()
                             .w_full()
                             .min_w_0()
                             .items_center()
                             .gap(px(6.))
-                            .children(pin_marker(thread, muted))
                             .child(project_favicon(favicon_hue))
                             .child(
                                 div()
@@ -252,22 +537,18 @@ fn card_row(
                             )
                             .child(status_or_time(thread, view, theme, true)),
                     )
-                    .child(
-                        div()
-                            .w_full()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .font_family(mono)
-                            .text_size(px(TypeRole::LabelMd.size()))
-                            .line_height(relative(TypeRole::LabelMd.line_height()))
-                            .text_color(if recede {
-                                theme.foreground(ForegroundToken::Secondary)
-                            } else {
-                                theme.foreground(ForegroundToken::Primary).alpha(0.9)
-                            })
-                            .child(thread.title),
-                    )
+                    .child(title_row(
+                        thread,
+                        view,
+                        &title,
+                        rename_input,
+                        TypeRole::LabelMd,
+                        if recede {
+                            theme.foreground(ForegroundToken::Secondary)
+                        } else {
+                            theme.foreground(ForegroundToken::Primary).alpha(0.9)
+                        },
+                    ))
                     .child(branch_meta_row(thread, theme)),
             ),
     )
@@ -278,10 +559,13 @@ fn slim_row(
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
     actions: &ThreadRowActions,
+    rename_input: Option<&Entity<InputState>>,
+    pinned_drag: Option<PinnedRowDragUi>,
+    scroll_anchor: Option<gpui::ScrollAnchor>,
 ) -> impl IntoElement {
     let muted = theme.foreground(ForegroundToken::Muted);
-    let mono = mono_family();
     let recede = view.should_recede(thread);
+    let title = view.display_title(thread);
 
     row_surface(
         thread,
@@ -290,6 +574,8 @@ fn slim_row(
         ROW_HEIGHT_SLIM,
         "slim",
         actions,
+        pinned_drag,
+        scroll_anchor,
         h_flex()
             .w_full()
             .min_w_0()
@@ -305,36 +591,64 @@ fn slim_row(
                     .flex_shrink_0(),
             )
             .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .font_family(mono)
-                    .text_size(px(TypeRole::LabelMd.size()))
-                    .line_height(relative(TypeRole::LabelMd.line_height()))
-                    .text_color(if recede {
+                    title_row(
+                        thread,
+                        view,
+                        &title,
+                        rename_input,
+                        TypeRole::LabelMd,
+                    if recede {
                         muted.alpha(0.7)
                     } else {
                         theme.foreground(ForegroundToken::Primary)
-                    })
-                    .child(thread.title),
+                    },
+                ),
             )
             .child(status_or_time(thread, view, theme, false)),
     )
 }
 
-fn pin_marker(thread: &DemoThread, muted: gpui::Hsla) -> Option<gpui::AnyElement> {
-    if !thread.pinned {
-        return None;
+fn title_row(
+    thread: &DemoThread,
+    view: &SidebarViewModel,
+    title: &str,
+    rename_input: Option<&Entity<InputState>>,
+    type_role: TypeRole,
+    text_color: gpui::Hsla,
+) -> gpui::AnyElement {
+    let mono = mono_family();
+    let title = title.to_string();
+    if view.is_renaming(thread) {
+        if let Some(rename_input) = rename_input {
+            return div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .child(
+                    Input::new(rename_input)
+                        .w_full()
+                        .h(px(ROW_HEIGHT_SLIM - 4.))
+                        .text_size(px(type_role.size()))
+                        .bordered(false)
+                        .appearance(false)
+                        .cleanable(false),
+                )
+                .into_any_element();
+        }
     }
-    Some(
-        Icon::new(IconName::Star)
-            .text_color(muted.alpha(0.7))
-            .small()
-            .flex_shrink_0()
-            .into_any_element(),
-    )
+
+    div()
+        .w_full()
+        .flex_1()
+        .min_w_0()
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .font_family(mono)
+        .text_size(px(type_role.size()))
+        .line_height(relative(type_role.line_height()))
+        .text_color(text_color)
+        .child(title)
+        .into_any_element()
 }
 
 fn project_favicon(hue: u32) -> impl IntoElement {
@@ -504,4 +818,28 @@ fn diff_stats(
 
 fn mono_family() -> SharedString {
     SharedString::from("Space Mono")
+}
+
+struct PinnedDragPreview {
+    title: SharedString,
+    bg: gpui::Hsla,
+    text: gpui::Hsla,
+}
+
+impl Render for PinnedDragPreview {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .max_w(px(240.))
+            .px(px(10.))
+            .py(px(6.))
+            .rounded(px(ROW_RADIUS))
+            .bg(self.bg)
+            .opacity(0.92)
+            .shadow_md()
+            .font_family(mono_family())
+            .text_size(px(TypeRole::LabelMd.size()))
+            .line_height(relative(TypeRole::LabelMd.line_height()))
+            .text_color(self.text)
+            .child(self.title.clone())
+    }
 }
