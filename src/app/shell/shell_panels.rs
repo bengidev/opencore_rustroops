@@ -25,6 +25,7 @@ macro_rules! stub_panel {
                 }
             }
 
+            #[allow(dead_code)]
             pub fn with_title(title: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
                 Self {
                     focus_handle: cx.focus_handle(),
