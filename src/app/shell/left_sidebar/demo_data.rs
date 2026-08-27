@@ -1,8 +1,6 @@
 //! Static demo projections for left-sidebar interface scaffolding.
 
-#![allow(dead_code)]
-
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThreadShelf {
     Pinned,
     Active,
@@ -10,10 +8,44 @@ pub enum ThreadShelf {
     Settled,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThreadStatus {
+    Working,
+    Monitoring,
+    Approval,
+    Input,
+    Failed,
+    Ready,
+    Woke,
+}
+
+impl ThreadStatus {
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            Self::Working => Some("Working"),
+            Self::Monitoring => Some("Monitoring"),
+            Self::Approval => Some("Approval"),
+            Self::Input => Some("Input"),
+            Self::Failed => Some("Failed"),
+            Self::Woke => Some("Woke"),
+            Self::Ready => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DemoProject {
     pub key: &'static str,
     pub display_name: &'static str,
+    pub favicon_hue: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct DemoDraft {
+    pub id: &'static str,
+    pub project_key: &'static str,
+    pub project_title: &'static str,
+    pub preview: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -25,26 +57,39 @@ pub struct DemoThread {
     pub branch: Option<&'static str>,
     pub shelf: ThreadShelf,
     pub time_label: &'static str,
-    pub status_label: Option<&'static str>,
+    pub status: ThreadStatus,
     pub pr_number: Option<u32>,
     pub diff_insertions: Option<u32>,
     pub diff_deletions: Option<u32>,
     pub pinned: bool,
-    pub is_active: bool,
+    pub is_unread: bool,
+    pub is_woke: bool,
+    pub terminal_process_count: u32,
 }
+
+pub const ALL_PROJECTS_LABEL: &str = "All projects";
 
 pub const DEMO_PROJECTS: [DemoProject; 2] = [
     DemoProject {
         key: "opencore",
         display_name: "opencore_rustroops",
+        favicon_hue: 0xD7_19_21,
     },
     DemoProject {
         key: "t3code",
         display_name: "t3code",
+        favicon_hue: 0x3B_82_F6,
     },
 ];
 
-pub const DEMO_THREADS: [DemoThread; 7] = [
+pub const DEMO_DRAFT: DemoDraft = DemoDraft {
+    id: "draft-1",
+    project_key: "opencore",
+    project_title: "opencore_rustroops",
+    preview: "Sketch thread sidebar parity…",
+};
+
+pub const DEMO_THREADS: [DemoThread; 14] = [
     DemoThread {
         id: "pinned-1",
         title: "Fix dock layout persistence",
@@ -53,12 +98,14 @@ pub const DEMO_THREADS: [DemoThread; 7] = [
         branch: Some("feat/shell-dock"),
         shelf: ThreadShelf::Pinned,
         time_label: "2h",
-        status_label: Some("Working"),
+        status: ThreadStatus::Working,
         pr_number: Some(42),
         diff_insertions: Some(128),
         diff_deletions: Some(24),
         pinned: true,
-        is_active: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 1,
     },
     DemoThread {
         id: "active-1",
@@ -68,12 +115,14 @@ pub const DEMO_THREADS: [DemoThread; 7] = [
         branch: Some("feat/left-sidebar"),
         shelf: ThreadShelf::Active,
         time_label: "now",
-        status_label: None,
+        status: ThreadStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
         pinned: false,
-        is_active: true,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
     },
     DemoThread {
         id: "active-2",
@@ -83,12 +132,31 @@ pub const DEMO_THREADS: [DemoThread; 7] = [
         branch: Some("main"),
         shelf: ThreadShelf::Active,
         time_label: "18m",
-        status_label: Some("Working"),
+        status: ThreadStatus::Working,
         pr_number: None,
         diff_insertions: Some(12),
         diff_deletions: Some(3),
         pinned: false,
-        is_active: false,
+        is_unread: true,
+        is_woke: false,
+        terminal_process_count: 0,
+    },
+    DemoThread {
+        id: "active-3",
+        title: "Approval gate on deploy",
+        project_key: "t3code",
+        project_title: "t3code",
+        branch: Some("feat/deploy"),
+        shelf: ThreadShelf::Active,
+        time_label: "45m",
+        status: ThreadStatus::Approval,
+        pr_number: Some(17),
+        diff_insertions: None,
+        diff_deletions: None,
+        pinned: false,
+        is_unread: true,
+        is_woke: false,
+        terminal_process_count: 0,
     },
     DemoThread {
         id: "snoozed-1",
@@ -98,12 +166,14 @@ pub const DEMO_THREADS: [DemoThread; 7] = [
         branch: Some("research/dock"),
         shelf: ThreadShelf::Snoozed,
         time_label: "tomorrow 9a",
-        status_label: None,
+        status: ThreadStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
         pinned: false,
-        is_active: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
     },
     DemoThread {
         id: "settled-1",
@@ -113,12 +183,14 @@ pub const DEMO_THREADS: [DemoThread; 7] = [
         branch: Some("main"),
         shelf: ThreadShelf::Settled,
         time_label: "1d",
-        status_label: None,
+        status: ThreadStatus::Ready,
         pr_number: Some(38),
         diff_insertions: None,
         diff_deletions: None,
         pinned: false,
-        is_active: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
     },
     DemoThread {
         id: "settled-2",
@@ -128,12 +200,14 @@ pub const DEMO_THREADS: [DemoThread; 7] = [
         branch: Some("feat/shell"),
         shelf: ThreadShelf::Settled,
         time_label: "3d",
-        status_label: None,
+        status: ThreadStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
         pinned: false,
-        is_active: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
     },
     DemoThread {
         id: "settled-3",
@@ -143,13 +217,115 @@ pub const DEMO_THREADS: [DemoThread; 7] = [
         branch: None,
         shelf: ThreadShelf::Settled,
         time_label: "1w",
-        status_label: None,
+        status: ThreadStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
         pinned: false,
-        is_active: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
+    },
+    DemoThread {
+        id: "settled-4",
+        title: "Dock animation tween",
+        project_key: "opencore",
+        project_title: "opencore_rustroops",
+        branch: Some("feat/dock-tween"),
+        shelf: ThreadShelf::Settled,
+        time_label: "2w",
+        status: ThreadStatus::Ready,
+        pr_number: Some(12),
+        diff_insertions: None,
+        diff_deletions: None,
+        pinned: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
+    },
+    DemoThread {
+        id: "settled-5",
+        title: "Native menu bridge",
+        project_key: "opencore",
+        project_title: "opencore_rustroops",
+        branch: Some("main"),
+        shelf: ThreadShelf::Settled,
+        time_label: "2w",
+        status: ThreadStatus::Failed,
+        pr_number: None,
+        diff_insertions: None,
+        diff_deletions: None,
+        pinned: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
+    },
+    DemoThread {
+        id: "settled-6",
+        title: "Thread sidebar search",
+        project_key: "t3code",
+        project_title: "t3code",
+        branch: Some("feat/search"),
+        shelf: ThreadShelf::Settled,
+        time_label: "3w",
+        status: ThreadStatus::Ready,
+        pr_number: None,
+        diff_insertions: None,
+        diff_deletions: None,
+        pinned: false,
+        is_unread: false,
+        is_woke: true,
+        terminal_process_count: 0,
+    },
+    DemoThread {
+        id: "settled-7",
+        title: "Composer placeholder text",
+        project_key: "opencore",
+        project_title: "opencore_rustroops",
+        branch: Some("main"),
+        shelf: ThreadShelf::Settled,
+        time_label: "4w",
+        status: ThreadStatus::Ready,
+        pr_number: None,
+        diff_insertions: None,
+        diff_deletions: None,
+        pinned: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
+    },
+    DemoThread {
+        id: "settled-8",
+        title: "Right panel file tree",
+        project_key: "t3code",
+        project_title: "t3code",
+        branch: Some("feat/files"),
+        shelf: ThreadShelf::Settled,
+        time_label: "5w",
+        status: ThreadStatus::Ready,
+        pr_number: Some(9),
+        diff_insertions: None,
+        diff_deletions: None,
+        pinned: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
+    },
+    DemoThread {
+        id: "settled-9",
+        title: "Keyboard shortcut map",
+        project_key: "opencore",
+        project_title: "opencore_rustroops",
+        branch: Some("main"),
+        shelf: ThreadShelf::Settled,
+        time_label: "6w",
+        status: ThreadStatus::Input,
+        pr_number: None,
+        diff_insertions: None,
+        diff_deletions: None,
+        pinned: false,
+        is_unread: false,
+        is_woke: false,
+        terminal_process_count: 0,
     },
 ];
-
-pub const SCOPED_PROJECT_LABEL: &str = "All projects";

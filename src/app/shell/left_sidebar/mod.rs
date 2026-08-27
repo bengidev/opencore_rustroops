@@ -4,6 +4,8 @@ mod chrome;
 mod content;
 mod demo_data;
 mod panel;
+mod state;
+mod surfaces;
 mod tokens;
 
 pub use panel::LeftSidebarPanel;
