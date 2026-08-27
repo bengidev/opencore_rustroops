@@ -5,8 +5,8 @@ use std::time::Instant;
 use gpui::{App, Context, Entity, Window, px};
 use gpui_component::dock::{Dock, DockArea, DockPlacement};
 
-use super::shell_dock_tween::{DockSizeTween, eval_dock_tween};
-use super::shell_layout::ShellLayout;
+use super::dock_tween::{DockSizeTween, eval_dock_tween};
+use super::layout::ShellLayout;
 
 #[derive(Debug, Default)]
 pub struct DockTweenState {
