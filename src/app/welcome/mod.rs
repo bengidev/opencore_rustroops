@@ -1,12 +1,12 @@
 //! Welcome command reducer, interactive state, and view.
 
-mod welcome_ascii_galaxy;
-pub mod welcome_theme_toggle;
-mod welcome_ui_state;
-mod welcome_view;
+mod ascii_galaxy;
+pub mod theme_toggle;
+mod ui_state;
+mod view;
 
-pub use welcome_ui_state::WelcomeUiState;
-pub use welcome_view::{WelcomeCallbacks, welcome_interactive_root, welcome_screen};
+pub use ui_state::WelcomeUiState;
+pub use view::{WelcomeCallbacks, welcome_interactive_root, welcome_screen};
 
 /// Commands the welcome UI can send to the reducer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -2,14 +2,14 @@
 //!
 //! Monochrome palette for welcome and shell surfaces.
 
-mod theme_nothing_gpui;
-mod theme_transition;
+mod nothing_gpui;
+mod transition;
 
 use gpui::Hsla;
 use serde::{Deserialize, Serialize};
 
-pub use theme_nothing_gpui::apply_nothing_theme;
-pub use theme_transition::{
+pub use nothing_gpui::apply_nothing_theme;
+pub use transition::{
     THEME_TRANSITION_DURATION, ThemeTransition, ease_out_resize, ease_out_strong, mix_light_for,
 };
 

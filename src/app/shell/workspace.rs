@@ -15,13 +15,13 @@ use gpui_component::{
 };
 
 use crate::app::gpui_callbacks::WindowAppHandler;
-use crate::app::welcome::welcome_theme_toggle::theme_toggle_button;
+use crate::app::welcome::theme_toggle::theme_toggle_button;
 use crate::shared::theme::OpenCoreTheme;
 
-use super::shell_dock_animation::{
+use super::dock_animation::{
     DockTweenState, layout_with_animated_docks, start_dock_toggle_tween, tick_dock_tweens,
 };
-use super::shell_layout::ShellLayout;
+use super::layout::ShellLayout;
 use super::workspace_theme::{WorkspaceTheme, install_workspace_theme};
 use super::{DOCK_LAYOUT_VERSION, apply_default_holy_grail};
 

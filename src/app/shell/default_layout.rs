@@ -5,7 +5,7 @@ use gpui_component::dock::{DockArea, DockItem};
 
 use super::left_sidebar::LeftSidebarPanel;
 use super::main_workspace_panel::MainWorkspacePanel;
-use super::shell_panels::{BottomStubPanel, FilesStubPanel, RightStubPanel};
+use super::panels::{BottomStubPanel, FilesStubPanel, RightStubPanel};
 use super::workspace_theme::workspace_theme;
 
 pub const DOCK_LAYOUT_VERSION: usize = 9;

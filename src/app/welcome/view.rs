@@ -15,8 +15,8 @@ use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
 
-use super::welcome_theme_toggle::theme_toggle_button;
-use super::welcome_ui_state::WelcomeUiState;
+use super::theme_toggle::theme_toggle_button;
+use super::ui_state::WelcomeUiState;
 
 const HERO_MAX_WIDTH: f32 = 680.0;
 const HERO_GLOW_INSET_H: f32 = 44.0;
@@ -344,7 +344,7 @@ fn action_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoEle
 
 #[cfg(test)]
 mod tests {
-    use super::super::welcome_ascii_galaxy::{COLS, ROWS};
+    use super::super::ascii_galaxy::{COLS, ROWS};
     use super::*;
     use gpui::Keystroke;
 
