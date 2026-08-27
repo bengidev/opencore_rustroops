@@ -1,21 +1,26 @@
 //! Flat search result row with project context.
 
 use gpui::{
-    InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div, px, relative,
+    App, ClickEvent, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, px, relative,
 };
 use gpui_component::{h_flex, v_flex};
 
 use crate::shared::theme::{ForegroundToken, OpenCoreTheme, TypeRole};
 
 use super::super::demo_data::{DemoThread, DEMO_PROJECTS};
+use super::super::state::SidebarViewModel;
 use super::super::surfaces::{project_favicon_color, row_active_bg, row_hover_bg};
 use super::super::tokens::{FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_SLIM, ROW_RADIUS};
 
 pub fn sidebar_search_result_row(
     thread: &DemoThread,
-    is_active: bool,
+    view: &SidebarViewModel,
     theme: &OpenCoreTheme,
+    on_activate: impl Fn(String, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
+    let is_active = view.is_active(thread);
+    let title = view.display_title(thread);
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let muted = theme.foreground(ForegroundToken::Muted);
@@ -32,6 +37,8 @@ pub fn sidebar_search_result_row(
         theme.surface(crate::shared::theme::BackgroundToken::Primary)
     };
 
+    let thread_id = thread.id.to_string();
+
     div()
         .id(format!("left-sidebar-search-{}", thread.id))
         .w_full()
@@ -41,7 +48,9 @@ pub fn sidebar_search_result_row(
         .items_center()
         .rounded(px(ROW_RADIUS))
         .bg(bg)
+        .cursor_pointer()
         .hover(|style| style.bg(row_hover_bg(theme)))
+        .on_click(move |_: &ClickEvent, window, cx| on_activate(thread_id.clone(), window, cx))
         .child(
             h_flex()
                 .w_full()
@@ -65,7 +74,7 @@ pub fn sidebar_search_result_row(
                                 .text_size(px(TypeRole::LabelMd.size()))
                                 .line_height(relative(TypeRole::LabelMd.line_height()))
                                 .text_color(primary)
-                                .child(thread.title),
+                                .child(title),
                         )
                         .child(
                             div()
