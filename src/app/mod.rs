@@ -6,7 +6,8 @@ mod desktop;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
-pub mod shell;
+pub mod hero;
+mod shell;
 mod state;
 mod viewport;
 mod welcome;
