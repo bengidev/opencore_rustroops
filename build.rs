@@ -15,6 +15,7 @@ const PATCH_MARKER_BOTTOM_DOCK_ANIMATING: &str = "opencore_bottom_dock_animating
 const PATCH_MARKER_TITLE_BAR_DRAG: &str = "opencore_title_bar_drag_spacer";
 const PATCH_MARKER_TITLE_BAR_LEADING: &str = "opencore_title_bar_leading_click_guard";
 const PATCH_MARKER_TITLE_BAR_TRAILING: &str = "opencore_title_bar_trailing";
+const PATCH_MARKER_TOOLTIP_RECTANGLE: &str = "opencore_tooltip_rectangle";
 
 fn main() {
     let metadata = cargo_metadata::MetadataCommand::new()
@@ -36,6 +37,7 @@ fn main() {
         patched |= patch_title_bar_drag_spacer(&src_dir.join("title_bar.rs"));
         patched |= patch_title_bar_leading_click_guard(&src_dir.join("title_bar.rs"));
         patched |= patch_title_bar_trailing(&src_dir.join("title_bar.rs"));
+        patched |= patch_tooltip_rectangle(&src_dir.join("tooltip.rs"));
     }
 
     if patched {
@@ -57,6 +59,7 @@ fn patched_paths(metadata: &cargo_metadata::Metadata) -> Vec<std::path::PathBuf>
                 dock_dir.join("dock.rs"),
                 dock_dir.join("mod.rs"),
                 src_dir.join("title_bar.rs"),
+                src_dir.join("tooltip.rs"),
             ]
             .into_iter()
             .collect()
@@ -759,6 +762,45 @@ fn patch_title_bar_leading_click_guard(path: &std::path::Path) -> bool {
     if !content.contains(needle) {
         panic!(
             "gpui-component title_bar.rs changed; update build.rs leading-click patch for {}",
+            path.display()
+        );
+    }
+
+    let patched = content.replace(needle, replacement);
+
+    std::fs::write(path, patched).unwrap_or_else(|error| {
+        panic!("failed to write {}: {error}", path.display());
+    });
+
+    true
+}
+
+fn patch_tooltip_rectangle(path: &std::path::Path) -> bool {
+    let content = std::fs::read_to_string(path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", path.display());
+    });
+
+    let v1 = "                .shadow_md()\n                // opencore_tooltip_rectangle\n                .rounded(cx.theme().radius)";
+    let v2 = "                // opencore_tooltip_rectangle\n                .when(cx.theme().shadow, |this| this.shadow_md())\n                .rounded(px(0.))";
+
+    if content.contains(v1) {
+        let patched = content.replace(v1, v2);
+        std::fs::write(path, patched).unwrap_or_else(|error| {
+            panic!("failed to write {}: {error}", path.display());
+        });
+        return true;
+    }
+
+    if content.contains(PATCH_MARKER_TOOLTIP_RECTANGLE) {
+        return false;
+    }
+
+    let needle = "                .shadow_md()\n                .rounded(px(6.))";
+    let replacement = "                // opencore_tooltip_rectangle\n                .when(cx.theme().shadow, |this| this.shadow_md())\n                .rounded(px(0.))";
+
+    if !content.contains(needle) {
+        panic!(
+            "gpui-component tooltip.rs changed; update build.rs tooltip patch for {}",
             path.display()
         );
     }
