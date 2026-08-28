@@ -1,4 +1,4 @@
-//! OpenCore brand lockup image (cube + wordmark).
+//! OpenCore brand lockup image.
 
 use gpui::{IntoElement, Styled, img, px};
 
@@ -13,7 +13,7 @@ pub fn brand_width(height: f32) -> f32 {
     height * BRAND_ASPECT
 }
 
-fn brand_image_for(mode: ThemeMode) -> &'static str {
+pub(crate) fn brand_image_for(mode: ThemeMode) -> &'static str {
     match mode {
         ThemeMode::Light => BRAND_IMAGE,
         ThemeMode::Dark => BRAND_IMAGE_INVERSE,
@@ -26,4 +26,15 @@ pub fn opencore_brand_image(theme: OpenCoreTheme, height: f32, opacity: f32) -> 
         .w(px(brand_width(height)))
         .opacity(opacity.clamp(0.0, 1.0))
         .flex_shrink_0()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn brand_image_for_selects_theme_variant() {
+        assert_eq!(brand_image_for(ThemeMode::Light), BRAND_IMAGE);
+        assert_eq!(brand_image_for(ThemeMode::Dark), BRAND_IMAGE_INVERSE);
+    }
 }

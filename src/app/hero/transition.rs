@@ -1,4 +1,4 @@
-//! Big-to-small cube hero transition (iOS onboarding port).
+//! Big-to-small brand hero transition (iOS onboarding port).
 
 use std::time::{Duration, Instant};
 
@@ -10,7 +10,6 @@ use crate::app::viewport::WindowViewport;
 /// Hero morph duration — matches iOS `smooth(duration: 1.02)`.
 pub const HERO_TRANSITION_DURATION: Duration = Duration::from_millis(1020);
 
-const ROTATION_END: f32 = 0.38;
 const MORPH_START: f32 = 0.54;
 
 #[derive(Debug, Clone, Copy)]
@@ -51,11 +50,6 @@ impl HeroTransition {
         self.linear_progress(now) < 1.0
     }
 
-    pub fn rotation_progress(transition: f32) -> f32 {
-        let raw = (transition / ROTATION_END).clamp(0.0, 1.0);
-        1.0 - (1.0 - raw).powi(2)
-    }
-
     pub fn morph_progress(transition: f32) -> f32 {
         let span = (1.0 - MORPH_START).max(0.001);
         let raw = ((transition - MORPH_START) / span).clamp(0.0, 1.0);
@@ -72,11 +66,7 @@ impl HeroTransition {
         (cx, cy, size)
     }
 
-    pub fn rotation_at(&self, now: Instant) -> f32 {
-        Self::rotation_progress(self.linear_progress(now))
-    }
-
-    /// Fades welcome chrome out during the first half of the transition.
+    /// Fades welcome chrome out during the first third of the transition.
     pub fn content_opacity(transition: f32) -> f32 {
         (1.0 - (transition / 0.35).clamp(0.0, 1.0)).max(0.0)
     }
@@ -105,8 +95,7 @@ mod tests {
     }
 
     #[test]
-    fn rotation_leads_morph() {
-        assert!(HeroTransition::rotation_progress(0.38) >= 0.99);
+    fn morph_reaches_completion_at_end() {
         assert!(HeroTransition::morph_progress(0.38) < 0.01);
         assert!(HeroTransition::morph_progress(1.0) >= 0.99);
     }

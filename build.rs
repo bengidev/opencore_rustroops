@@ -3,6 +3,7 @@
 //! - allow dragging the last tab in a group (merge into other tab bars)
 //! - fully hide the bottom dock when collapsed (title bar toggle replaces the tab strip)
 //! - confine title-bar drag/zoom to a trailing spacer so leading controls stay clickable
+//! - flatten tooltip chrome to sharp rectangles without drop shadow (Nothing theme)
 
 const PATCH_MARKER_TOOLBAR: &str = "opencore_hide_empty_panel_toolbar";
 const PATCH_MARKER_DRAG: &str = "opencore_allow_last_panel_drag";

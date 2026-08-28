@@ -5,13 +5,10 @@ use crate::app::state::{HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH};
 use crate::app::viewport::WindowViewport;
 use gpui_component::TITLE_BAR_HEIGHT;
 
-pub const CUBE_HERO_LARGE: f32 = 220.0;
+pub const BRAND_HERO_MIN: f32 = 220.0;
+pub const BRAND_HERO_MAX: f32 = 320.0;
 /// Shell title-bar brand height.
 pub const BRAND_SHELL_HEIGHT: f32 = 18.0;
-/// Legacy alias used by transition end sizing.
-pub const CUBE_HERO_SMALL: f32 = BRAND_SHELL_HEIGHT;
-pub const CUBE_HERO_MIN: f32 = 220.0;
-pub const CUBE_HERO_MAX: f32 = 320.0;
 
 /// Ghost xsmall icon button width in the shell title bar.
 pub const SHELL_TOGGLE_WIDTH: f32 = 28.0;
@@ -35,9 +32,9 @@ pub fn title_bar_left_padding() -> f32 {
 
 /// Responsive welcome hero size (ported from welcome view constants).
 pub fn responsive_hero_size(available_width: f32, available_height: f32) -> f32 {
-    let width_limit = (available_width - WELCOME_EDGE_INSET_H * 2.0).max(CUBE_HERO_MIN);
-    let height_limit = (available_height - WELCOME_ACTION_BAND).max(CUBE_HERO_MIN);
-    width_limit.min(height_limit).min(CUBE_HERO_MAX)
+    let width_limit = (available_width - WELCOME_EDGE_INSET_H * 2.0).max(BRAND_HERO_MIN);
+    let height_limit = (available_height - WELCOME_ACTION_BAND).max(BRAND_HERO_MIN);
+    width_limit.min(height_limit).min(BRAND_HERO_MAX)
 }
 
 /// Center of the large welcome brand in window coordinates.
@@ -49,16 +46,11 @@ pub fn welcome_brand_center(viewport: WindowViewport) -> (f32, f32) {
     (viewport.width * 0.5, center_y)
 }
 
-/// Center of the large welcome cube in window coordinates.
-pub fn welcome_cube_center(viewport: WindowViewport) -> (f32, f32) {
-    welcome_brand_center(viewport)
-}
-
 /// Responsive welcome brand height.
 pub fn responsive_brand_height(viewport: WindowViewport) -> f32 {
     let square_limit = responsive_hero_size(viewport.width, viewport.height);
     let width_limit = (viewport.width - WELCOME_EDGE_INSET_H * 2.0) / BRAND_ASPECT;
-    square_limit.min(width_limit).min(CUBE_HERO_MAX / BRAND_ASPECT)
+    square_limit.min(width_limit).min(BRAND_HERO_MAX / BRAND_ASPECT)
 }
 
 /// Center of the docked brand: `[toggle-left] [brand lockup]` (layout A).
@@ -68,11 +60,6 @@ pub fn docked_brand_center(viewport: WindowViewport) -> (f32, f32) {
     let x = title_bar_left_padding() + SHELL_TOGGLE_WIDTH + SHELL_TITLE_GAP + width * 0.5;
     let _ = viewport;
     (x, title_h * 0.5)
-}
-
-/// Center of the docked cube: `[toggle-left] [cube] [wordmark]` (layout A).
-pub fn docked_cube_center(viewport: WindowViewport) -> (f32, f32) {
-    docked_brand_center(viewport)
 }
 
 /// Viewport used to compute the docked slot after welcome completes.
@@ -88,7 +75,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn docked_cube_sits_after_left_toggle() {
+    fn docked_brand_sits_after_left_toggle() {
         let (x, y) = docked_brand_center(home_transition_viewport());
         let width = brand_width(BRAND_SHELL_HEIGHT);
         let expected_x =
@@ -99,7 +86,7 @@ mod tests {
 
     #[test]
     fn welcome_hero_size_clamps_on_narrow_windows() {
-        assert_eq!(responsive_hero_size(440.0, 360.0), CUBE_HERO_MIN);
-        assert_eq!(responsive_hero_size(1200.0, 900.0), CUBE_HERO_MAX);
+        assert_eq!(responsive_hero_size(440.0, 360.0), BRAND_HERO_MIN);
+        assert_eq!(responsive_hero_size(1200.0, 900.0), BRAND_HERO_MAX);
     }
 }
