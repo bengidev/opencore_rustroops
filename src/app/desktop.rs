@@ -23,9 +23,7 @@ use crate::shared::theme::{OpenCoreTheme, ThemeTransition, apply_nothing_theme};
 use super::AppError;
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
-use super::hero::{
-    HeroTransition, brand_width, opencore_brand_image, responsive_brand_height,
-};
+use super::hero::{HeroTransition, brand_width, opencore_brand_image, responsive_brand_height};
 use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
 use super::state::{ActiveScreen, AppState};
 use super::viewport::WindowViewport;
@@ -277,10 +275,7 @@ impl OpenCoreApp {
         false
     }
 
-    fn start_hero_transition(
-        &mut self,
-        viewport: WindowViewport,
-    ) -> Result<(), PreferencesError> {
+    fn start_hero_transition(&mut self, viewport: WindowViewport) -> Result<(), PreferencesError> {
         if self.hero_transition.is_some() {
             return Ok(());
         }
@@ -589,18 +584,18 @@ impl Render for OpenCoreApp {
 
         let mut root = div().size_full().relative().child(content);
 
-        if let Some(transition) = self.hero_transition {
-            if transition.is_active(now) {
-                let (center_x, center_y, height) = transition.layout_at(now);
-                let width = brand_width(height);
-                root = root.child(
-                    div()
-                        .absolute()
-                        .left(px(center_x - width * 0.5))
-                        .top(px(center_y - height * 0.5))
-                        .child(opencore_brand_image(theme, height, 1.0)),
-                );
-            }
+        if let Some(transition) = self.hero_transition
+            && transition.is_active(now)
+        {
+            let (center_x, center_y, height) = transition.layout_at(now);
+            let width = brand_width(height);
+            root = root.child(
+                div()
+                    .absolute()
+                    .left(px(center_x - width * 0.5))
+                    .top(px(center_y - height * 0.5))
+                    .child(opencore_brand_image(theme, height, 1.0)),
+            );
         }
 
         #[cfg(debug_assertions)]
@@ -614,8 +609,7 @@ impl Render for OpenCoreApp {
             let on_drag_move = callbacks.on_drag_move.clone();
             let on_drag_end = callbacks.on_drag_end.clone();
 
-            root
-                .child(dev_reset_fab(theme, &state_snapshot, &callbacks))
+            root.child(dev_reset_fab(theme, &state_snapshot, &callbacks))
                 .on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
                     (on_drag_move)(event, window, cx);
                 })

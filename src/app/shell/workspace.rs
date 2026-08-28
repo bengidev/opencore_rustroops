@@ -132,6 +132,7 @@ impl ShellWorkspace {
         cx.notify();
     }
 
+    #[allow(dead_code)] // used by shell workspace layout tests
     pub fn layout(&self) -> ShellLayout {
         self.layout
     }
@@ -161,12 +162,10 @@ fn item_has_main_stub(item: &DockItem, cx: &App) -> bool {
 }
 
 fn shell_title_brand(theme: OpenCoreTheme, opacity: f32) -> impl IntoElement {
-    h_flex()
-        .h(TITLE_BAR_HEIGHT)
-        .when(opacity > 0.0, |this| {
-            this.items_center()
-                .child(opencore_brand_image(theme, BRAND_SHELL_HEIGHT, opacity))
-        })
+    h_flex().h(TITLE_BAR_HEIGHT).when(opacity > 0.0, |this| {
+        this.items_center()
+            .child(opencore_brand_image(theme, BRAND_SHELL_HEIGHT, opacity))
+    })
 }
 
 fn title_bar_dock_toggle(
@@ -286,10 +285,9 @@ mod tests {
     use gpui_component::dock::{DockAreaState, DockPlacement};
 
     use crate::app::gpui_callbacks::WindowAppHandler;
-    use crate::app::shell::{
-        DOCK_LAYOUT_VERSION, RIGHT_DEFAULT, SIDEBAR_DEFAULT, register_shell_panels,
-    };
+    use crate::app::shell::register_shell_panels;
 
+    use super::super::default_layout::{DOCK_LAYOUT_VERSION, RIGHT_DEFAULT, SIDEBAR_DEFAULT};
     use super::{DockSaveFn, ShellWorkspace};
 
     fn init_shell_panels(cx: &mut TestAppContext) {
@@ -364,7 +362,7 @@ mod tests {
         dock_area: &gpui::Entity<gpui_component::dock::DockArea>,
         cx: &App,
     ) {
-        use crate::app::shell::{
+        use super::super::default_layout::{
             EDGE_DOCK_TAB_COUNT, dock_item_enables_dnd, dock_item_panel_count,
         };
 

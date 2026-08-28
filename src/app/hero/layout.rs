@@ -50,7 +50,9 @@ pub fn welcome_brand_center(viewport: WindowViewport) -> (f32, f32) {
 pub fn responsive_brand_height(viewport: WindowViewport) -> f32 {
     let square_limit = responsive_hero_size(viewport.width, viewport.height);
     let width_limit = (viewport.width - WELCOME_EDGE_INSET_H * 2.0) / BRAND_ASPECT;
-    square_limit.min(width_limit).min(BRAND_HERO_MAX / BRAND_ASPECT)
+    square_limit
+        .min(width_limit)
+        .min(BRAND_HERO_MAX / BRAND_ASPECT)
 }
 
 /// Center of the docked brand: `[toggle-left] [brand lockup]` (layout A).

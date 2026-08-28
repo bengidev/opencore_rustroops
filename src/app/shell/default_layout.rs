@@ -16,6 +16,7 @@ pub const BOTTOM_DEFAULT: f32 = 220.0;
 /// Minimum panels per edge dock tab group in the default layout (demo variety).
 /// Single-tab groups can still drag/merge via `PanelStyle::TabBar` and the
 /// gpui-component draggable patch in `build.rs`.
+#[allow(dead_code)] // validated by shell workspace layout tests
 pub const EDGE_DOCK_TAB_COUNT: usize = 2;
 
 /// Wraps a tabs/tab item in a single-child `v_split`.
@@ -115,6 +116,7 @@ pub fn apply_default_holy_grail(dock_area: &Entity<DockArea>, window: &mut Windo
 }
 
 /// Counts leaf panels under a dock item (tabs/split/panel).
+#[allow(dead_code)] // validated by shell workspace layout tests
 pub fn dock_item_panel_count(item: &DockItem) -> usize {
     match item {
         DockItem::Tabs { items, .. } => items.len(),
@@ -129,6 +131,7 @@ pub fn dock_item_panel_count(item: &DockItem) -> usize {
 ///
 /// Bare `DockItem::tabs` / `tab` leave `TabPanel::stack_panel` as `None`, which
 /// makes `is_locked()` true and disables both drag and drop.
+#[allow(dead_code)] // validated by shell workspace layout tests
 pub fn dock_item_enables_dnd(item: &DockItem) -> bool {
     matches!(item, DockItem::Split { .. })
 }

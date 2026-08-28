@@ -105,18 +105,21 @@ pub fn welcome_screen(
     let background = theme.surface(BackgroundToken::Primary);
     let hero_height = responsive_brand_height(viewport);
 
-    div().size_full().bg(background).child(
-        div()
-            .size_full()
-            .opacity(content_opacity)
-            .child(main_column(
-                theme,
-                ui,
-                callbacks,
-                persistence_error,
-                hero_height,
-            )),
-    )
+    div()
+        .size_full()
+        .bg(background)
+        .child(
+            div()
+                .size_full()
+                .opacity(content_opacity)
+                .child(main_column(
+                    theme,
+                    ui,
+                    callbacks,
+                    persistence_error,
+                    hero_height,
+                )),
+        )
 }
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
