@@ -2,7 +2,9 @@
 
 use std::time::{Duration, Instant};
 
-use super::layout::{CUBE_HERO_SMALL, docked_cube_center, home_transition_viewport, welcome_cube_center};
+use super::layout::{
+    BRAND_SHELL_HEIGHT, docked_brand_center, home_transition_viewport, welcome_brand_center,
+};
 use crate::app::viewport::WindowViewport;
 
 /// Hero morph duration — matches iOS `smooth(duration: 1.02)`.
@@ -26,14 +28,14 @@ impl HeroTransition {
         welcome_viewport: WindowViewport,
         hero_size: f32,
     ) -> Self {
-        let start_center = welcome_cube_center(welcome_viewport);
-        let end_center = docked_cube_center(home_transition_viewport());
+        let start_center = welcome_brand_center(welcome_viewport);
+        let end_center = docked_brand_center(home_transition_viewport());
         Self {
             started_at: now,
             start_center,
             start_size: hero_size,
             end_center,
-            end_size: CUBE_HERO_SMALL,
+            end_size: BRAND_SHELL_HEIGHT,
         }
     }
 
@@ -129,6 +131,6 @@ mod tests {
         let (ex, ey, es) = tx.layout_at(done);
         assert!((ex - tx.end_center.0).abs() < 1e-3);
         assert!((ey - tx.end_center.1).abs() < 1e-3);
-        assert!((es - CUBE_HERO_SMALL).abs() < 1e-3);
+        assert!((es - BRAND_SHELL_HEIGHT).abs() < 1e-3);
     }
 }
