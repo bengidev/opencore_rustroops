@@ -300,9 +300,14 @@ fn paint_wireframe_cube(
     rotation_progress: f32,
 ) {
     let center = bounds.center();
-    let half = bounds.size.width.min(bounds.size.height).as_f32() * 0.34;
+    let side = bounds.size.width.min(bounds.size.height).as_f32();
+    let compact = side <= 28.0;
+    let docked = side <= 18.0;
+    let half = side * if docked { 0.42 } else if compact { 0.38 } else { 0.34 };
     let projected = project_all(center, half, orientation);
     let construction_active = construction < 1.0 && rotation_progress <= 0.0;
+    let stroke_width = if docked { 1.0 } else if compact { 1.25 } else { 2.0 };
+    let vertex_radius = if docked { 1.0 } else if compact { 1.5 } else { 3.5 };
 
     for (index, &(start, end)) in EDGES.iter().enumerate() {
         let stroke_end = if construction_active {
@@ -320,6 +325,9 @@ fn paint_wireframe_cube(
             stroke_end,
             ink,
             DASHED_EDGES.contains(&index),
+            stroke_width,
+            compact,
+            docked,
         );
     }
 
@@ -330,9 +338,9 @@ fn paint_wireframe_cube(
                 continue;
             }
             let scale = 0.85 + 0.15 * opacity;
-            paint_vertex_dot(window, vertex, ink.opacity(opacity), scale);
+            paint_vertex_dot(window, vertex, ink.opacity(opacity), scale * vertex_radius);
         } else {
-            paint_vertex_dot(window, vertex, ink, 1.0);
+            paint_vertex_dot(window, vertex, ink, vertex_radius);
         }
     }
 }
@@ -344,11 +352,28 @@ fn paint_edge(
     stroke_end: f32,
     ink: Hsla,
     dashed: bool,
+    stroke_width: f32,
+    compact: bool,
+    docked: bool,
 ) {
     let trimmed_end = lerp_point(start, end, stroke_end.min(1.0));
-    let mut builder = PathBuilder::stroke(px(2.0));
+    let mut builder = PathBuilder::stroke(px(stroke_width));
     if dashed {
-        builder = builder.dash_array(&[px(4.0), px(3.0)]);
+        let dash = if docked {
+            px(2.0)
+        } else if compact {
+            px(2.5)
+        } else {
+            px(4.0)
+        };
+        let gap = if docked {
+            px(1.5)
+        } else if compact {
+            px(2.0)
+        } else {
+            px(3.0)
+        };
+        builder = builder.dash_array(&[dash, gap]);
     }
     builder.move_to(start);
     builder.line_to(trimmed_end);
@@ -399,8 +424,7 @@ fn edge_stroke_end(index: usize, construction: f32) -> f32 {
     ease_out(linear)
 }
 
-fn paint_vertex_dot(window: &mut Window, center: Point<Pixels>, ink: Hsla, scale: f32) {
-    let radius = 3.5_f32 * scale;
+fn paint_vertex_dot(window: &mut Window, center: Point<Pixels>, ink: Hsla, radius: f32) {
     let cx = center.x.as_f32();
     let cy = center.y.as_f32();
     let mut builder = PathBuilder::fill();
