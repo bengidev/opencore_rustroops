@@ -5,7 +5,8 @@ use std::time::Instant;
 
 use gpui::{
     App, AppContext, ClickEvent, Context, Edges, Entity, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Render, Styled, Subscription, Window, div,
+    MouseButton, ParentElement, Render, SharedString, Styled, Subscription, Window, div, px,
+    prelude::FluentBuilder as _,
 };
 use gpui_component::{
     IconName, InteractiveElementExt as _, Sizable, TitleBar,
@@ -15,8 +16,9 @@ use gpui_component::{
 };
 
 use crate::app::gpui_callbacks::WindowAppHandler;
+use crate::app::hero::{CUBE_HERO_SMALL, CubeHeroState, cube_hero_canvas};
 use crate::app::welcome::theme_toggle::theme_toggle_button;
-use crate::shared::theme::OpenCoreTheme;
+use crate::shared::theme::{ForegroundToken, OpenCoreTheme, TypeRole};
 
 use super::dock_animation::{
     DockTweenState, layout_with_animated_docks, start_dock_toggle_tween, tick_dock_tweens,
@@ -36,6 +38,8 @@ pub struct ShellWorkspace {
     dock_tweens: DockTweenState,
     workspace_theme: WorkspaceTheme,
     on_toggle_theme: WindowAppHandler,
+    brand_opacity: f32,
+    cube_rotation: f32,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -119,8 +123,16 @@ impl ShellWorkspace {
             dock_tweens: DockTweenState::default(),
             workspace_theme,
             on_toggle_theme,
+            brand_opacity: 1.0,
+            cube_rotation: 1.0,
             _subscriptions: vec![layout_subscription],
         }
+    }
+
+    pub fn set_brand_chrome(&mut self, opacity: f32, rotation: f32, cx: &mut Context<Self>) {
+        self.brand_opacity = opacity.clamp(0.0, 1.0);
+        self.cube_rotation = rotation;
+        cx.notify();
     }
 
     pub fn layout(&self) -> ShellLayout {
@@ -149,6 +161,37 @@ fn item_has_main_stub(item: &DockItem, cx: &App) -> bool {
         DockItem::Split { items, .. } => items.iter().any(|item| item_has_main_stub(item, cx)),
         DockItem::Tiles { .. } => false,
     }
+}
+
+fn shell_title_brand(
+    theme: OpenCoreTheme,
+    opacity: f32,
+    rotation: f32,
+) -> impl IntoElement {
+    let ink = theme.foreground(ForegroundToken::Primary);
+    let grotesk = SharedString::from("Space Grotesk");
+    let docked = CubeHeroState::docked();
+
+    h_flex()
+        .when(opacity > 0.0, |this| {
+            this.items_center()
+                .gap(px(10.0))
+                .opacity(opacity)
+                .child(
+                    div()
+                        .w(px(CUBE_HERO_SMALL))
+                        .h(px(CUBE_HERO_SMALL))
+                        .flex_shrink_0()
+                        .child(cube_hero_canvas(&docked, ink, rotation)),
+                )
+                .child(
+                    div()
+                        .text_size(px(TypeRole::LabelMd.size() + 6.0))
+                        .font_family(grotesk)
+                        .text_color(ink)
+                        .child("OPENCORE"),
+                )
+        })
 }
 
 fn title_bar_dock_toggle(
@@ -221,6 +264,11 @@ impl Render for ShellWorkspace {
                                 "Toggle Left Dock",
                                 DockPlacement::Left,
                                 cx,
+                            ))
+                            .child(shell_title_brand(
+                                theme,
+                                self.brand_opacity,
+                                self.cube_rotation,
                             ))
                             .child(theme_toggle_button(theme, on_toggle_theme)),
                     )
