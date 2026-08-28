@@ -7,12 +7,19 @@ use rust_embed::RustEmbed;
 #[folder = "assets/fonts"]
 struct FontAssets;
 
+#[derive(RustEmbed)]
+#[folder = "assets/images"]
+struct ImageAssets;
+
 pub struct AppAssets;
 
 impl AssetSource for AppAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         if let Some(rest) = path.strip_prefix("fonts/") {
             return Ok(FontAssets::get(rest).map(|f| f.data));
+        }
+        if let Some(rest) = path.strip_prefix("images/") {
+            return Ok(ImageAssets::get(rest).map(|f| f.data));
         }
         gpui_component_assets::Assets.load(path)
     }
@@ -21,6 +28,11 @@ impl AssetSource for AppAssets {
         if path == "fonts" || path == "fonts/" {
             return Ok(FontAssets::iter()
                 .map(|p| format!("fonts/{p}").into())
+                .collect());
+        }
+        if path == "images" || path == "images/" {
+            return Ok(ImageAssets::iter()
+                .map(|p| format!("images/{p}").into())
                 .collect());
         }
         gpui_component_assets::Assets.list(path)

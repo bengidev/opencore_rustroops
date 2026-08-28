@@ -10,9 +10,10 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
+use crate::app::hero::{opencore_brand_image, responsive_brand_height};
 use crate::app::viewport::WindowViewport;
 use crate::shared::theme::{
-    BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
+    BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
 
 use super::theme_toggle::theme_toggle_button;
@@ -22,24 +23,15 @@ const HERO_MAX_WIDTH: f32 = 680.0;
 const HERO_GLOW_INSET_H: f32 = 44.0;
 const HERO_GLOW_INSET_TOP: f32 = 46.0;
 const HERO_GLOW_INSET_BOTTOM: f32 = 34.0;
-const ASCII_TEXT_SIZE: f32 = 9.0;
-const ASCII_BOX_SIZE: f32 = 320.0;
 const EDGE_INSET_H: f32 = 16.0;
 const EDGE_INSET_TOP: f32 = 4.0;
 const EDGE_INSET_BOTTOM: f32 = 20.0;
 const ENTER_BUTTON_HEIGHT: f32 = 48.0;
-const HERO_MIN_SIZE: f32 = 220.0;
 const TITLEBAR_CONTROLS_INSET: f32 = 88.0;
 const TITLEBAR_HEIGHT: f32 = 38.0;
 
 fn welcome_drag_should_start(pointer_down: bool, pointer_moved: bool) -> bool {
     pointer_down && pointer_moved
-}
-
-fn responsive_hero_size(available_width: f32, available_height: f32) -> f32 {
-    let width_limit = (available_width - EDGE_INSET_H * 2.0).max(HERO_MIN_SIZE);
-    let height_limit = (available_height - 260.0).max(HERO_MIN_SIZE);
-    width_limit.min(height_limit).min(ASCII_BOX_SIZE)
 }
 
 #[derive(Clone)]
@@ -87,9 +79,6 @@ pub fn welcome_interactive_root(
             }
         })
         .child(div().size_full().pt(px(TITLEBAR_HEIGHT)).child(content))
-        // Keep the drag hitbox above the full-screen content wrapper. The
-        // wrapper is padded visually, but still owns the titlebar band for
-        // hit-testing unless this strip is the frontmost child.
         .child(
             div()
                 .absolute()
@@ -111,16 +100,26 @@ pub fn welcome_screen(
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
     viewport: WindowViewport,
+    content_opacity: f32,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
+    let hero_height = responsive_brand_height(viewport);
 
-    div().size_full().bg(background).child(main_column(
-        theme,
-        ui,
-        callbacks,
-        persistence_error,
-        responsive_hero_size(viewport.width, viewport.height),
-    ))
+    div()
+        .size_full()
+        .bg(background)
+        .child(
+            div()
+                .size_full()
+                .opacity(content_opacity)
+                .child(main_column(
+                    theme,
+                    ui,
+                    callbacks,
+                    persistence_error,
+                    hero_height,
+                )),
+        )
 }
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
@@ -130,10 +129,10 @@ fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
 
 fn main_column(
     theme: OpenCoreTheme,
-    ui: &WelcomeUiState,
+    _ui: &WelcomeUiState,
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
-    hero_size: f32,
+    hero_height: f32,
 ) -> impl IntoElement {
     let mut centered_content = div()
         .w_full()
@@ -142,7 +141,7 @@ fn main_column(
         .flex_col()
         .items_center()
         .justify_center()
-        .child(hero_block(theme, ui, hero_size));
+        .child(hero_block(theme, hero_height));
 
     if let Some(message) = persistence_error {
         let muted = theme.foreground(ForegroundToken::Muted);
@@ -225,22 +224,21 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         ])
 }
 
-fn hero_block(theme: OpenCoreTheme, ui: &WelcomeUiState, hero_size: f32) -> impl IntoElement {
+fn hero_block(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
-    let ascii_color = theme.foreground(ForegroundToken::Primary);
     let grotesk = SharedString::from("Space Grotesk");
     let spacing = theme.spacing;
 
-    let hero_ascii = div()
+    let hero_brand = div()
         .relative()
         .w_full()
-        .h(px(hero_size + 40.0))
+        .h(px(hero_height + 40.0))
         .flex()
         .items_center()
         .justify_center()
         .child(hero_glow(theme))
-        .child(ascii_box(theme, ui.last_frame(), ascii_color, hero_size));
+        .child(opencore_brand_image(theme, hero_height, 1.0));
 
     div()
         .w_full()
@@ -253,7 +251,7 @@ fn hero_block(theme: OpenCoreTheme, ui: &WelcomeUiState, hero_size: f32) -> impl
                 .flex()
                 .flex_col()
                 .items_center()
-                .child(hero_ascii)
+                .child(hero_brand)
                 .child(div().h(px(spacing.lg as f32)))
                 .child(
                     div()
@@ -279,49 +277,6 @@ fn hero_block(theme: OpenCoreTheme, ui: &WelcomeUiState, hero_size: f32) -> impl
         )
 }
 
-fn ascii_box(
-    theme: OpenCoreTheme,
-    frame: &str,
-    text_color: gpui::Hsla,
-    size: f32,
-) -> impl IntoElement {
-    let border = theme.border_token(BorderToken::Strong).opacity(0.40);
-    let surface = theme.surface(BackgroundToken::Secondary).opacity(0.50);
-
-    let mut ascii = div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .overflow_hidden();
-
-    for line in frame.lines() {
-        ascii = ascii.child(
-            div()
-                .font_family(mono_family())
-                .text_size(px(ASCII_TEXT_SIZE))
-                .line_height(relative(1.0))
-                .text_color(text_color)
-                .child(line.to_string()),
-        );
-    }
-
-    div()
-        .relative()
-        .w(px(size))
-        .h(px(size))
-        .child(ascii)
-        .border_1()
-        .border_color(border)
-        .bg(surface)
-        .p(px(6.))
-        .overflow_hidden()
-}
-
-fn mono_family() -> SharedString {
-    SharedString::from("Space Mono")
-}
-
 fn action_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoElement {
     let spacing = theme.spacing;
     let on_enter = callbacks.on_enter;
@@ -344,7 +299,6 @@ fn action_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoEle
 
 #[cfg(test)]
 mod tests {
-    use super::super::ascii_galaxy::{COLS, ROWS};
     use super::*;
     use gpui::Keystroke;
 
@@ -370,21 +324,9 @@ mod tests {
     }
 
     #[test]
-    fn responsive_hero_size_fits_narrow_windows() {
-        assert_eq!(responsive_hero_size(440.0, 360.0), 220.0);
-        assert_eq!(responsive_hero_size(1200.0, 900.0), ASCII_BOX_SIZE);
-    }
-
-    #[test]
-    fn ascii_hero_layout_constants() {
+    fn welcome_hero_layout_constants() {
         assert_eq!(HERO_MAX_WIDTH, 680.0);
         assert_eq!(HERO_GLOW_INSET_H, 44.0);
-        assert_eq!(HERO_GLOW_INSET_TOP, 46.0);
-        assert_eq!(HERO_GLOW_INSET_BOTTOM, 34.0);
-        assert_eq!(ASCII_TEXT_SIZE, 9.0);
-        assert_eq!(ASCII_BOX_SIZE, 320.0);
         assert_eq!(ENTER_BUTTON_HEIGHT, 48.0);
-        assert_eq!(COLS, 74);
-        assert_eq!(ROWS, 44);
     }
 }

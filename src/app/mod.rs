@@ -6,7 +6,8 @@ mod desktop;
 #[cfg(debug_assertions)]
 mod dev_reset;
 mod gpui_callbacks;
-pub mod shell;
+pub mod hero;
+mod shell;
 mod state;
 mod viewport;
 mod welcome;
@@ -99,6 +100,21 @@ mod tests {
         let state = AppState::from_preferences(prefs);
         assert_eq!(state.theme_mode(), ThemeMode::Light);
         assert_eq!(state.active_screen, ActiveScreen::Welcome);
+    }
+
+    #[test]
+    fn persist_welcome_completion_defers_screen_routing() {
+        let store = InMemoryPreferencesStore::new();
+        let mut state = AppState::from_preferences(AppPreferences::default());
+        state
+            .persist_welcome_completion(&store)
+            .expect("persist welcome completion");
+
+        assert!(state.preferences.onboarding_completed);
+        assert_eq!(state.active_screen, ActiveScreen::Welcome);
+        let intent = state.pending_window_resize.expect("resize intent recorded");
+        assert_eq!(intent.width, HOME_WINDOW_WIDTH);
+        assert_eq!(intent.height, HOME_WINDOW_HEIGHT);
     }
 
     #[test]
