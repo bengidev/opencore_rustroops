@@ -1,39 +1,16 @@
-//! Interactive welcome UI state (keyboard focus + ASCII hero animation).
-
-use std::time::Instant;
+//! Interactive welcome UI state (keyboard focus).
 
 use gpui::{App, FocusHandle, Window};
 
-use super::ascii_galaxy::{DEFAULT_SEED, GalaxyAscii};
-
 pub struct WelcomeUiState {
-    galaxy: GalaxyAscii,
-    last_tick: Instant,
     focus_claimed: bool,
 }
 
 impl WelcomeUiState {
     pub fn new() -> Self {
-        let mut galaxy = GalaxyAscii::new(DEFAULT_SEED);
-        let _ = galaxy.tick(0.0);
         Self {
-            galaxy,
-            last_tick: Instant::now(),
             focus_claimed: false,
         }
-    }
-
-    pub fn tick(&mut self, now: Instant) {
-        let dt = now
-            .saturating_duration_since(self.last_tick)
-            .as_secs_f32()
-            .clamp(0.0, 0.1);
-        self.last_tick = now;
-        let _ = self.galaxy.tick(dt);
-    }
-
-    pub fn last_frame(&self) -> &str {
-        self.galaxy.last_frame()
     }
 
     /// Requests keyboard focus once per welcome session.

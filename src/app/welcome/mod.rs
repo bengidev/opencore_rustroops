@@ -1,6 +1,5 @@
 //! Welcome command reducer, interactive state, and view.
 
-mod ascii_galaxy;
 pub mod theme_toggle;
 mod ui_state;
 mod view;
