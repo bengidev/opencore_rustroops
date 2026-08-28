@@ -23,6 +23,9 @@ use crate::shared::theme::{OpenCoreTheme, ThemeTransition, apply_nothing_theme};
 use super::AppError;
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
+use super::hero::{
+    CubeHeroState, HeroTransition, cube_hero_canvas, responsive_hero_size,
+};
 use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
 use super::state::{ActiveScreen, AppState};
 use super::viewport::WindowViewport;
@@ -100,6 +103,8 @@ pub struct OpenCoreApp {
     _shutdown_subscription: gpui::Subscription,
     _window_closed_subscription: gpui::Subscription,
     theme_transition: Option<ThemeTransition>,
+    cube_hero: CubeHeroState,
+    hero_transition: Option<HeroTransition>,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
     dev_reset_state: DevResetState,
@@ -150,6 +155,8 @@ impl OpenCoreApp {
             _shutdown_subscription: shutdown_subscription,
             _window_closed_subscription: window_closed_subscription,
             theme_transition: None,
+            cube_hero: CubeHeroState::new(),
+            hero_transition: None,
             persistence_error: None,
             #[cfg(debug_assertions)]
             dev_reset_state: DevResetState::default(),
@@ -260,28 +267,47 @@ impl OpenCoreApp {
         shell
     }
 
+    fn settle_hero_transition(&mut self, now: Instant) {
+        if self.hero_transition.is_some_and(|tx| !tx.is_active(now)) {
+            self.hero_transition = None;
+        }
+    }
+
+    fn begin_hero_transition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.hero_transition.is_some() {
+            return;
+        }
+        let now = Instant::now();
+        let viewport = WindowViewport::from_window(window);
+        let hero_size = responsive_hero_size(viewport.width, viewport.height);
+        self.hero_transition = Some(HeroTransition::start(now, viewport, hero_size));
+
+        match self
+            .state
+            .apply_welcome_outcome(WelcomeOutcome::Completed, self.store.as_ref())
+        {
+            Ok(()) => {
+                self.persistence_error = None;
+                self.welcome_ui = None;
+                self.finish_screen_transition(window, cx);
+            }
+            Err(error) => {
+                self.hero_transition = None;
+                self.record_persistence_error("complete welcome", error);
+                cx.notify();
+            }
+        }
+    }
+
     fn apply_welcome_command(
         &mut self,
         command: WelcomeCommand,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let outcome = reduce_welcome(command);
-        match self
-            .state
-            .apply_welcome_outcome(outcome, self.store.as_ref())
-        {
-            Ok(()) => {
-                self.persistence_error = None;
-                if outcome != WelcomeOutcome::Pending {
-                    self.welcome_ui = None;
-                    self.finish_screen_transition(window, cx);
-                }
-            }
-            Err(error) => {
-                self.record_persistence_error("complete welcome", error);
-                cx.notify();
-            }
+        match reduce_welcome(command) {
+            WelcomeOutcome::Pending => {}
+            WelcomeOutcome::Completed => self.begin_hero_transition(window, cx),
         }
     }
 
@@ -333,6 +359,8 @@ impl OpenCoreApp {
         self.pending_shell_save.borrow_mut().clear();
         self.shell = None;
         self.welcome_ui = Some(WelcomeUiState::new());
+        self.cube_hero = CubeHeroState::new();
+        self.hero_transition = None;
         self.persistence_error = None;
         Ok(())
     }
@@ -486,17 +514,41 @@ impl Render for OpenCoreApp {
 
         let now = Instant::now();
         self.settle_theme_transition(now);
+        self.settle_hero_transition(now);
         let theme = self.visual_theme(now);
-        if should_request_frame(&self.welcome_ui, self.theme_transition.as_ref(), now) {
+
+        let transition_progress = self
+            .hero_transition
+            .map(|tx| tx.linear_progress(now))
+            .unwrap_or(0.0);
+        let cube_rotation = self
+            .hero_transition
+            .map(|tx| tx.rotation_at(now))
+            .unwrap_or(0.0);
+
+        if should_request_cube_animation(
+            &self.welcome_ui,
+            self.hero_transition.as_ref(),
+            self.theme_transition.as_ref(),
+            now,
+        ) {
+            self.cube_hero.tick(now, cube_rotation);
             window.request_animation_frame();
         }
+
+        let welcome_content_opacity = self
+            .hero_transition
+            .map(|_| HeroTransition::content_opacity(transition_progress))
+            .unwrap_or(1.0);
+        let shell_brand_opacity = HeroTransition::shell_brand_opacity(
+            self.hero_transition
+                .map(|_| transition_progress)
+                .unwrap_or(1.0),
+        );
 
         let content = match self.state.active_screen {
             ActiveScreen::Welcome => {
                 let _ = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
-                if let Some(ui) = self.welcome_ui.as_mut() {
-                    ui.tick(now);
-                }
                 let ui = self.welcome_ui.as_ref().expect("inserted");
                 let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
@@ -511,19 +563,44 @@ impl Render for OpenCoreApp {
                         on_enter,
                         welcome_screen(
                             theme,
+                            &self.cube_hero,
                             ui,
                             callbacks,
                             persistence_error,
                             WindowViewport::from_window(window),
+                            welcome_content_opacity,
                         ),
                     ))
             }
             ActiveScreen::Home => {
                 let shell = self.ensure_shell(window, cx);
-                shell.update(cx, |shell, cx| shell.set_theme(theme, cx));
+                shell.update(cx, |shell, cx| {
+                    shell.set_theme(theme, cx);
+                    shell.set_brand_chrome(shell_brand_opacity, 1.0, cx);
+                });
                 div().size_full().min_w_0().min_h_0().child(shell)
             }
         };
+
+        let mut root = div().size_full().relative().child(content);
+
+        if let Some(transition) = self.hero_transition {
+            if transition.is_active(now) {
+                let (center_x, center_y, size) = transition.layout_at(now);
+                let rotation = transition.rotation_at(now);
+                let ink = theme.foreground(crate::shared::theme::ForegroundToken::Primary);
+                let half = size * 0.5;
+                root = root.child(
+                    div()
+                        .absolute()
+                        .left(px(center_x - half))
+                        .top(px(center_y - half))
+                        .w(px(size))
+                        .h(px(size))
+                        .child(cube_hero_canvas(&self.cube_hero, ink, rotation)),
+                );
+            }
+        }
 
         #[cfg(debug_assertions)]
         {
@@ -536,10 +613,7 @@ impl Render for OpenCoreApp {
             let on_drag_move = callbacks.on_drag_move.clone();
             let on_drag_end = callbacks.on_drag_end.clone();
 
-            div()
-                .size_full()
-                .relative()
-                .child(content)
+            root
                 .child(dev_reset_fab(theme, &state_snapshot, &callbacks))
                 .on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
                     (on_drag_move)(event, window, cx);
@@ -554,21 +628,19 @@ impl Render for OpenCoreApp {
 
         #[cfg(not(debug_assertions))]
         {
-            content
+            root
         }
     }
 }
 
-fn should_request_welcome_animation(welcome_ui: &Option<WelcomeUiState>) -> bool {
-    welcome_ui.is_some()
-}
-
-fn should_request_frame(
+fn should_request_cube_animation(
     welcome_ui: &Option<WelcomeUiState>,
+    hero_transition: Option<&HeroTransition>,
     theme_transition: Option<&ThemeTransition>,
     now: Instant,
 ) -> bool {
-    should_request_welcome_animation(welcome_ui)
+    welcome_ui.is_some()
+        || hero_transition.is_some_and(|tx| tx.is_active(now))
         || theme_transition.is_some_and(|tx| tx.is_active(now))
 }
 
@@ -674,11 +746,24 @@ mod animation_gate_tests {
     use super::*;
 
     #[test]
-    fn onboarding_animation_gate_follows_ui_presence() {
-        assert!(should_request_welcome_animation(&Some(
-            WelcomeUiState::new()
-        )));
-        assert!(!should_request_welcome_animation(&None));
+    fn cube_animation_gate_follows_welcome_and_hero_transition() {
+        let now = Instant::now();
+        assert!(should_request_cube_animation(
+            &Some(WelcomeUiState::new()),
+            None,
+            None,
+            now,
+        ));
+        assert!(!should_request_cube_animation(&None, None, None, now));
+        let tx = HeroTransition::start(
+            now,
+            WindowViewport {
+                width: 960.0,
+                height: 740.0,
+            },
+            220.0,
+        );
+        assert!(should_request_cube_animation(&None, Some(&tx), None, now));
     }
 
     #[test]
@@ -689,13 +774,14 @@ mod animation_gate_tests {
             crate::shared::theme::ThemeMode::Light,
             now,
         );
-        assert!(should_request_frame(&None, Some(&tx), now));
-        assert!(!should_request_frame(
+        assert!(should_request_cube_animation(&None, None, Some(&tx), now));
+        assert!(!should_request_cube_animation(
             &None,
+            None,
             Some(&tx),
             now + crate::shared::theme::THEME_TRANSITION_DURATION
         ));
-        assert!(!should_request_frame(&None, None, now));
+        assert!(!should_request_cube_animation(&None, None, None, now));
     }
 }
 
