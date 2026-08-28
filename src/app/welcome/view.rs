@@ -10,7 +10,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
-use crate::app::hero::{CubeHeroState, cube_hero_canvas, responsive_hero_size};
+use crate::app::hero::{opencore_brand_image, responsive_brand_height};
 use crate::app::viewport::WindowViewport;
 use crate::shared::theme::{
     BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
@@ -96,7 +96,6 @@ pub fn welcome_interactive_root(
 /// Full-screen welcome landing scene.
 pub fn welcome_screen(
     theme: OpenCoreTheme,
-    cube: &CubeHeroState,
     ui: &WelcomeUiState,
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
@@ -104,7 +103,7 @@ pub fn welcome_screen(
     content_opacity: f32,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
-    let hero_size = responsive_hero_size(viewport.width, viewport.height);
+    let hero_height = responsive_brand_height(viewport);
 
     div().size_full().bg(background).child(
         div()
@@ -115,8 +114,7 @@ pub fn welcome_screen(
                 ui,
                 callbacks,
                 persistence_error,
-                hero_size,
-                cube,
+                hero_height,
             )),
     )
 }
@@ -131,8 +129,7 @@ fn main_column(
     _ui: &WelcomeUiState,
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
-    hero_size: f32,
-    cube: &CubeHeroState,
+    hero_height: f32,
 ) -> impl IntoElement {
     let mut centered_content = div()
         .w_full()
@@ -141,7 +138,7 @@ fn main_column(
         .flex_col()
         .items_center()
         .justify_center()
-        .child(hero_block(theme, cube, hero_size));
+        .child(hero_block(theme, hero_height));
 
     if let Some(message) = persistence_error {
         let muted = theme.foreground(ForegroundToken::Muted);
@@ -224,27 +221,21 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         ])
 }
 
-fn hero_block(theme: OpenCoreTheme, cube: &CubeHeroState, hero_size: f32) -> impl IntoElement {
+fn hero_block(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
-    let ink = theme.foreground(ForegroundToken::Primary);
     let grotesk = SharedString::from("Space Grotesk");
     let spacing = theme.spacing;
 
-    let hero_cube = div()
+    let hero_brand = div()
         .relative()
         .w_full()
-        .h(px(hero_size + 40.0))
+        .h(px(hero_height + 40.0))
         .flex()
         .items_center()
         .justify_center()
         .child(hero_glow(theme))
-        .child(
-            div()
-                .w(px(hero_size))
-                .h(px(hero_size))
-                .child(cube_hero_canvas(cube, ink, 0.0)),
-        );
+        .child(opencore_brand_image(theme, hero_height, 1.0));
 
     div()
         .w_full()
@@ -257,7 +248,7 @@ fn hero_block(theme: OpenCoreTheme, cube: &CubeHeroState, hero_size: f32) -> imp
                 .flex()
                 .flex_col()
                 .items_center()
-                .child(hero_cube)
+                .child(hero_brand)
                 .child(div().h(px(spacing.lg as f32)))
                 .child(
                     div()

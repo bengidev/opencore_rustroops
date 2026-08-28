@@ -24,7 +24,7 @@ use super::AppError;
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
 use super::hero::{
-    CubeHeroState, HeroTransition, cube_hero_canvas, responsive_hero_size,
+    HeroTransition, brand_width, opencore_brand_image, responsive_brand_height,
 };
 use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
 use super::state::{ActiveScreen, AppState};
@@ -103,7 +103,6 @@ pub struct OpenCoreApp {
     _shutdown_subscription: gpui::Subscription,
     _window_closed_subscription: gpui::Subscription,
     theme_transition: Option<ThemeTransition>,
-    cube_hero: CubeHeroState,
     hero_transition: Option<HeroTransition>,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
@@ -155,7 +154,6 @@ impl OpenCoreApp {
             _shutdown_subscription: shutdown_subscription,
             _window_closed_subscription: window_closed_subscription,
             theme_transition: None,
-            cube_hero: CubeHeroState::new(),
             hero_transition: None,
             persistence_error: None,
             #[cfg(debug_assertions)]
@@ -279,8 +277,8 @@ impl OpenCoreApp {
         }
         let now = Instant::now();
         let viewport = WindowViewport::from_window(window);
-        let hero_size = responsive_hero_size(viewport.width, viewport.height);
-        self.hero_transition = Some(HeroTransition::start(now, viewport, hero_size));
+        let hero_height = responsive_brand_height(WindowViewport::from_window(window));
+        self.hero_transition = Some(HeroTransition::start(now, viewport, hero_height));
 
         match self
             .state
@@ -359,7 +357,6 @@ impl OpenCoreApp {
         self.pending_shell_save.borrow_mut().clear();
         self.shell = None;
         self.welcome_ui = Some(WelcomeUiState::new());
-        self.cube_hero = CubeHeroState::new();
         self.hero_transition = None;
         self.persistence_error = None;
         Ok(())
@@ -521,18 +518,11 @@ impl Render for OpenCoreApp {
             .hero_transition
             .map(|tx| tx.linear_progress(now))
             .unwrap_or(0.0);
-        let cube_rotation = self
-            .hero_transition
-            .map(|tx| tx.rotation_at(now))
-            .unwrap_or(0.0);
-
-        if should_request_cube_animation(
-            &self.welcome_ui,
+        if should_request_animation_frame(
             self.hero_transition.as_ref(),
             self.theme_transition.as_ref(),
             now,
         ) {
-            self.cube_hero.tick(now, cube_rotation);
             window.request_animation_frame();
         }
 
@@ -563,7 +553,6 @@ impl Render for OpenCoreApp {
                         on_enter,
                         welcome_screen(
                             theme,
-                            &self.cube_hero,
                             ui,
                             callbacks,
                             persistence_error,
@@ -576,7 +565,7 @@ impl Render for OpenCoreApp {
                 let shell = self.ensure_shell(window, cx);
                 shell.update(cx, |shell, cx| {
                     shell.set_theme(theme, cx);
-                    shell.set_brand_chrome(shell_brand_opacity, 1.0, cx);
+                    shell.set_brand_chrome(shell_brand_opacity, cx);
                 });
                 div().size_full().min_w_0().min_h_0().child(shell)
             }
@@ -586,18 +575,14 @@ impl Render for OpenCoreApp {
 
         if let Some(transition) = self.hero_transition {
             if transition.is_active(now) {
-                let (center_x, center_y, size) = transition.layout_at(now);
-                let rotation = transition.rotation_at(now);
-                let ink = theme.foreground(crate::shared::theme::ForegroundToken::Primary);
-                let half = size * 0.5;
+                let (center_x, center_y, height) = transition.layout_at(now);
+                let width = brand_width(height);
                 root = root.child(
                     div()
                         .absolute()
-                        .left(px(center_x - half))
-                        .top(px(center_y - half))
-                        .w(px(size))
-                        .h(px(size))
-                        .child(cube_hero_canvas(&self.cube_hero, ink, rotation)),
+                        .left(px(center_x - width * 0.5))
+                        .top(px(center_y - height * 0.5))
+                        .child(opencore_brand_image(theme, height, 1.0)),
                 );
             }
         }
@@ -633,14 +618,12 @@ impl Render for OpenCoreApp {
     }
 }
 
-fn should_request_cube_animation(
-    welcome_ui: &Option<WelcomeUiState>,
+fn should_request_animation_frame(
     hero_transition: Option<&HeroTransition>,
     theme_transition: Option<&ThemeTransition>,
     now: Instant,
 ) -> bool {
-    welcome_ui.is_some()
-        || hero_transition.is_some_and(|tx| tx.is_active(now))
+    hero_transition.is_some_and(|tx| tx.is_active(now))
         || theme_transition.is_some_and(|tx| tx.is_active(now))
 }
 
@@ -746,24 +729,23 @@ mod animation_gate_tests {
     use super::*;
 
     #[test]
-    fn cube_animation_gate_follows_welcome_and_hero_transition() {
+    fn hero_animation_gate_follows_active_transition() {
         let now = Instant::now();
-        assert!(should_request_cube_animation(
-            &Some(WelcomeUiState::new()),
-            None,
-            None,
-            now,
-        ));
-        assert!(!should_request_cube_animation(&None, None, None, now));
+        assert!(!should_request_animation_frame(None, None, now));
         let tx = HeroTransition::start(
             now,
             WindowViewport {
                 width: 960.0,
                 height: 740.0,
             },
-            220.0,
+            52.0,
         );
-        assert!(should_request_cube_animation(&None, Some(&tx), None, now));
+        assert!(should_request_animation_frame(Some(&tx), None, now));
+        assert!(!should_request_animation_frame(
+            Some(&tx),
+            None,
+            now + super::super::hero::HERO_TRANSITION_DURATION
+        ));
     }
 
     #[test]
@@ -774,14 +756,13 @@ mod animation_gate_tests {
             crate::shared::theme::ThemeMode::Light,
             now,
         );
-        assert!(should_request_cube_animation(&None, None, Some(&tx), now));
-        assert!(!should_request_cube_animation(
-            &None,
+        assert!(should_request_animation_frame(None, Some(&tx), now));
+        assert!(!should_request_animation_frame(
             None,
             Some(&tx),
             now + crate::shared::theme::THEME_TRANSITION_DURATION
         ));
-        assert!(!should_request_cube_animation(&None, None, None, now));
+        assert!(!should_request_animation_frame(None, None, now));
     }
 }
 
