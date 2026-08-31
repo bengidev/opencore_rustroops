@@ -9,6 +9,7 @@ pub use brand::{
 };
 pub use layout::{
     BRAND_HERO_MAX, BRAND_HERO_MIN, BRAND_SHELL_HEIGHT, docked_brand_center,
-    responsive_brand_height, responsive_hero_size, title_bar_left_padding, welcome_brand_center,
+    responsive_brand_height, responsive_hero_size, show_off_brand_height,
+    title_bar_left_padding, welcome_brand_center,
 };
 pub use transition::{HERO_TRANSITION_DURATION, HeroTransition};

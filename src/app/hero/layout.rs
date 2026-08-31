@@ -55,6 +55,20 @@ pub fn responsive_brand_height(viewport: WindowViewport) -> f32 {
         .min(BRAND_HERO_MAX / BRAND_ASPECT)
 }
 
+/// Large centered brand height during the show-off phase.
+///
+/// Unlike the old wireframe cube (square), the brand lockup is very wide
+/// (`BRAND_ASPECT`), so height must be derived from available width.
+pub fn show_off_brand_height(viewport: WindowViewport) -> f32 {
+    let hero = responsive_brand_height(viewport);
+    let width_limit = (viewport.width - WELCOME_EDGE_INSET_H * 2.0) / BRAND_ASPECT;
+    let available_height = (viewport.height - WELCOME_HEADER_BAND - WELCOME_ACTION_BAND).max(0.0);
+    // Prominent intro size that still fits the viewport; morphs down to `hero`.
+    width_limit
+        .min(available_height * 0.4)
+        .max(hero)
+}
+
 /// Center of the docked brand: `[toggle-left] [brand lockup]` (layout A).
 pub fn docked_brand_center(viewport: WindowViewport) -> (f32, f32) {
     let title_h = TITLE_BAR_HEIGHT.as_f32();
@@ -90,5 +104,17 @@ mod tests {
     fn welcome_hero_size_clamps_on_narrow_windows() {
         assert_eq!(responsive_hero_size(440.0, 360.0), BRAND_HERO_MIN);
         assert_eq!(responsive_hero_size(1200.0, 900.0), BRAND_HERO_MAX);
+    }
+
+    #[test]
+    fn show_off_brand_fits_within_viewport_width() {
+        let viewport = WindowViewport {
+            width: 960.0,
+            height: 740.0,
+        };
+        let height = show_off_brand_height(viewport);
+        let width = brand_width(height);
+        assert!(width <= viewport.width - WELCOME_EDGE_INSET_H * 2.0 + 1.0);
+        assert!(height >= responsive_brand_height(viewport));
     }
 }
