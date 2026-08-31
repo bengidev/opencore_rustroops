@@ -11,10 +11,9 @@ use std::rc::Rc;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
 use crate::app::hero::{
-    lerp_f32, opencore_brand_image, responsive_brand_height, show_off_brand_height,
-    WELCOME_ACTION_SPACER, WELCOME_EDGE_INSET_BOTTOM, WELCOME_EDGE_INSET_H,
-    WELCOME_EDGE_INSET_TOP, WELCOME_ENTER_BUTTON_HEIGHT, WELCOME_HERO_BRAND_FRAME_EXTRA,
-    WELCOME_TITLEBAR_HEIGHT,
+    WELCOME_ACTION_SPACER, WELCOME_EDGE_INSET_BOTTOM, WELCOME_EDGE_INSET_H, WELCOME_EDGE_INSET_TOP,
+    WELCOME_ENTER_BUTTON_HEIGHT, WELCOME_HERO_BRAND_FRAME_EXTRA, WELCOME_TITLEBAR_HEIGHT, lerp_f32,
+    opencore_brand_image, responsive_brand_height, show_off_brand_height,
 };
 use crate::app::viewport::WindowViewport;
 use crate::shared::theme::{
@@ -83,7 +82,12 @@ pub fn welcome_interactive_root(
                 on_enter(window, cx);
             }
         })
-        .child(div().size_full().pt(px(WELCOME_TITLEBAR_HEIGHT)).child(content))
+        .child(
+            div()
+                .size_full()
+                .pt(px(WELCOME_TITLEBAR_HEIGHT))
+                .child(content),
+        )
         .child(
             div()
                 .absolute()
@@ -110,17 +114,14 @@ pub fn welcome_screen(
     let hero_height = responsive_brand_height(viewport);
     let show_off_height = show_off_brand_height(viewport);
 
-    div()
-        .size_full()
-        .bg(background)
-        .child(main_column(
-            theme,
-            callbacks,
-            persistence_error,
-            hero_height,
-            show_off_height,
-            reveal_progress,
-        ))
+    div().size_full().bg(background).child(main_column(
+        theme,
+        callbacks,
+        persistence_error,
+        hero_height,
+        show_off_height,
+        reveal_progress,
+    ))
 }
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {

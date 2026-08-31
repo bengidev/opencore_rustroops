@@ -720,7 +720,7 @@ mod welcome_intro_gating_tests {
         cx: &mut TestAppContext,
         store: Arc<FilePreferencesStore>,
     ) -> (gpui::Entity<OpenCoreApp>, &mut gpui::VisualTestContext) {
-        cx.update(|app| gpui_component::init(app));
+        cx.update(gpui_component::init);
         cx.add_window_view(|_window, cx| {
             OpenCoreApp::new(
                 AppState::from_preferences(AppPreferences::default()),
@@ -740,10 +740,7 @@ mod welcome_intro_gating_tests {
         let (app, cx) = welcome_app(cx, store);
 
         cx.update_window_entity(&app, |app, window, entity_cx| {
-            app.welcome_ui
-                .as_mut()
-                .expect("welcome ui")
-                .tick(start);
+            app.welcome_ui.as_mut().expect("welcome ui").tick(start);
             app.apply_welcome_command(WelcomeCommand::EnterPressed, window, entity_cx);
         });
 
@@ -764,10 +761,7 @@ mod welcome_intro_gating_tests {
         let theme_before = cx.read_entity(&app, |app, _| app.state.theme_mode());
 
         cx.update_window_entity(&app, |app, _window, entity_cx| {
-            app.welcome_ui
-                .as_mut()
-                .expect("welcome ui")
-                .tick(start);
+            app.welcome_ui.as_mut().expect("welcome ui").tick(start);
             app.toggle_theme(entity_cx);
         });
 

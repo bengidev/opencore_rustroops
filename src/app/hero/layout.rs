@@ -83,9 +83,7 @@ pub fn show_off_brand_height(viewport: WindowViewport) -> f32 {
     let width_limit = (viewport.width - WELCOME_EDGE_INSET_H * 2.0) / BRAND_ASPECT;
     let available_height = welcome_vertical_content_budget(viewport);
     // Prominent intro size that still fits the viewport; morphs down to `hero`.
-    width_limit
-        .min(available_height * 0.4)
-        .max(hero)
+    width_limit.min(available_height * 0.4).max(hero)
 }
 
 /// Linear interpolation between two values.

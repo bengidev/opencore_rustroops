@@ -29,9 +29,7 @@ impl WelcomeUiState {
     pub fn intro_animating(&self, now: Instant) -> bool {
         match self.started_at {
             None => true,
-            Some(started_at) => {
-                now.saturating_duration_since(started_at) < CHROME_REVEAL_DURATION
-            }
+            Some(started_at) => now.saturating_duration_since(started_at) < CHROME_REVEAL_DURATION,
         }
     }
 
