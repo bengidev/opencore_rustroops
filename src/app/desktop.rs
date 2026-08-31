@@ -187,11 +187,18 @@ impl OpenCoreApp {
         cx.notify();
     }
 
+    fn welcome_input_enabled(&self, now: Instant) -> bool {
+        self.welcome_ui
+            .as_ref()
+            .is_none_or(|ui| ui.accepts_enter(now))
+    }
+
     fn ensure_welcome_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let now = Instant::now();
-        if let Some(ui) = self.welcome_ui.as_mut()
-            && ui.accepts_enter(now)
-        {
+        if !self.welcome_input_enabled(now) {
+            return;
+        }
+        if let Some(ui) = self.welcome_ui.as_mut() {
             ui.ensure_initial_focus(window, &self.focus_handle, cx);
         }
     }
@@ -269,7 +276,6 @@ impl OpenCoreApp {
                 self.persistence_error = None;
                 self.welcome_ui = None;
                 self.finish_screen_transition(window, cx);
-                cx.notify();
             }
             Err(error) => {
                 self.record_persistence_error("persist welcome completion", error);
@@ -284,11 +290,7 @@ impl OpenCoreApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self
-            .welcome_ui
-            .as_ref()
-            .is_some_and(|ui| !ui.accepts_enter(Instant::now()))
-        {
+        if !self.welcome_input_enabled(Instant::now()) {
             return;
         }
         match reduce_welcome(command) {
@@ -299,11 +301,7 @@ impl OpenCoreApp {
 
     fn toggle_theme(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
-        if self
-            .welcome_ui
-            .as_ref()
-            .is_some_and(|ui| !ui.accepts_enter(now))
-        {
+        if !self.welcome_input_enabled(now) {
             return;
         }
         let from = self.state.theme_mode();
@@ -507,10 +505,13 @@ impl Render for OpenCoreApp {
         self.settle_theme_transition(now);
         let theme = self.visual_theme(now);
 
-        let welcome_intro_animating = self
-            .welcome_ui
-            .as_mut()
-            .is_some_and(|ui| ui.tick(now));
+        let welcome_intro_animating = if self.state.active_screen == ActiveScreen::Welcome {
+            self.welcome_ui
+                .get_or_insert_with(WelcomeUiState::new)
+                .tick(now)
+        } else {
+            false
+        };
         if should_request_animation_frame(
             self.theme_transition.as_ref(),
             welcome_intro_animating,
@@ -521,9 +522,18 @@ impl Render for OpenCoreApp {
 
         let content = match self.state.active_screen {
             ActiveScreen::Welcome => {
-                let ui = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
-                ui.ensure_initial_focus(window, &self.focus_handle, cx);
-                let accepts_enter = ui.accepts_enter(now);
+                let accepts_enter = self
+                    .welcome_ui
+                    .as_ref()
+                    .expect("welcome ui initialized for intro tick")
+                    .accepts_enter(now);
+                let ui = self
+                    .welcome_ui
+                    .as_mut()
+                    .expect("welcome ui initialized for intro tick");
+                if accepts_enter {
+                    ui.ensure_initial_focus(window, &self.focus_handle, cx);
+                }
                 let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
@@ -701,6 +711,12 @@ mod animation_gate_tests {
     fn welcome_intro_requests_animation_frames() {
         let now = Instant::now();
         assert!(should_request_animation_frame(None, true, now));
+    }
+
+    #[test]
+    fn welcome_intro_stops_requesting_frames() {
+        let now = Instant::now();
+        assert!(!should_request_animation_frame(None, false, now));
     }
 
     #[test]

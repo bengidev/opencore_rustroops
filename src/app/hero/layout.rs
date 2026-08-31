@@ -1,7 +1,6 @@
 //! Hero layout math — welcome center, docked title-bar slot (layout A).
 
 use super::brand::{BRAND_ASPECT, brand_width};
-use crate::app::state::{HOME_WINDOW_HEIGHT, HOME_WINDOW_WIDTH};
 use crate::app::viewport::WindowViewport;
 use crate::shared::theme::TypeRole;
 use gpui_component::TITLE_BAR_HEIGHT;
@@ -19,11 +18,9 @@ pub const WELCOME_EDGE_INSET_H: f32 = 16.0;
 pub const WELCOME_TITLEBAR_HEIGHT: f32 = 38.0;
 pub const WELCOME_EDGE_INSET_TOP: f32 = 4.0;
 pub const WELCOME_EDGE_INSET_BOTTOM: f32 = 20.0;
-pub const WELCOME_HEADER_GAP: f32 = 8.0;
 pub const WELCOME_HERO_BRAND_FRAME_EXTRA: f32 = 40.0;
 pub const WELCOME_ACTION_SPACER: f32 = 60.0;
 pub const WELCOME_ENTER_BUTTON_HEIGHT: f32 = 48.0;
-pub const WELCOME_ACTION_BOTTOM_PADDING: f32 = 8.0;
 
 const WELCOME_ACTION_BAND: f32 = 260.0;
 const WELCOME_THEME_TOGGLE_HEIGHT: f32 = 32.0;
@@ -88,12 +85,9 @@ pub fn docked_brand_center(viewport: WindowViewport) -> (f32, f32) {
     (x, title_h * 0.5)
 }
 
-/// Viewport used to compute the docked slot after welcome completes.
-pub fn home_transition_viewport() -> WindowViewport {
-    WindowViewport {
-        width: HOME_WINDOW_WIDTH as f32,
-        height: HOME_WINDOW_HEIGHT as f32,
-    }
+/// Linear interpolation between two values.
+pub fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
 }
 
 #[cfg(test)]
@@ -102,7 +96,11 @@ mod tests {
 
     #[test]
     fn docked_brand_sits_after_left_toggle() {
-        let (x, y) = docked_brand_center(home_transition_viewport());
+        let viewport = WindowViewport {
+            width: 1280.0,
+            height: 800.0,
+        };
+        let (x, y) = docked_brand_center(viewport);
         let width = brand_width(BRAND_SHELL_HEIGHT);
         let expected_x =
             title_bar_left_padding() + SHELL_TOGGLE_WIDTH + SHELL_TITLE_GAP + width * 0.5;
@@ -148,7 +146,41 @@ mod tests {
         };
         let hero = responsive_brand_height(viewport);
         let show_off = show_off_brand_height(viewport);
-        let settled = show_off + (hero - show_off);
+        let settled = lerp_f32(show_off, hero, 1.0);
         assert!((settled - hero).abs() < 1e-3);
+    }
+
+    #[test]
+    fn show_off_brand_fits_within_viewport_height() {
+        let viewport = WindowViewport {
+            width: 960.0,
+            height: 740.0,
+        };
+        let height = show_off_brand_height(viewport);
+        let available = (viewport.height
+            - WELCOME_EDGE_INSET_TOP
+            - WELCOME_EDGE_INSET_BOTTOM
+            - welcome_header_row_height()
+            - 8.0
+            - WELCOME_ACTION_BAND)
+            .max(0.0);
+        assert!(height + WELCOME_HERO_BRAND_FRAME_EXTRA <= available + 1.0);
+    }
+
+    #[test]
+    fn show_off_brand_fits_short_viewport_height() {
+        let viewport = WindowViewport {
+            width: 960.0,
+            height: 500.0,
+        };
+        let height = show_off_brand_height(viewport);
+        let available = (viewport.height
+            - WELCOME_EDGE_INSET_TOP
+            - WELCOME_EDGE_INSET_BOTTOM
+            - welcome_header_row_height()
+            - 8.0
+            - WELCOME_ACTION_BAND)
+            .max(0.0);
+        assert!(height + WELCOME_HERO_BRAND_FRAME_EXTRA <= available + 1.0);
     }
 }

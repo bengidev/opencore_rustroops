@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
 use crate::app::hero::{
-    opencore_brand_image, responsive_brand_height, show_off_brand_height,
+    lerp_f32, opencore_brand_image, responsive_brand_height, show_off_brand_height,
     WELCOME_ACTION_SPACER, WELCOME_EDGE_INSET_BOTTOM, WELCOME_EDGE_INSET_H,
     WELCOME_EDGE_INSET_TOP, WELCOME_ENTER_BUTTON_HEIGHT, WELCOME_HERO_BRAND_FRAME_EXTRA,
     WELCOME_TITLEBAR_HEIGHT,
@@ -107,7 +107,6 @@ pub fn welcome_screen(
     let background = theme.surface(BackgroundToken::Primary);
     let hero_height = responsive_brand_height(viewport);
     let show_off_height = show_off_brand_height(viewport);
-    let chrome_opacity = ui.chrome_opacity(now);
     let reveal_progress = ui.reveal_progress(now);
 
     div()
@@ -119,13 +118,8 @@ pub fn welcome_screen(
             persistence_error,
             hero_height,
             show_off_height,
-            chrome_opacity,
             reveal_progress,
         ))
-}
-
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
 }
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
@@ -139,10 +133,9 @@ fn main_column(
     persistence_error: Option<&str>,
     hero_height: f32,
     show_off_height: f32,
-    chrome_opacity: f32,
     reveal_progress: f32,
 ) -> impl IntoElement {
-    let brand_height = lerp(show_off_height, hero_height, reveal_progress);
+    let brand_height = lerp_f32(show_off_height, hero_height, reveal_progress);
 
     let mut centered_content = div()
         .w_full()
@@ -152,7 +145,7 @@ fn main_column(
         .items_center()
         .justify_center()
         .child(hero_brand_standalone(theme, brand_height))
-        .child(hero_copy(theme, chrome_opacity));
+        .child(hero_copy(theme, reveal_progress));
 
     if let Some(message) = persistence_error {
         let muted = theme.foreground(ForegroundToken::Muted);
@@ -161,7 +154,7 @@ fn main_column(
         centered_content = centered_content.child(
             div()
                 .w_full()
-                .opacity(chrome_opacity)
+                .opacity(reveal_progress)
                 .text_center()
                 .text_size(px(TypeRole::MonoSm.size()))
                 .font_family(mono)
@@ -173,7 +166,7 @@ fn main_column(
 
     centered_content = centered_content
         .child(div().h(px(WELCOME_ACTION_SPACER)))
-        .child(action_row(theme, callbacks.clone(), chrome_opacity));
+        .child(action_row(theme, callbacks.clone(), reveal_progress));
 
     div()
         .size_full()
@@ -184,7 +177,7 @@ fn main_column(
         .px(px(WELCOME_EDGE_INSET_H))
         .child(
             div()
-                .opacity(chrome_opacity)
+                .opacity(reveal_progress)
                 .child(header_row(theme, callbacks.clone())),
         )
         .child(div().h(px(8.)))
@@ -252,7 +245,7 @@ fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32) -> impl IntoEle
         .child(opencore_brand_image(theme, hero_height, 1.0))
 }
 
-fn hero_copy(theme: OpenCoreTheme, chrome_opacity: f32) -> impl IntoElement {
+fn hero_copy(theme: OpenCoreTheme, reveal_progress: f32) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let grotesk = SharedString::from("Space Grotesk");
@@ -268,8 +261,8 @@ fn hero_copy(theme: OpenCoreTheme, chrome_opacity: f32) -> impl IntoElement {
                 .max_w(px(HERO_MAX_WIDTH))
                 .flex()
                 .flex_col()
-                .items_center()
-                .opacity(chrome_opacity)
+                .items_stretch()
+                .opacity(reveal_progress)
                 .child(div().h(px(spacing.lg as f32)))
                 .child(
                     div()
@@ -285,7 +278,7 @@ fn hero_copy(theme: OpenCoreTheme, chrome_opacity: f32) -> impl IntoElement {
                     div()
                         .w_full()
                         .max_w(px(HERO_MAX_WIDTH))
-                        .text_center()
+                        .text_left()
                         .text_size(px(TypeRole::MonoSm.size()))
                         .line_height(relative(TypeRole::MonoSm.line_height()))
                         .font_family(grotesk)
@@ -298,13 +291,13 @@ fn hero_copy(theme: OpenCoreTheme, chrome_opacity: f32) -> impl IntoElement {
 fn action_row(
     theme: OpenCoreTheme,
     callbacks: WelcomeCallbacks,
-    chrome_opacity: f32,
+    reveal_progress: f32,
 ) -> impl IntoElement {
     let spacing = theme.spacing;
     let on_enter = callbacks.on_enter;
     div()
         .w_full()
-        .opacity(chrome_opacity)
+        .opacity(reveal_progress)
         .flex()
         .items_center()
         .justify_center()

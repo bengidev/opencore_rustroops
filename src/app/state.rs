@@ -88,27 +88,6 @@ impl AppState {
         Ok(())
     }
 
-    /// Persists onboarding completion and queues the home resize without routing.
-    pub fn persist_welcome_completion<S: PreferencesStore>(
-        &mut self,
-        store: &S,
-    ) -> Result<(), PreferencesError> {
-        let mut updated = self.preferences.clone();
-        updated.onboarding_completed = true;
-        store.save(&updated)?;
-        self.preferences = updated;
-        self.pending_window_resize = Some(WindowResizeIntent {
-            width: HOME_WINDOW_WIDTH,
-            height: HOME_WINDOW_HEIGHT,
-        });
-        Ok(())
-    }
-
-    /// Routes to home after welcome completes.
-    pub fn finish_welcome_transition(&mut self) {
-        self.active_screen = ActiveScreen::Home;
-    }
-
     /// Applies a reducer outcome: persist and route when completed.
     pub fn apply_welcome_outcome<S: PreferencesStore>(
         &mut self,
@@ -118,8 +97,15 @@ impl AppState {
         match outcome {
             WelcomeOutcome::Pending => {}
             WelcomeOutcome::Completed => {
-                self.persist_welcome_completion(store)?;
-                self.finish_welcome_transition();
+                let mut updated = self.preferences.clone();
+                updated.onboarding_completed = true;
+                store.save(&updated)?;
+                self.preferences = updated;
+                self.pending_window_resize = Some(WindowResizeIntent {
+                    width: HOME_WINDOW_WIDTH,
+                    height: HOME_WINDOW_HEIGHT,
+                });
+                self.active_screen = ActiveScreen::Home;
             }
         }
         Ok(())
