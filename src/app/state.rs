@@ -104,7 +104,7 @@ impl AppState {
         Ok(())
     }
 
-    /// Routes to home after the welcome hero transition finishes.
+    /// Routes to home after welcome completes.
     pub fn finish_welcome_transition(&mut self) {
         self.active_screen = ActiveScreen::Home;
     }
