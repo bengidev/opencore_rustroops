@@ -6,6 +6,7 @@ use gpui::{
     ParentElement, SharedString, Styled, Window, WindowControlArea, div, px, relative,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::Disableable;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -110,6 +111,7 @@ pub fn welcome_screen(
     let show_off_height = show_off_brand_height(viewport);
     let chrome_opacity = ui.chrome_opacity(now);
     let reveal_progress = ui.reveal_progress(now);
+    let chrome_interactive = ui.accepts_enter(now);
 
     div()
         .size_full()
@@ -126,6 +128,7 @@ pub fn welcome_screen(
                     show_off_height,
                     chrome_opacity,
                     reveal_progress,
+                    chrome_interactive,
                 )),
         )
 }
@@ -147,6 +150,7 @@ fn main_column(
     show_off_height: f32,
     chrome_opacity: f32,
     reveal_progress: f32,
+    chrome_interactive: bool,
 ) -> impl IntoElement {
     let brand_height = lerp(show_off_height, hero_height, reveal_progress);
 
@@ -179,7 +183,12 @@ fn main_column(
 
     centered_content = centered_content
         .child(div().h(px(60.0)))
-        .child(action_row(theme, callbacks.clone(), chrome_opacity));
+        .child(action_row(
+            theme,
+            callbacks.clone(),
+            chrome_opacity,
+            chrome_interactive,
+        ));
 
     div()
         .size_full()
@@ -191,13 +200,17 @@ fn main_column(
         .child(
             div()
                 .opacity(chrome_opacity)
-                .child(header_row(theme, callbacks.clone())),
+                .child(header_row(theme, callbacks.clone(), chrome_interactive)),
         )
         .child(div().h(px(8.)))
         .child(centered_content)
 }
 
-fn header_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoElement {
+fn header_row(
+    theme: OpenCoreTheme,
+    callbacks: WelcomeCallbacks,
+    chrome_interactive: bool,
+) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let muted = theme.foreground(ForegroundToken::Muted);
     let mono = SharedString::from("Space Mono");
@@ -228,7 +241,11 @@ fn header_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoEle
                 ),
         )
         .child(div().flex_grow(1.))
-        .child(theme_toggle_button(theme, callbacks.on_toggle_theme))
+        .child(theme_toggle_button(
+            theme,
+            callbacks.on_toggle_theme,
+            chrome_interactive,
+        ))
 }
 
 fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
@@ -305,6 +322,7 @@ fn action_row(
     theme: OpenCoreTheme,
     callbacks: WelcomeCallbacks,
     chrome_opacity: f32,
+    chrome_interactive: bool,
 ) -> impl IntoElement {
     let spacing = theme.spacing;
     let on_enter = callbacks.on_enter;
@@ -320,6 +338,7 @@ fn action_row(
                 .primary()
                 .label("Enter OpenCore")
                 .h(px(ENTER_BUTTON_HEIGHT))
+                .disabled(!chrome_interactive)
                 .on_click(move |_, window, cx| {
                     on_enter(window, cx);
                 }),

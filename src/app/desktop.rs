@@ -330,6 +330,13 @@ impl OpenCoreApp {
 
     fn toggle_theme(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
+        if self
+            .welcome_ui
+            .as_ref()
+            .is_some_and(|ui| !ui.accepts_enter(now))
+        {
+            return;
+        }
         let from = self.state.theme_mode();
         let next = from.toggle();
         match self.state.set_theme_mode(self.store.as_ref(), next) {

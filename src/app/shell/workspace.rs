@@ -242,7 +242,7 @@ impl Render for ShellWorkspace {
                                 cx,
                             ))
                             .child(shell_title_brand(theme, self.brand_opacity))
-                            .child(theme_toggle_button(theme, on_toggle_theme)),
+                            .child(theme_toggle_button(theme, on_toggle_theme, true)),
                     )
                     .trailing(
                         h_flex()
