@@ -1,9 +1,8 @@
 //! Hero layout math — welcome center, docked title-bar slot (layout A).
 
-use super::brand::{BRAND_ASPECT, brand_width};
+use super::brand::BRAND_ASPECT;
 use crate::app::viewport::WindowViewport;
 use crate::shared::theme::TypeRole;
-use gpui_component::TITLE_BAR_HEIGHT;
 
 pub const BRAND_HERO_MIN: f32 = 220.0;
 pub const BRAND_HERO_MAX: f32 = 320.0;
@@ -11,7 +10,9 @@ pub const BRAND_HERO_MAX: f32 = 320.0;
 pub const BRAND_SHELL_HEIGHT: f32 = 18.0;
 
 /// Ghost xsmall icon button width in the shell title bar.
+#[allow(dead_code)]
 pub const SHELL_TOGGLE_WIDTH: f32 = 28.0;
+#[allow(dead_code)]
 pub const SHELL_TITLE_GAP: f32 = 4.0;
 
 pub const WELCOME_EDGE_INSET_H: f32 = 16.0;
@@ -23,6 +24,7 @@ pub const WELCOME_ACTION_SPACER: f32 = 60.0;
 pub const WELCOME_ENTER_BUTTON_HEIGHT: f32 = 48.0;
 
 const WELCOME_ACTION_BAND: f32 = 260.0;
+const WELCOME_HEADER_GAP: f32 = 8.0;
 const WELCOME_THEME_TOGGLE_HEIGHT: f32 = 32.0;
 
 /// macOS traffic-light inset matches gpui-component `TITLE_BAR_LEFT_PADDING`.
@@ -52,6 +54,17 @@ pub fn welcome_header_row_height() -> f32 {
     text_column.max(WELCOME_THEME_TOGGLE_HEIGHT)
 }
 
+/// Vertical space available for the centered brand frame and copy column.
+pub fn welcome_vertical_content_budget(viewport: WindowViewport) -> f32 {
+    (viewport.height
+        - WELCOME_EDGE_INSET_TOP
+        - WELCOME_EDGE_INSET_BOTTOM
+        - welcome_header_row_height()
+        - WELCOME_HEADER_GAP
+        - WELCOME_ACTION_BAND)
+        .max(0.0)
+}
+
 /// Responsive welcome brand height.
 pub fn responsive_brand_height(viewport: WindowViewport) -> f32 {
     let square_limit = responsive_hero_size(viewport.width, viewport.height);
@@ -68,21 +81,11 @@ pub fn responsive_brand_height(viewport: WindowViewport) -> f32 {
 pub fn show_off_brand_height(viewport: WindowViewport) -> f32 {
     let hero = responsive_brand_height(viewport);
     let width_limit = (viewport.width - WELCOME_EDGE_INSET_H * 2.0) / BRAND_ASPECT;
-    let available_height =
-        (viewport.height - welcome_header_row_height() - WELCOME_ACTION_BAND).max(0.0);
+    let available_height = welcome_vertical_content_budget(viewport);
     // Prominent intro size that still fits the viewport; morphs down to `hero`.
     width_limit
         .min(available_height * 0.4)
         .max(hero)
-}
-
-/// Center of the docked brand: `[toggle-left] [brand lockup]` (layout A).
-pub fn docked_brand_center(viewport: WindowViewport) -> (f32, f32) {
-    let title_h = TITLE_BAR_HEIGHT.as_f32();
-    let width = brand_width(BRAND_SHELL_HEIGHT);
-    let x = title_bar_left_padding() + SHELL_TOGGLE_WIDTH + SHELL_TITLE_GAP + width * 0.5;
-    let _ = viewport;
-    (x, title_h * 0.5)
 }
 
 /// Linear interpolation between two values.
@@ -93,6 +96,17 @@ pub fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::hero::brand::brand_width;
+    use gpui_component::TITLE_BAR_HEIGHT;
+
+    /// Center of the docked brand: `[toggle-left] [brand lockup]` (layout A).
+    fn docked_brand_center(viewport: WindowViewport) -> (f32, f32) {
+        let title_h = TITLE_BAR_HEIGHT.as_f32();
+        let width = brand_width(BRAND_SHELL_HEIGHT);
+        let x = title_bar_left_padding() + SHELL_TOGGLE_WIDTH + SHELL_TITLE_GAP + width * 0.5;
+        let _ = viewport;
+        (x, title_h * 0.5)
+    }
 
     #[test]
     fn docked_brand_sits_after_left_toggle() {
@@ -157,13 +171,7 @@ mod tests {
             height: 740.0,
         };
         let height = show_off_brand_height(viewport);
-        let available = (viewport.height
-            - WELCOME_EDGE_INSET_TOP
-            - WELCOME_EDGE_INSET_BOTTOM
-            - welcome_header_row_height()
-            - 8.0
-            - WELCOME_ACTION_BAND)
-            .max(0.0);
+        let available = welcome_vertical_content_budget(viewport);
         assert!(height + WELCOME_HERO_BRAND_FRAME_EXTRA <= available + 1.0);
     }
 
@@ -174,13 +182,7 @@ mod tests {
             height: 500.0,
         };
         let height = show_off_brand_height(viewport);
-        let available = (viewport.height
-            - WELCOME_EDGE_INSET_TOP
-            - WELCOME_EDGE_INSET_BOTTOM
-            - welcome_header_row_height()
-            - 8.0
-            - WELCOME_ACTION_BAND)
-            .max(0.0);
+        let available = welcome_vertical_content_budget(viewport);
         assert!(height + WELCOME_HERO_BRAND_FRAME_EXTRA <= available + 1.0);
     }
 }

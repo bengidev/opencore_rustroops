@@ -52,6 +52,15 @@ impl WelcomeUiState {
         !self.intro_animating(now)
     }
 
+    #[cfg(test)]
+    pub fn complete_intro_for_test(&mut self) {
+        self.started_at = Some(
+            Instant::now()
+                .checked_sub(CHROME_REVEAL_DURATION + Duration::from_millis(1))
+                .expect("recent instant"),
+        );
+    }
+
     /// Requests keyboard focus once per welcome session.
     pub fn ensure_initial_focus(
         &mut self,

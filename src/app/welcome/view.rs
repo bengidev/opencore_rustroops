@@ -8,7 +8,6 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
 use crate::app::hero::{
@@ -23,10 +22,12 @@ use crate::shared::theme::{
 };
 
 use super::theme_toggle::theme_toggle_button;
-use super::ui_state::WelcomeUiState;
 
 const HERO_TAGLINE: &str = "Your local AI command workspace";
 /// Single-line tagline width at [`TypeRole::DisplayMd`] in Space Grotesk.
+///
+/// The tagline uses `whitespace_nowrap`; content width should stay at or above this
+/// value (default welcome window is 960px with 16px horizontal insets).
 const HERO_TAGLINE_COLUMN_WIDTH: f32 = 596.0;
 const HERO_GLOW_INSET_H: f32 = 44.0;
 const HERO_GLOW_INSET_TOP: f32 = 46.0;
@@ -100,8 +101,7 @@ pub fn welcome_interactive_root(
 /// Full-screen welcome landing scene.
 pub fn welcome_screen(
     theme: OpenCoreTheme,
-    ui: &WelcomeUiState,
-    now: Instant,
+    reveal_progress: f32,
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
     viewport: WindowViewport,
@@ -109,7 +109,6 @@ pub fn welcome_screen(
     let background = theme.surface(BackgroundToken::Primary);
     let hero_height = responsive_brand_height(viewport);
     let show_off_height = show_off_brand_height(viewport);
-    let reveal_progress = ui.reveal_progress(now);
 
     div()
         .size_full()

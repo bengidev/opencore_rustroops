@@ -100,6 +100,7 @@ pub struct OpenCoreApp {
     _shutdown_subscription: gpui::Subscription,
     _window_closed_subscription: gpui::Subscription,
     theme_transition: Option<ThemeTransition>,
+    welcome_callbacks: Option<WelcomeCallbacks>,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
     dev_reset_state: DevResetState,
@@ -150,6 +151,7 @@ impl OpenCoreApp {
             _shutdown_subscription: shutdown_subscription,
             _window_closed_subscription: window_closed_subscription,
             theme_transition: None,
+            welcome_callbacks: None,
             persistence_error: None,
             #[cfg(debug_assertions)]
             dev_reset_state: DevResetState::default(),
@@ -534,9 +536,13 @@ impl Render for OpenCoreApp {
                 if accepts_enter {
                     ui.ensure_initial_focus(window, &self.focus_handle, cx);
                 }
-                let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
+                let callbacks = self
+                    .welcome_callbacks
+                    .get_or_insert_with(|| WelcomeCallbacks::from_app(cx.entity().downgrade()))
+                    .clone();
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
+                let reveal_progress = ui.reveal_progress(now);
 
                 div()
                     .size_full()
@@ -548,8 +554,7 @@ impl Render for OpenCoreApp {
                         on_enter,
                         welcome_screen(
                             theme,
-                            ui,
-                            now,
+                            reveal_progress,
                             callbacks,
                             persistence_error,
                             WindowViewport::from_window(window),
@@ -700,6 +705,94 @@ mod tests {
         let intent = state.take_pending_window_resize().expect("intent");
         assert_eq!(intent.width, HOME_WINDOW_WIDTH);
         assert!(state.pending_window_resize.is_none());
+    }
+}
+
+#[cfg(test)]
+mod welcome_intro_gating_tests {
+    use super::*;
+    use crate::shared::preferences::AppPreferences;
+    use gpui::{AppContext, TestAppContext, VisualContext};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn welcome_app(
+        cx: &mut TestAppContext,
+        store: Arc<FilePreferencesStore>,
+    ) -> (gpui::Entity<OpenCoreApp>, &mut gpui::VisualTestContext) {
+        cx.update(|app| gpui_component::init(app));
+        cx.add_window_view(|_window, cx| {
+            OpenCoreApp::new(
+                AppState::from_preferences(AppPreferences::default()),
+                store,
+                cx,
+            )
+        })
+    }
+
+    #[gpui::test]
+    fn enter_blocked_during_intro_reveal(cx: &mut TestAppContext) {
+        let _dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(
+            _dir.path().join("preferences.json"),
+        ));
+        let start = Instant::now();
+        let (app, cx) = welcome_app(cx, store);
+
+        cx.update_window_entity(&app, |app, window, entity_cx| {
+            app.welcome_ui
+                .as_mut()
+                .expect("welcome ui")
+                .tick(start);
+            app.apply_welcome_command(WelcomeCommand::EnterPressed, window, entity_cx);
+        });
+
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.state.active_screen, ActiveScreen::Welcome);
+            assert!(!app.state.preferences.onboarding_completed);
+        });
+    }
+
+    #[gpui::test]
+    fn toggle_theme_blocked_during_intro_reveal(cx: &mut TestAppContext) {
+        let _dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(
+            _dir.path().join("preferences.json"),
+        ));
+        let start = Instant::now();
+        let (app, cx) = welcome_app(cx, store);
+        let theme_before = cx.read_entity(&app, |app, _| app.state.theme_mode());
+
+        cx.update_window_entity(&app, |app, _window, entity_cx| {
+            app.welcome_ui
+                .as_mut()
+                .expect("welcome ui")
+                .tick(start);
+            app.toggle_theme(entity_cx);
+        });
+
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.state.theme_mode(), theme_before);
+        });
+    }
+
+    #[gpui::test]
+    fn enter_enabled_after_intro_reveal(cx: &mut TestAppContext) {
+        let _dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(
+            _dir.path().join("preferences.json"),
+        ));
+        let (app, cx) = welcome_app(cx, store);
+
+        cx.update_window_entity(&app, |app, _window, _entity_cx| {
+            app.welcome_ui = Some(WelcomeUiState::new());
+            assert!(!app.welcome_input_enabled(Instant::now()));
+            app.welcome_ui
+                .as_mut()
+                .expect("welcome ui")
+                .complete_intro_for_test();
+            assert!(app.welcome_input_enabled(Instant::now()));
+        });
     }
 }
 
