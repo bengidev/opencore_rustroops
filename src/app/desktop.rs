@@ -191,7 +191,9 @@ impl OpenCoreApp {
     }
 
     fn ensure_welcome_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(ui) = self.welcome_ui.as_mut() {
+        if let Some(ui) = self.welcome_ui.as_mut()
+            && ui.accepts_enter()
+        {
             ui.ensure_initial_focus(window, &self.focus_handle, cx);
         }
     }
@@ -312,6 +314,13 @@ impl OpenCoreApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self
+            .welcome_ui
+            .as_ref()
+            .is_some_and(|ui| !ui.accepts_enter())
+        {
+            return;
+        }
         match reduce_welcome(command) {
             WelcomeOutcome::Pending => {}
             WelcomeOutcome::Completed => self.begin_hero_transition(window, cx),
@@ -529,9 +538,14 @@ impl Render for OpenCoreApp {
             .hero_transition
             .map(|tx| tx.linear_progress(now))
             .unwrap_or(0.0);
+        let welcome_intro_animating = self
+            .welcome_ui
+            .as_mut()
+            .is_some_and(|ui| ui.tick(now));
         if should_request_animation_frame(
             self.hero_transition.as_ref(),
             self.theme_transition.as_ref(),
+            welcome_intro_animating,
             now,
         ) {
             window.request_animation_frame();
@@ -549,8 +563,9 @@ impl Render for OpenCoreApp {
 
         let content = match self.state.active_screen {
             ActiveScreen::Welcome => {
-                let _ = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
-                let ui = self.welcome_ui.as_ref().expect("inserted");
+                let ui = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
+                ui.ensure_initial_focus(window, &self.focus_handle, cx);
+                let accepts_enter = ui.accepts_enter();
                 let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
@@ -561,10 +576,12 @@ impl Render for OpenCoreApp {
                     .min_h_0()
                     .child(welcome_interactive_root(
                         &self.focus_handle,
+                        accepts_enter,
                         on_enter,
                         welcome_screen(
                             theme,
                             ui,
+                            now,
                             callbacks,
                             persistence_error,
                             WindowViewport::from_window(window),
@@ -631,9 +648,11 @@ impl Render for OpenCoreApp {
 fn should_request_animation_frame(
     hero_transition: Option<&HeroTransition>,
     theme_transition: Option<&ThemeTransition>,
+    welcome_intro_animating: bool,
     now: Instant,
 ) -> bool {
-    hero_transition.is_some_and(|tx| tx.is_active(now))
+    welcome_intro_animating
+        || hero_transition.is_some_and(|tx| tx.is_active(now))
         || theme_transition.is_some_and(|tx| tx.is_active(now))
 }
 
@@ -741,7 +760,7 @@ mod animation_gate_tests {
     #[test]
     fn hero_animation_gate_follows_active_transition() {
         let now = Instant::now();
-        assert!(!should_request_animation_frame(None, None, now));
+        assert!(!should_request_animation_frame(None, None, false, now));
         let tx = HeroTransition::start(
             now,
             WindowViewport {
@@ -750,12 +769,19 @@ mod animation_gate_tests {
             },
             52.0,
         );
-        assert!(should_request_animation_frame(Some(&tx), None, now));
+        assert!(should_request_animation_frame(Some(&tx), None, false, now));
         assert!(!should_request_animation_frame(
             Some(&tx),
             None,
+            false,
             now + super::super::hero::HERO_TRANSITION_DURATION
         ));
+    }
+
+    #[test]
+    fn welcome_intro_requests_animation_frames() {
+        let now = Instant::now();
+        assert!(should_request_animation_frame(None, None, true, now));
     }
 
     #[test]
@@ -766,13 +792,14 @@ mod animation_gate_tests {
             crate::shared::theme::ThemeMode::Light,
             now,
         );
-        assert!(should_request_animation_frame(None, Some(&tx), now));
+        assert!(should_request_animation_frame(None, Some(&tx), false, now));
         assert!(!should_request_animation_frame(
             None,
             Some(&tx),
+            false,
             now + crate::shared::theme::THEME_TRANSITION_DURATION
         ));
-        assert!(!should_request_animation_frame(None, None, now));
+        assert!(!should_request_animation_frame(None, None, false, now));
     }
 }
 
