@@ -110,7 +110,6 @@ pub fn welcome_screen(
     let show_off_height = show_off_brand_height(viewport);
     let chrome_opacity = ui.chrome_opacity(now);
     let reveal_progress = ui.reveal_progress(now);
-    let chrome_interactive = ui.accepts_enter(now);
 
     div()
         .size_full()
@@ -127,7 +126,6 @@ pub fn welcome_screen(
                     show_off_height,
                     chrome_opacity,
                     reveal_progress,
-                    chrome_interactive,
                 )),
         )
 }
@@ -149,7 +147,6 @@ fn main_column(
     show_off_height: f32,
     chrome_opacity: f32,
     reveal_progress: f32,
-    chrome_interactive: bool,
 ) -> impl IntoElement {
     let brand_height = lerp(show_off_height, hero_height, reveal_progress);
 
@@ -194,17 +191,13 @@ fn main_column(
         .child(
             div()
                 .opacity(chrome_opacity)
-                .child(header_row(theme, callbacks.clone(), chrome_interactive)),
+                .child(header_row(theme, callbacks.clone())),
         )
         .child(div().h(px(8.)))
         .child(centered_content)
 }
 
-fn header_row(
-    theme: OpenCoreTheme,
-    callbacks: WelcomeCallbacks,
-    chrome_interactive: bool,
-) -> impl IntoElement {
+fn header_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoElement {
     let primary = theme.foreground(ForegroundToken::Primary);
     let muted = theme.foreground(ForegroundToken::Muted);
     let mono = SharedString::from("Space Mono");
@@ -235,11 +228,7 @@ fn header_row(
                 ),
         )
         .child(div().flex_grow(1.))
-        .child(theme_toggle_button(
-            theme,
-            callbacks.on_toggle_theme,
-            chrome_interactive,
-        ))
+        .child(theme_toggle_button(theme, callbacks.on_toggle_theme))
 }
 
 fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
