@@ -23,7 +23,6 @@ use crate::shared::theme::{OpenCoreTheme, ThemeTransition, apply_nothing_theme};
 use super::AppError;
 #[cfg(debug_assertions)]
 use super::dev_reset::{DevResetCallbacks, DevResetState, dev_reset_fab};
-use super::hero::{HeroTransition, brand_width, opencore_brand_image, responsive_brand_height};
 use super::shell::{DockSaveFn, ShellWorkspace, register_shell_panels};
 use super::state::{ActiveScreen, AppState};
 use super::viewport::WindowViewport;
@@ -101,7 +100,7 @@ pub struct OpenCoreApp {
     _shutdown_subscription: gpui::Subscription,
     _window_closed_subscription: gpui::Subscription,
     theme_transition: Option<ThemeTransition>,
-    hero_transition: Option<HeroTransition>,
+    welcome_callbacks: Option<WelcomeCallbacks>,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
     dev_reset_state: DevResetState,
@@ -152,7 +151,7 @@ impl OpenCoreApp {
             _shutdown_subscription: shutdown_subscription,
             _window_closed_subscription: window_closed_subscription,
             theme_transition: None,
-            hero_transition: None,
+            welcome_callbacks: None,
             persistence_error: None,
             #[cfg(debug_assertions)]
             dev_reset_state: DevResetState::default(),
@@ -190,7 +189,17 @@ impl OpenCoreApp {
         cx.notify();
     }
 
+    fn welcome_input_enabled(&self, now: Instant) -> bool {
+        self.welcome_ui
+            .as_ref()
+            .is_none_or(|ui| ui.accepts_enter(now))
+    }
+
     fn ensure_welcome_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        if !self.welcome_input_enabled(now) {
+            return;
+        }
         if let Some(ui) = self.welcome_ui.as_mut() {
             ui.ensure_initial_focus(window, &self.focus_handle, cx);
         }
@@ -263,43 +272,14 @@ impl OpenCoreApp {
         shell
     }
 
-    fn settle_hero_transition(&mut self, now: Instant) -> bool {
-        if self.hero_transition.is_some_and(|tx| !tx.is_active(now)) {
-            self.hero_transition = None;
-            if self.state.active_screen == ActiveScreen::Welcome {
-                self.state.finish_welcome_transition();
-                self.welcome_ui = None;
-                return true;
-            }
-        }
-        false
-    }
-
-    fn start_hero_transition(&mut self, viewport: WindowViewport) -> Result<(), PreferencesError> {
-        if self.hero_transition.is_some() {
-            return Ok(());
-        }
-        let now = Instant::now();
-        let hero_height = responsive_brand_height(viewport);
-        self.hero_transition = Some(HeroTransition::start(now, viewport, hero_height));
-        match self.state.persist_welcome_completion(self.store.as_ref()) {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                self.hero_transition = None;
-                Err(error)
-            }
-        }
-    }
-
-    fn begin_hero_transition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let viewport = WindowViewport::from_window(window);
-        match self.start_hero_transition(viewport) {
+    fn complete_welcome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.state.complete_welcome(self.store.as_ref()) {
             Ok(()) => {
                 self.persistence_error = None;
+                self.welcome_ui = None;
                 self.finish_screen_transition(window, cx);
             }
             Err(error) => {
-                self.hero_transition = None;
                 self.record_persistence_error("persist welcome completion", error);
                 cx.notify();
             }
@@ -312,14 +292,20 @@ impl OpenCoreApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.welcome_input_enabled(Instant::now()) {
+            return;
+        }
         match reduce_welcome(command) {
             WelcomeOutcome::Pending => {}
-            WelcomeOutcome::Completed => self.begin_hero_transition(window, cx),
+            WelcomeOutcome::Completed => self.complete_welcome(window, cx),
         }
     }
 
     fn toggle_theme(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
+        if !self.welcome_input_enabled(now) {
+            return;
+        }
         let from = self.state.theme_mode();
         let next = from.toggle();
         match self.state.set_theme_mode(self.store.as_ref(), next) {
@@ -366,7 +352,6 @@ impl OpenCoreApp {
         self.pending_shell_save.borrow_mut().clear();
         self.shell = None;
         self.welcome_ui = Some(WelcomeUiState::new());
-        self.hero_transition = None;
         self.persistence_error = None;
         Ok(())
     }
@@ -520,40 +505,44 @@ impl Render for OpenCoreApp {
 
         let now = Instant::now();
         self.settle_theme_transition(now);
-        if self.settle_hero_transition(now) {
-            cx.notify();
-        }
         let theme = self.visual_theme(now);
 
-        let transition_progress = self
-            .hero_transition
-            .map(|tx| tx.linear_progress(now))
-            .unwrap_or(0.0);
+        let welcome_intro_animating = if self.state.active_screen == ActiveScreen::Welcome {
+            self.welcome_ui
+                .get_or_insert_with(WelcomeUiState::new)
+                .tick(now)
+        } else {
+            false
+        };
         if should_request_animation_frame(
-            self.hero_transition.as_ref(),
             self.theme_transition.as_ref(),
+            welcome_intro_animating,
             now,
         ) {
             window.request_animation_frame();
         }
 
-        let welcome_content_opacity = self
-            .hero_transition
-            .map(|_| HeroTransition::content_opacity(transition_progress))
-            .unwrap_or(1.0);
-        let shell_brand_opacity = HeroTransition::shell_brand_opacity(
-            self.hero_transition
-                .map(|_| transition_progress)
-                .unwrap_or(1.0),
-        );
-
         let content = match self.state.active_screen {
             ActiveScreen::Welcome => {
-                let _ = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
-                let ui = self.welcome_ui.as_ref().expect("inserted");
-                let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
+                let accepts_enter = self
+                    .welcome_ui
+                    .as_ref()
+                    .expect("welcome ui initialized for intro tick")
+                    .accepts_enter(now);
+                let ui = self
+                    .welcome_ui
+                    .as_mut()
+                    .expect("welcome ui initialized for intro tick");
+                if accepts_enter {
+                    ui.ensure_initial_focus(window, &self.focus_handle, cx);
+                }
+                let callbacks = self
+                    .welcome_callbacks
+                    .get_or_insert_with(|| WelcomeCallbacks::from_app(cx.entity().downgrade()))
+                    .clone();
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
+                let reveal_progress = ui.reveal_progress(now);
 
                 div()
                     .size_full()
@@ -561,14 +550,14 @@ impl Render for OpenCoreApp {
                     .min_h_0()
                     .child(welcome_interactive_root(
                         &self.focus_handle,
+                        accepts_enter,
                         on_enter,
                         welcome_screen(
                             theme,
-                            ui,
+                            reveal_progress,
                             callbacks,
                             persistence_error,
                             WindowViewport::from_window(window),
-                            welcome_content_opacity,
                         ),
                     ))
             }
@@ -576,27 +565,13 @@ impl Render for OpenCoreApp {
                 let shell = self.ensure_shell(window, cx);
                 shell.update(cx, |shell, cx| {
                     shell.set_theme(theme, cx);
-                    shell.set_brand_chrome(shell_brand_opacity, cx);
+                    shell.set_brand_chrome(1.0, cx);
                 });
                 div().size_full().min_w_0().min_h_0().child(shell)
             }
         };
 
-        let mut root = div().size_full().relative().child(content);
-
-        if let Some(transition) = self.hero_transition
-            && transition.is_active(now)
-        {
-            let (center_x, center_y, height) = transition.layout_at(now);
-            let width = brand_width(height);
-            root = root.child(
-                div()
-                    .absolute()
-                    .left(px(center_x - width * 0.5))
-                    .top(px(center_y - height * 0.5))
-                    .child(opencore_brand_image(theme, height, 1.0)),
-            );
-        }
+        let root = div().size_full().relative().child(content);
 
         #[cfg(debug_assertions)]
         {
@@ -629,12 +604,11 @@ impl Render for OpenCoreApp {
 }
 
 fn should_request_animation_frame(
-    hero_transition: Option<&HeroTransition>,
     theme_transition: Option<&ThemeTransition>,
+    welcome_intro_animating: bool,
     now: Instant,
 ) -> bool {
-    hero_transition.is_some_and(|tx| tx.is_active(now))
-        || theme_transition.is_some_and(|tx| tx.is_active(now))
+    welcome_intro_animating || theme_transition.is_some_and(|tx| tx.is_active(now))
 }
 
 fn window_bounds_for_state(state: &AppState, cx: &App) -> WindowBounds {
@@ -735,27 +709,101 @@ mod tests {
 }
 
 #[cfg(test)]
+mod welcome_intro_gating_tests {
+    use super::*;
+    use crate::shared::preferences::AppPreferences;
+    use gpui::{AppContext, TestAppContext, VisualContext};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn welcome_app(
+        cx: &mut TestAppContext,
+        store: Arc<FilePreferencesStore>,
+    ) -> (gpui::Entity<OpenCoreApp>, &mut gpui::VisualTestContext) {
+        cx.update(gpui_component::init);
+        cx.add_window_view(|_window, cx| {
+            OpenCoreApp::new(
+                AppState::from_preferences(AppPreferences::default()),
+                store,
+                cx,
+            )
+        })
+    }
+
+    #[gpui::test]
+    fn enter_blocked_during_intro_reveal(cx: &mut TestAppContext) {
+        let _dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(
+            _dir.path().join("preferences.json"),
+        ));
+        let start = Instant::now();
+        let (app, cx) = welcome_app(cx, store);
+
+        cx.update_window_entity(&app, |app, window, entity_cx| {
+            app.welcome_ui.as_mut().expect("welcome ui").tick(start);
+            app.apply_welcome_command(WelcomeCommand::EnterPressed, window, entity_cx);
+        });
+
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.state.active_screen, ActiveScreen::Welcome);
+            assert!(!app.state.preferences.onboarding_completed);
+        });
+    }
+
+    #[gpui::test]
+    fn toggle_theme_blocked_during_intro_reveal(cx: &mut TestAppContext) {
+        let _dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(
+            _dir.path().join("preferences.json"),
+        ));
+        let start = Instant::now();
+        let (app, cx) = welcome_app(cx, store);
+        let theme_before = cx.read_entity(&app, |app, _| app.state.theme_mode());
+
+        cx.update_window_entity(&app, |app, _window, entity_cx| {
+            app.welcome_ui.as_mut().expect("welcome ui").tick(start);
+            app.toggle_theme(entity_cx);
+        });
+
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.state.theme_mode(), theme_before);
+        });
+    }
+
+    #[gpui::test]
+    fn enter_enabled_after_intro_reveal(cx: &mut TestAppContext) {
+        let _dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(FilePreferencesStore::at(
+            _dir.path().join("preferences.json"),
+        ));
+        let (app, cx) = welcome_app(cx, store);
+
+        cx.update_window_entity(&app, |app, _window, _entity_cx| {
+            app.welcome_ui = Some(WelcomeUiState::new());
+            assert!(!app.welcome_input_enabled(Instant::now()));
+            app.welcome_ui
+                .as_mut()
+                .expect("welcome ui")
+                .complete_intro_for_test();
+            assert!(app.welcome_input_enabled(Instant::now()));
+        });
+    }
+}
+
+#[cfg(test)]
 mod animation_gate_tests {
     use super::*;
 
     #[test]
-    fn hero_animation_gate_follows_active_transition() {
+    fn welcome_intro_requests_animation_frames() {
         let now = Instant::now();
-        assert!(!should_request_animation_frame(None, None, now));
-        let tx = HeroTransition::start(
-            now,
-            WindowViewport {
-                width: 960.0,
-                height: 740.0,
-            },
-            52.0,
-        );
-        assert!(should_request_animation_frame(Some(&tx), None, now));
-        assert!(!should_request_animation_frame(
-            Some(&tx),
-            None,
-            now + super::super::hero::HERO_TRANSITION_DURATION
-        ));
+        assert!(should_request_animation_frame(None, true, now));
+    }
+
+    #[test]
+    fn welcome_intro_stops_requesting_frames() {
+        let now = Instant::now();
+        assert!(!should_request_animation_frame(None, false, now));
     }
 
     #[test]
@@ -766,13 +814,13 @@ mod animation_gate_tests {
             crate::shared::theme::ThemeMode::Light,
             now,
         );
-        assert!(should_request_animation_frame(None, Some(&tx), now));
+        assert!(should_request_animation_frame(Some(&tx), false, now));
         assert!(!should_request_animation_frame(
-            None,
             Some(&tx),
+            false,
             now + crate::shared::theme::THEME_TRANSITION_DURATION
         ));
-        assert!(!should_request_animation_frame(None, None, now));
+        assert!(!should_request_animation_frame(None, false, now));
     }
 }
 
@@ -901,128 +949,6 @@ mod dock_layout_persistence_tests {
 
         let saved = store.load().expect("load shutdown-flushed preferences");
         assert_eq!(saved.dock_layout, Some(latest));
-    }
-}
-
-#[cfg(test)]
-mod hero_transition_tests {
-    use super::*;
-    use crate::shared::preferences::AppPreferences;
-    use gpui::{AppContext, TestAppContext};
-    use std::time::Duration;
-    use tempfile::TempDir;
-
-    const WELCOME_VIEWPORT: WindowViewport = WindowViewport {
-        width: 960.0,
-        height: 740.0,
-    };
-
-    #[gpui::test]
-    fn enter_sets_hero_transition_and_defers_home_routing(cx: &mut TestAppContext) {
-        let dir = TempDir::new().expect("temp dir");
-        let store = Arc::new(FilePreferencesStore::at(
-            dir.path().join("preferences.json"),
-        ));
-        let app = cx.new(|cx| {
-            OpenCoreApp::new(
-                AppState::from_preferences(AppPreferences::default()),
-                store.clone(),
-                cx,
-            )
-        });
-
-        app.update(cx, |app, cx| {
-            app.start_hero_transition(WELCOME_VIEWPORT)
-                .expect("start hero transition");
-            cx.notify();
-        });
-
-        cx.read_entity(&app, |app, _| {
-            assert!(app.hero_transition.is_some());
-            assert_eq!(app.state.active_screen, ActiveScreen::Welcome);
-            assert!(app.state.preferences.onboarding_completed);
-            assert!(app.welcome_ui.is_some());
-        });
-        let saved = store.load().expect("load");
-        assert!(saved.onboarding_completed);
-
-        let done = Instant::now() + super::super::hero::HERO_TRANSITION_DURATION;
-        app.update(cx, |app, cx| {
-            assert!(app.settle_hero_transition(done));
-            cx.notify();
-        });
-
-        cx.read_entity(&app, |app, _| {
-            assert!(app.hero_transition.is_none());
-            assert_eq!(app.state.active_screen, ActiveScreen::Home);
-            assert!(app.welcome_ui.is_none());
-        });
-    }
-
-    #[gpui::test]
-    fn persistence_failure_clears_hero_transition_without_routing_home(cx: &mut TestAppContext) {
-        let dir = TempDir::new().expect("temp dir");
-        let store = Arc::new(FilePreferencesStore::at(dir.path()));
-        let app = cx.new(|cx| {
-            OpenCoreApp::new(
-                AppState::from_preferences(AppPreferences::default()),
-                store,
-                cx,
-            )
-        });
-
-        app.update(cx, |app, cx| {
-            assert!(app.start_hero_transition(WELCOME_VIEWPORT).is_err());
-            cx.notify();
-        });
-
-        cx.read_entity(&app, |app, _| {
-            assert!(app.hero_transition.is_none());
-            assert_eq!(app.state.active_screen, ActiveScreen::Welcome);
-            assert!(!app.state.preferences.onboarding_completed);
-        });
-    }
-
-    #[gpui::test]
-    fn double_enter_does_not_restart_hero_transition(cx: &mut TestAppContext) {
-        let dir = TempDir::new().expect("temp dir");
-        let store = Arc::new(FilePreferencesStore::at(
-            dir.path().join("preferences.json"),
-        ));
-        let app = cx.new(|cx| {
-            OpenCoreApp::new(
-                AppState::from_preferences(AppPreferences::default()),
-                store,
-                cx,
-            )
-        });
-
-        app.update(cx, |app, cx| {
-            app.start_hero_transition(WELCOME_VIEWPORT)
-                .expect("first enter");
-            cx.notify();
-        });
-        cx.executor().advance_clock(Duration::from_millis(400));
-
-        let progress_before_second_enter = cx.read_entity(&app, |app, _| {
-            app.hero_transition
-                .map(|tx| tx.linear_progress(Instant::now()))
-                .expect("hero transition active")
-        });
-
-        app.update(cx, |app, cx| {
-            app.start_hero_transition(WELCOME_VIEWPORT)
-                .expect("second enter is ignored");
-            cx.notify();
-        });
-        cx.executor().advance_clock(Duration::from_millis(100));
-
-        let progress_after_second_enter = cx.read_entity(&app, |app, _| {
-            app.hero_transition
-                .map(|tx| tx.linear_progress(Instant::now()))
-                .expect("hero transition still active")
-        });
-        assert!(progress_after_second_enter > progress_before_second_enter);
     }
 }
 

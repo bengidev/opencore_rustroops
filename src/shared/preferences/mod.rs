@@ -172,7 +172,7 @@ mod tests {
     fn app_preferences_default_serializes_to_prd_schema() {
         let json = serde_json::to_string(&AppPreferences::default()).expect("serialize");
         let value: serde_json::Value = serde_json::from_str(&json).expect("parse");
-        assert_eq!(value["theme_mode"], "dark");
+        assert_eq!(value["theme_mode"], "light");
         assert_eq!(value["onboarding_completed"], false);
         assert_eq!(value.get("shell"), None);
         assert_eq!(value.get("dock_layout"), None);
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn app_preferences_default_matches_schema() {
         let prefs = AppPreferences::default();
-        assert_eq!(prefs.theme_mode, ThemeMode::Dark);
+        assert_eq!(prefs.theme_mode, ThemeMode::Light);
         assert!(!prefs.onboarding_completed);
         assert!(prefs.dock_layout.is_none());
     }
@@ -202,7 +202,7 @@ mod tests {
     fn app_preferences_deserializes_with_missing_fields() {
         let restored: AppPreferences =
             serde_json::from_str(r#"{"onboarding_completed":true}"#).expect("deserialize");
-        assert_eq!(restored.theme_mode, ThemeMode::Dark);
+        assert_eq!(restored.theme_mode, ThemeMode::Light);
         assert!(restored.onboarding_completed);
     }
 

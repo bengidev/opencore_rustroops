@@ -10,25 +10,28 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
-use crate::app::hero::{opencore_brand_image, responsive_brand_height};
+use crate::app::hero::{
+    WELCOME_ACTION_SPACER, WELCOME_EDGE_INSET_BOTTOM, WELCOME_EDGE_INSET_H, WELCOME_EDGE_INSET_TOP,
+    WELCOME_ENTER_BUTTON_HEIGHT, WELCOME_HERO_BRAND_FRAME_EXTRA, WELCOME_TITLEBAR_HEIGHT, lerp_f32,
+    opencore_brand_image, responsive_brand_height, show_off_brand_height,
+};
 use crate::app::viewport::WindowViewport;
 use crate::shared::theme::{
     BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
 
 use super::theme_toggle::theme_toggle_button;
-use super::ui_state::WelcomeUiState;
 
-const HERO_MAX_WIDTH: f32 = 680.0;
+const HERO_TAGLINE: &str = "Your local AI command workspace";
+/// Single-line tagline width at [`TypeRole::DisplayMd`] in Space Grotesk.
+///
+/// The tagline uses `whitespace_nowrap`; content width should stay at or above this
+/// value (default welcome window is 960px with 16px horizontal insets).
+const HERO_TAGLINE_COLUMN_WIDTH: f32 = 596.0;
 const HERO_GLOW_INSET_H: f32 = 44.0;
 const HERO_GLOW_INSET_TOP: f32 = 46.0;
 const HERO_GLOW_INSET_BOTTOM: f32 = 34.0;
-const EDGE_INSET_H: f32 = 16.0;
-const EDGE_INSET_TOP: f32 = 4.0;
-const EDGE_INSET_BOTTOM: f32 = 20.0;
-const ENTER_BUTTON_HEIGHT: f32 = 48.0;
 const TITLEBAR_CONTROLS_INSET: f32 = 88.0;
-const TITLEBAR_HEIGHT: f32 = 38.0;
 
 fn welcome_drag_should_start(pointer_down: bool, pointer_moved: bool) -> bool {
     pointer_down && pointer_moved
@@ -43,6 +46,7 @@ pub struct WelcomeCallbacks {
 /// Focusable shell for welcome keyboard input (Enter to complete).
 pub fn welcome_interactive_root(
     focus_handle: &FocusHandle,
+    accepts_enter: bool,
     on_enter: WindowAppHandler,
     content: impl IntoElement,
 ) -> impl IntoElement {
@@ -74,18 +78,23 @@ pub fn welcome_interactive_root(
         .tab_index(0)
         .track_focus(focus_handle)
         .on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if is_enter_keystroke(event) {
+            if accepts_enter && is_enter_keystroke(event) {
                 on_enter(window, cx);
             }
         })
-        .child(div().size_full().pt(px(TITLEBAR_HEIGHT)).child(content))
+        .child(
+            div()
+                .size_full()
+                .pt(px(WELCOME_TITLEBAR_HEIGHT))
+                .child(content),
+        )
         .child(
             div()
                 .absolute()
                 .top_0()
                 .left(px(TITLEBAR_CONTROLS_INSET))
                 .right_0()
-                .h(px(TITLEBAR_HEIGHT))
+                .h(px(WELCOME_TITLEBAR_HEIGHT))
                 .window_control_area(WindowControlArea::Drag)
                 .on_mouse_down(MouseButton::Left, on_drag_down)
                 .on_mouse_up(MouseButton::Left, on_drag_up)
@@ -96,30 +105,23 @@ pub fn welcome_interactive_root(
 /// Full-screen welcome landing scene.
 pub fn welcome_screen(
     theme: OpenCoreTheme,
-    ui: &WelcomeUiState,
+    reveal_progress: f32,
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
     viewport: WindowViewport,
-    content_opacity: f32,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
     let hero_height = responsive_brand_height(viewport);
+    let show_off_height = show_off_brand_height(viewport);
 
-    div()
-        .size_full()
-        .bg(background)
-        .child(
-            div()
-                .size_full()
-                .opacity(content_opacity)
-                .child(main_column(
-                    theme,
-                    ui,
-                    callbacks,
-                    persistence_error,
-                    hero_height,
-                )),
-        )
+    div().size_full().bg(background).child(main_column(
+        theme,
+        callbacks,
+        persistence_error,
+        hero_height,
+        show_off_height,
+        reveal_progress,
+    ))
 }
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
@@ -129,19 +131,23 @@ fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
 
 fn main_column(
     theme: OpenCoreTheme,
-    _ui: &WelcomeUiState,
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
     hero_height: f32,
+    show_off_height: f32,
+    reveal_progress: f32,
 ) -> impl IntoElement {
+    let brand_height = lerp_f32(show_off_height, hero_height, reveal_progress);
+
     let mut centered_content = div()
         .w_full()
         .flex_1()
         .flex()
         .flex_col()
-        .items_center()
+        .items_stretch()
         .justify_center()
-        .child(hero_block(theme, hero_height));
+        .child(hero_brand_standalone(theme, brand_height))
+        .child(hero_copy(theme, reveal_progress));
 
     if let Some(message) = persistence_error {
         let muted = theme.foreground(ForegroundToken::Muted);
@@ -150,6 +156,7 @@ fn main_column(
         centered_content = centered_content.child(
             div()
                 .w_full()
+                .opacity(reveal_progress)
                 .text_center()
                 .text_size(px(TypeRole::MonoSm.size()))
                 .font_family(mono)
@@ -160,17 +167,21 @@ fn main_column(
     }
 
     centered_content = centered_content
-        .child(div().h(px(60.0)))
-        .child(action_row(theme, callbacks.clone()));
+        .child(div().h(px(WELCOME_ACTION_SPACER)))
+        .child(action_row(theme, callbacks.clone(), reveal_progress));
 
     div()
         .size_full()
         .flex()
         .flex_col()
-        .pt(px(EDGE_INSET_TOP))
-        .pb(px(EDGE_INSET_BOTTOM))
-        .px(px(EDGE_INSET_H))
-        .child(header_row(theme, callbacks.clone()))
+        .pt(px(WELCOME_EDGE_INSET_TOP))
+        .pb(px(WELCOME_EDGE_INSET_BOTTOM))
+        .px(px(WELCOME_EDGE_INSET_H))
+        .child(
+            div()
+                .opacity(reveal_progress)
+                .child(header_row(theme, callbacks.clone())),
+        )
         .child(div().h(px(8.)))
         .child(centered_content)
 }
@@ -224,50 +235,46 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         ])
 }
 
-fn hero_block(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
-    let primary = theme.foreground(ForegroundToken::Primary);
-    let secondary = theme.foreground(ForegroundToken::Secondary);
-    let grotesk = SharedString::from("Space Grotesk");
-    let spacing = theme.spacing;
-
-    let hero_brand = div()
+fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
+    div()
         .relative()
         .w_full()
-        .h(px(hero_height + 40.0))
+        .h(px(hero_height + WELCOME_HERO_BRAND_FRAME_EXTRA))
         .flex()
         .items_center()
         .justify_center()
         .child(hero_glow(theme))
-        .child(opencore_brand_image(theme, hero_height, 1.0));
+        .child(opencore_brand_image(theme, hero_height, 1.0))
+}
+
+fn hero_copy(theme: OpenCoreTheme, reveal_progress: f32) -> impl IntoElement {
+    let primary = theme.foreground(ForegroundToken::Primary);
+    let secondary = theme.foreground(ForegroundToken::Secondary);
+    let grotesk = SharedString::from("Space Grotesk");
+    let spacing = theme.spacing;
 
     div()
         .w_full()
         .flex()
         .justify_center()
         .child(
-            div()
-                .w_full()
-                .max_w(px(HERO_MAX_WIDTH))
-                .flex()
-                .flex_col()
-                .items_center()
-                .child(hero_brand)
+            hero_copy_column(reveal_progress)
                 .child(div().h(px(spacing.lg as f32)))
                 .child(
                     div()
                         .w_full()
+                        .whitespace_nowrap()
                         .text_center()
                         .text_size(px(TypeRole::DisplayMd.size()))
                         .font_family(grotesk.clone())
                         .text_color(primary)
-                        .child("Your local AI command workspace"),
+                        .child(HERO_TAGLINE),
                 )
                 .child(div().h(px(spacing.sm as f32)))
                 .child(
                     div()
                         .w_full()
-                        .max_w(px(HERO_MAX_WIDTH))
-                        .text_center()
+                        .text_left()
                         .text_size(px(TypeRole::MonoSm.size()))
                         .line_height(relative(TypeRole::MonoSm.line_height()))
                         .font_family(grotesk)
@@ -277,11 +284,26 @@ fn hero_block(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
         )
 }
 
-fn action_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoElement {
+fn hero_copy_column(reveal_progress: f32) -> gpui::Div {
+    div()
+        .w(px(HERO_TAGLINE_COLUMN_WIDTH))
+        .max_w_full()
+        .flex()
+        .flex_col()
+        .items_stretch()
+        .opacity(reveal_progress)
+}
+
+fn action_row(
+    theme: OpenCoreTheme,
+    callbacks: WelcomeCallbacks,
+    reveal_progress: f32,
+) -> impl IntoElement {
     let spacing = theme.spacing;
     let on_enter = callbacks.on_enter;
     div()
         .w_full()
+        .opacity(reveal_progress)
         .flex()
         .items_center()
         .justify_center()
@@ -290,7 +312,7 @@ fn action_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoEle
             Button::new("enter-opencore")
                 .primary()
                 .label("Enter OpenCore")
-                .h(px(ENTER_BUTTON_HEIGHT))
+                .h(px(WELCOME_ENTER_BUTTON_HEIGHT))
                 .on_click(move |_, window, cx| {
                     on_enter(window, cx);
                 }),
@@ -325,8 +347,32 @@ mod tests {
 
     #[test]
     fn welcome_hero_layout_constants() {
-        assert_eq!(HERO_MAX_WIDTH, 680.0);
+        assert_eq!(HERO_TAGLINE_COLUMN_WIDTH, 596.0);
         assert_eq!(HERO_GLOW_INSET_H, 44.0);
-        assert_eq!(ENTER_BUTTON_HEIGHT, 48.0);
+        assert_eq!(WELCOME_ENTER_BUTTON_HEIGHT, 48.0);
+    }
+
+    #[gpui::test]
+    fn hero_tagline_column_width_matches_measured_tagline(cx: &mut gpui::TestAppContext) {
+        use crate::shared::assets::AppAssets;
+        use crate::shared::theme::TypeRole;
+        use gpui::{font, px};
+
+        cx.update(|app| AppAssets.load_fonts(app).unwrap());
+
+        let measured = cx.update(|app| {
+            let text_system = app.text_system();
+            let font_id = text_system.resolve_font(&font("Space Grotesk"));
+            let font_size = px(TypeRole::DisplayMd.size());
+            HERO_TAGLINE
+                .chars()
+                .map(|ch| text_system.layout_width(font_id, font_size, ch).as_f32())
+                .sum::<f32>()
+        });
+
+        assert!(
+            (measured - HERO_TAGLINE_COLUMN_WIDTH).abs() < 2.0,
+            "update HERO_TAGLINE_COLUMN_WIDTH to {measured}",
+        );
     }
 }

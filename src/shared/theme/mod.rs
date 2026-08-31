@@ -21,8 +21,8 @@ pub const WARNING_AMBER: u32 = 0xD4_A8_43;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeMode {
-    Light,
     #[default]
+    Light,
     Dark,
 }
 
@@ -379,8 +379,8 @@ mod tests {
     }
 
     #[test]
-    fn default_theme_mode_is_dark() {
-        assert_eq!(ThemeMode::default(), ThemeMode::Dark);
+    fn default_theme_mode_is_light() {
+        assert_eq!(ThemeMode::default(), ThemeMode::Light);
     }
 
     #[test]
