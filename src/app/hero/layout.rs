@@ -27,8 +27,9 @@ pub const WELCOME_ACTION_BOTTOM_PADDING: f32 = 8.0;
 pub const WELCOME_COPY_MAX_WIDTH: f32 = 680.0;
 
 const WELCOME_ACTION_BAND: f32 = 260.0;
+const WELCOME_THEME_TOGGLE_HEIGHT: f32 = 32.0;
 const WELCOME_COPY_BODY: &str = "OpenCore combines chat, terminal, editing, and Rust-native performance in one permissioned desktop environment. To leave the crowded cloud, polluted by leaks and unconsciousness, to return to a workspace that stays on your machine.";
-const WELCOME_MONO_CHAR_WIDTH: f32 = 7.15;
+const WELCOME_BODY_CHAR_WIDTH: f32 = 5.85;
 
 /// macOS traffic-light inset matches gpui-component `TITLE_BAR_LEFT_PADDING`.
 pub fn title_bar_left_padding() -> f32 {
@@ -51,16 +52,17 @@ pub fn responsive_hero_size(available_width: f32, available_height: f32) -> f32 
 
 /// Height of the welcome header row (title + subtitle).
 pub fn welcome_header_row_height() -> f32 {
-    TypeRole::LabelMd.size() * TypeRole::LabelMd.line_height()
+    let text_column = TypeRole::LabelMd.size() * TypeRole::LabelMd.line_height()
         + 2.0
-        + TypeRole::MonoSm.size() * TypeRole::MonoSm.line_height()
+        + TypeRole::MonoSm.size() * TypeRole::MonoSm.line_height();
+    text_column.max(WELCOME_THEME_TOGGLE_HEIGHT)
 }
 
 /// Height of the static hero copy block below the brand.
 pub fn welcome_copy_block_height(viewport: WindowViewport) -> f32 {
     let text_width = WELCOME_COPY_MAX_WIDTH
         .min((viewport.width - WELCOME_EDGE_INSET_H * 2.0).max(1.0));
-    let chars_per_line = (text_width / WELCOME_MONO_CHAR_WIDTH).floor().max(1.0) as usize;
+    let chars_per_line = (text_width / WELCOME_BODY_CHAR_WIDTH).floor().max(1.0) as usize;
     let line_count = WELCOME_COPY_BODY.len().div_ceil(chars_per_line);
     let body_height =
         TypeRole::MonoSm.size() * TypeRole::MonoSm.line_height() * line_count as f32;
