@@ -9,28 +9,37 @@ pub const CHROME_REVEAL_DURATION: Duration = Duration::from_millis(800);
 
 pub struct WelcomeUiState {
     focus_claimed: bool,
-    started_at: Instant,
+    started_at: Option<Instant>,
 }
 
 impl WelcomeUiState {
     pub fn new() -> Self {
         Self {
             focus_claimed: false,
-            started_at: Instant::now(),
+            started_at: None,
         }
     }
 
-    /// Returns true while the intro animation is active.
+    /// Advances intro timing and returns true while the reveal animation is active.
     pub fn tick(&mut self, now: Instant) -> bool {
+        self.started_at.get_or_insert(now);
         self.intro_animating(now)
     }
 
     pub fn intro_animating(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.started_at) < CHROME_REVEAL_DURATION
+        match self.started_at {
+            None => true,
+            Some(started_at) => {
+                now.saturating_duration_since(started_at) < CHROME_REVEAL_DURATION
+            }
+        }
     }
 
     pub fn reveal_progress(&self, now: Instant) -> f32 {
-        let elapsed = now.saturating_duration_since(self.started_at).as_secs_f32();
+        let Some(started_at) = self.started_at else {
+            return 0.0;
+        };
+        let elapsed = now.saturating_duration_since(started_at).as_secs_f32();
         let duration = CHROME_REVEAL_DURATION.as_secs_f32();
         if duration <= 0.0 {
             return 1.0;
@@ -74,7 +83,7 @@ mod tests {
         let start = Instant::now();
         let ui = WelcomeUiState {
             focus_claimed: false,
-            started_at: start,
+            started_at: Some(start),
         };
         assert!((ui.chrome_opacity(start) - 0.0).abs() < 1e-3);
         assert!(ui.chrome_opacity(start + CHROME_REVEAL_DURATION) >= 0.99);
@@ -85,7 +94,7 @@ mod tests {
         let start = Instant::now();
         let ui = WelcomeUiState {
             focus_claimed: false,
-            started_at: start,
+            started_at: Some(start),
         };
         assert!(ui.intro_animating(start));
         assert!(!ui.intro_animating(start + CHROME_REVEAL_DURATION));
