@@ -11,7 +11,12 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
-use crate::app::hero::{opencore_brand_image, responsive_brand_height, show_off_brand_height};
+use crate::app::hero::{
+    opencore_brand_image, responsive_brand_height, show_off_brand_height,
+    WELCOME_ACTION_SPACER, WELCOME_EDGE_INSET_BOTTOM, WELCOME_EDGE_INSET_H,
+    WELCOME_EDGE_INSET_TOP, WELCOME_ENTER_BUTTON_HEIGHT, WELCOME_HERO_BRAND_FRAME_EXTRA,
+    WELCOME_TITLEBAR_HEIGHT,
+};
 use crate::app::viewport::WindowViewport;
 use crate::shared::theme::{
     BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
@@ -24,12 +29,7 @@ const HERO_MAX_WIDTH: f32 = 680.0;
 const HERO_GLOW_INSET_H: f32 = 44.0;
 const HERO_GLOW_INSET_TOP: f32 = 46.0;
 const HERO_GLOW_INSET_BOTTOM: f32 = 34.0;
-const EDGE_INSET_H: f32 = 16.0;
-const EDGE_INSET_TOP: f32 = 4.0;
-const EDGE_INSET_BOTTOM: f32 = 20.0;
-const ENTER_BUTTON_HEIGHT: f32 = 48.0;
 const TITLEBAR_CONTROLS_INSET: f32 = 88.0;
-const TITLEBAR_HEIGHT: f32 = 38.0;
 
 fn welcome_drag_should_start(pointer_down: bool, pointer_moved: bool) -> bool {
     pointer_down && pointer_moved
@@ -80,14 +80,14 @@ pub fn welcome_interactive_root(
                 on_enter(window, cx);
             }
         })
-        .child(div().size_full().pt(px(TITLEBAR_HEIGHT)).child(content))
+        .child(div().size_full().pt(px(WELCOME_TITLEBAR_HEIGHT)).child(content))
         .child(
             div()
                 .absolute()
                 .top_0()
                 .left(px(TITLEBAR_CONTROLS_INSET))
                 .right_0()
-                .h(px(TITLEBAR_HEIGHT))
+                .h(px(WELCOME_TITLEBAR_HEIGHT))
                 .window_control_area(WindowControlArea::Drag)
                 .on_mouse_down(MouseButton::Left, on_drag_down)
                 .on_mouse_up(MouseButton::Left, on_drag_up)
@@ -178,16 +178,16 @@ fn main_column(
     }
 
     centered_content = centered_content
-        .child(div().h(px(60.0)))
+        .child(div().h(px(WELCOME_ACTION_SPACER)))
         .child(action_row(theme, callbacks.clone(), chrome_opacity));
 
     div()
         .size_full()
         .flex()
         .flex_col()
-        .pt(px(EDGE_INSET_TOP))
-        .pb(px(EDGE_INSET_BOTTOM))
-        .px(px(EDGE_INSET_H))
+        .pt(px(WELCOME_EDGE_INSET_TOP))
+        .pb(px(WELCOME_EDGE_INSET_BOTTOM))
+        .px(px(WELCOME_EDGE_INSET_H))
         .child(
             div()
                 .opacity(chrome_opacity)
@@ -250,7 +250,7 @@ fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32) -> impl IntoEle
     div()
         .relative()
         .w_full()
-        .h(px(hero_height + 40.0))
+        .h(px(hero_height + WELCOME_HERO_BRAND_FRAME_EXTRA))
         .flex()
         .items_center()
         .justify_center()
@@ -319,7 +319,7 @@ fn action_row(
             Button::new("enter-opencore")
                 .primary()
                 .label("Enter OpenCore")
-                .h(px(ENTER_BUTTON_HEIGHT))
+                .h(px(WELCOME_ENTER_BUTTON_HEIGHT))
                 .on_click(move |_, window, cx| {
                     on_enter(window, cx);
                 }),
@@ -356,6 +356,6 @@ mod tests {
     fn welcome_hero_layout_constants() {
         assert_eq!(HERO_MAX_WIDTH, 680.0);
         assert_eq!(HERO_GLOW_INSET_H, 44.0);
-        assert_eq!(ENTER_BUTTON_HEIGHT, 48.0);
+        assert_eq!(WELCOME_ENTER_BUTTON_HEIGHT, 48.0);
     }
 }

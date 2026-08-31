@@ -23,7 +23,7 @@ pub struct HeroTransition {
 
 impl HeroTransition {
     pub fn start(now: Instant, welcome_viewport: WindowViewport, hero_size: f32) -> Self {
-        let start_center = welcome_brand_center(welcome_viewport);
+        let start_center = welcome_brand_center(welcome_viewport, hero_size);
         let end_center = docked_brand_center(home_transition_viewport());
         Self {
             started_at: now,
