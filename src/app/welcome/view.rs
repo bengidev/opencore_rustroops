@@ -6,7 +6,6 @@ use gpui::{
     ParentElement, SharedString, Styled, Window, WindowControlArea, div, px, relative,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
-use gpui_component::Disableable;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -183,12 +182,7 @@ fn main_column(
 
     centered_content = centered_content
         .child(div().h(px(60.0)))
-        .child(action_row(
-            theme,
-            callbacks.clone(),
-            chrome_opacity,
-            chrome_interactive,
-        ));
+        .child(action_row(theme, callbacks.clone(), chrome_opacity));
 
     div()
         .size_full()
@@ -322,7 +316,6 @@ fn action_row(
     theme: OpenCoreTheme,
     callbacks: WelcomeCallbacks,
     chrome_opacity: f32,
-    chrome_interactive: bool,
 ) -> impl IntoElement {
     let spacing = theme.spacing;
     let on_enter = callbacks.on_enter;
@@ -338,7 +331,6 @@ fn action_row(
                 .primary()
                 .label("Enter OpenCore")
                 .h(px(ENTER_BUTTON_HEIGHT))
-                .disabled(!chrome_interactive)
                 .on_click(move |_, window, cx| {
                     on_enter(window, cx);
                 }),
