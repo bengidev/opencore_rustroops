@@ -8,9 +8,10 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use std::cell::Cell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use crate::app::gpui_callbacks::WindowAppHandler;
-use crate::app::hero::{opencore_brand_image, responsive_brand_height};
+use crate::app::hero::{opencore_brand_image, responsive_brand_height, show_off_brand_height};
 use crate::app::viewport::WindowViewport;
 use crate::shared::theme::{
     BackgroundToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
@@ -43,6 +44,7 @@ pub struct WelcomeCallbacks {
 /// Focusable shell for welcome keyboard input (Enter to complete).
 pub fn welcome_interactive_root(
     focus_handle: &FocusHandle,
+    accepts_enter: bool,
     on_enter: WindowAppHandler,
     content: impl IntoElement,
 ) -> impl IntoElement {
@@ -74,7 +76,7 @@ pub fn welcome_interactive_root(
         .tab_index(0)
         .track_focus(focus_handle)
         .on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if is_enter_keystroke(event) {
+            if accepts_enter && is_enter_keystroke(event) {
                 on_enter(window, cx);
             }
         })
@@ -97,6 +99,7 @@ pub fn welcome_interactive_root(
 pub fn welcome_screen(
     theme: OpenCoreTheme,
     ui: &WelcomeUiState,
+    now: Instant,
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
     viewport: WindowViewport,
@@ -104,6 +107,9 @@ pub fn welcome_screen(
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
     let hero_height = responsive_brand_height(viewport);
+    let show_off_height = show_off_brand_height(viewport);
+    let chrome_opacity = ui.chrome_opacity(now);
+    let reveal_progress = ui.reveal_progress(now);
 
     div()
         .size_full()
@@ -114,12 +120,18 @@ pub fn welcome_screen(
                 .opacity(content_opacity)
                 .child(main_column(
                     theme,
-                    ui,
                     callbacks,
                     persistence_error,
                     hero_height,
+                    show_off_height,
+                    chrome_opacity,
+                    reveal_progress,
                 )),
         )
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
 }
 
 fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
@@ -129,11 +141,15 @@ fn is_enter_keystroke(event: &KeyDownEvent) -> bool {
 
 fn main_column(
     theme: OpenCoreTheme,
-    _ui: &WelcomeUiState,
     callbacks: WelcomeCallbacks,
     persistence_error: Option<&str>,
     hero_height: f32,
+    show_off_height: f32,
+    chrome_opacity: f32,
+    reveal_progress: f32,
 ) -> impl IntoElement {
+    let brand_height = lerp(show_off_height, hero_height, reveal_progress);
+
     let mut centered_content = div()
         .w_full()
         .flex_1()
@@ -141,7 +157,8 @@ fn main_column(
         .flex_col()
         .items_center()
         .justify_center()
-        .child(hero_block(theme, hero_height));
+        .child(hero_brand_standalone(theme, brand_height))
+        .child(hero_copy(theme, chrome_opacity));
 
     if let Some(message) = persistence_error {
         let muted = theme.foreground(ForegroundToken::Muted);
@@ -150,6 +167,7 @@ fn main_column(
         centered_content = centered_content.child(
             div()
                 .w_full()
+                .opacity(chrome_opacity)
                 .text_center()
                 .text_size(px(TypeRole::MonoSm.size()))
                 .font_family(mono)
@@ -161,7 +179,7 @@ fn main_column(
 
     centered_content = centered_content
         .child(div().h(px(60.0)))
-        .child(action_row(theme, callbacks.clone()));
+        .child(action_row(theme, callbacks.clone(), chrome_opacity));
 
     div()
         .size_full()
@@ -170,7 +188,11 @@ fn main_column(
         .pt(px(EDGE_INSET_TOP))
         .pb(px(EDGE_INSET_BOTTOM))
         .px(px(EDGE_INSET_H))
-        .child(header_row(theme, callbacks.clone()))
+        .child(
+            div()
+                .opacity(chrome_opacity)
+                .child(header_row(theme, callbacks.clone())),
+        )
         .child(div().h(px(8.)))
         .child(centered_content)
 }
@@ -224,13 +246,8 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         ])
 }
 
-fn hero_block(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
-    let primary = theme.foreground(ForegroundToken::Primary);
-    let secondary = theme.foreground(ForegroundToken::Secondary);
-    let grotesk = SharedString::from("Space Grotesk");
-    let spacing = theme.spacing;
-
-    let hero_brand = div()
+fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
+    div()
         .relative()
         .w_full()
         .h(px(hero_height + 40.0))
@@ -238,7 +255,14 @@ fn hero_block(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
         .items_center()
         .justify_center()
         .child(hero_glow(theme))
-        .child(opencore_brand_image(theme, hero_height, 1.0));
+        .child(opencore_brand_image(theme, hero_height, 1.0))
+}
+
+fn hero_copy(theme: OpenCoreTheme, chrome_opacity: f32) -> impl IntoElement {
+    let primary = theme.foreground(ForegroundToken::Primary);
+    let secondary = theme.foreground(ForegroundToken::Secondary);
+    let grotesk = SharedString::from("Space Grotesk");
+    let spacing = theme.spacing;
 
     div()
         .w_full()
@@ -251,7 +275,7 @@ fn hero_block(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
                 .flex()
                 .flex_col()
                 .items_center()
-                .child(hero_brand)
+                .opacity(chrome_opacity)
                 .child(div().h(px(spacing.lg as f32)))
                 .child(
                     div()
@@ -277,11 +301,16 @@ fn hero_block(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
         )
 }
 
-fn action_row(theme: OpenCoreTheme, callbacks: WelcomeCallbacks) -> impl IntoElement {
+fn action_row(
+    theme: OpenCoreTheme,
+    callbacks: WelcomeCallbacks,
+    chrome_opacity: f32,
+) -> impl IntoElement {
     let spacing = theme.spacing;
     let on_enter = callbacks.on_enter;
     div()
         .w_full()
+        .opacity(chrome_opacity)
         .flex()
         .items_center()
         .justify_center()
