@@ -52,8 +52,8 @@ impl WelcomeUiState {
         self.reveal_progress(now)
     }
 
-    pub fn accepts_enter(&self) -> bool {
-        true
+    pub fn accepts_enter(&self, now: Instant) -> bool {
+        !self.intro_animating(now)
     }
 
     /// Requests keyboard focus once per welcome session.

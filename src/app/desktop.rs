@@ -191,8 +191,9 @@ impl OpenCoreApp {
     }
 
     fn ensure_welcome_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let now = Instant::now();
         if let Some(ui) = self.welcome_ui.as_mut()
-            && ui.accepts_enter()
+            && ui.accepts_enter(now)
         {
             ui.ensure_initial_focus(window, &self.focus_handle, cx);
         }
@@ -317,7 +318,7 @@ impl OpenCoreApp {
         if self
             .welcome_ui
             .as_ref()
-            .is_some_and(|ui| !ui.accepts_enter())
+            .is_some_and(|ui| !ui.accepts_enter(Instant::now()))
         {
             return;
         }
@@ -565,7 +566,7 @@ impl Render for OpenCoreApp {
             ActiveScreen::Welcome => {
                 let ui = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
                 ui.ensure_initial_focus(window, &self.focus_handle, cx);
-                let accepts_enter = ui.accepts_enter();
+                let accepts_enter = ui.accepts_enter(now);
                 let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
