@@ -22,13 +22,21 @@ pub struct HeroTransition {
 }
 
 impl HeroTransition {
-    pub fn start(now: Instant, welcome_viewport: WindowViewport, hero_size: f32) -> Self {
-        let start_center = welcome_brand_center(welcome_viewport, hero_size);
+    pub fn start(
+        now: Instant,
+        welcome_viewport: WindowViewport,
+        hero_size: f32,
+        tracked_layout: Option<(f32, f32, f32)>,
+    ) -> Self {
+        let (start_center, start_size) = match tracked_layout {
+            Some((center_x, center_y, height)) => ((center_x, center_y), height),
+            None => (welcome_brand_center(welcome_viewport, hero_size), hero_size),
+        };
         let end_center = docked_brand_center(home_transition_viewport());
         Self {
             started_at: now,
             start_center,
-            start_size: hero_size,
+            start_size,
             end_center,
             end_size: BRAND_SHELL_HEIGHT,
         }
@@ -106,6 +114,7 @@ mod tests {
                 height: 740.0,
             },
             220.0,
+            None,
         );
         let (sx, sy, ss) = tx.layout_at(now);
         assert!((sx - tx.start_center.0).abs() < 1e-3);
@@ -117,5 +126,24 @@ mod tests {
         assert!((ex - tx.end_center.0).abs() < 1e-3);
         assert!((ey - tx.end_center.1).abs() < 1e-3);
         assert!((es - BRAND_SHELL_HEIGHT).abs() < 1e-3);
+    }
+
+    #[test]
+    fn transition_uses_tracked_start_layout() {
+        let now = Instant::now();
+        let tracked = (480.0, 290.0, 76.0);
+        let tx = HeroTransition::start(
+            now,
+            WindowViewport {
+                width: 960.0,
+                height: 740.0,
+            },
+            220.0,
+            Some(tracked),
+        );
+        let (sx, sy, ss) = tx.layout_at(now);
+        assert!((sx - tracked.0).abs() < 1e-3);
+        assert!((sy - tracked.1).abs() < 1e-3);
+        assert!((ss - tracked.2).abs() < 1e-3);
     }
 }

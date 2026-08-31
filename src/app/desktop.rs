@@ -17,6 +17,7 @@ use gpui::{TitlebarOptions, point};
 use gpui_component::Root;
 use gpui_component::dock::DockAreaState;
 
+use crate::app::gpui_callbacks::BrandLayoutTracker;
 use crate::shared::preferences::{FilePreferencesStore, PreferencesError, PreferencesStore};
 use crate::shared::theme::{OpenCoreTheme, ThemeTransition, apply_nothing_theme};
 
@@ -102,6 +103,7 @@ pub struct OpenCoreApp {
     _window_closed_subscription: gpui::Subscription,
     theme_transition: Option<ThemeTransition>,
     hero_transition: Option<HeroTransition>,
+    welcome_brand_layout: Option<(f32, f32, f32)>,
     persistence_error: Option<String>,
     #[cfg(debug_assertions)]
     dev_reset_state: DevResetState,
@@ -153,6 +155,7 @@ impl OpenCoreApp {
             _window_closed_subscription: window_closed_subscription,
             theme_transition: None,
             hero_transition: None,
+            welcome_brand_layout: None,
             persistence_error: None,
             #[cfg(debug_assertions)]
             dev_reset_state: DevResetState::default(),
@@ -284,7 +287,12 @@ impl OpenCoreApp {
         }
         let now = Instant::now();
         let hero_height = responsive_brand_height(viewport);
-        self.hero_transition = Some(HeroTransition::start(now, viewport, hero_height));
+        self.hero_transition = Some(HeroTransition::start(
+            now,
+            viewport,
+            hero_height,
+            self.welcome_brand_layout,
+        ));
         match self.state.persist_welcome_completion(self.store.as_ref()) {
             Ok(()) => Ok(()),
             Err(error) => {
@@ -304,8 +312,12 @@ impl OpenCoreApp {
                 let viewport = WindowViewport::from_window(window);
                 let now = Instant::now();
                 let hero_height = responsive_brand_height(viewport);
-                self.hero_transition =
-                    Some(HeroTransition::start(now, viewport, hero_height));
+                self.hero_transition = Some(HeroTransition::start(
+                    now,
+                    viewport,
+                    hero_height,
+                    self.welcome_brand_layout,
+                ));
                 cx.notify();
             }
             Err(error) => {
@@ -589,6 +601,17 @@ impl Render for OpenCoreApp {
                 let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
+                let track_brand_layout: Option<BrandLayoutTracker> =
+                    if hide_welcome_brand {
+                        None
+                    } else {
+                        let view = cx.entity().downgrade();
+                        Some(Rc::new(move |center_x, center_y, height, cx| {
+                            let _ = view.update(cx, |app, _| {
+                                app.welcome_brand_layout = Some((center_x, center_y, height));
+                            });
+                        }))
+                    };
 
                 div()
                     .size_full()
@@ -607,6 +630,7 @@ impl Render for OpenCoreApp {
                             WindowViewport::from_window(window),
                             welcome_content_opacity,
                             hide_welcome_brand,
+                            track_brand_layout,
                         ),
                     ))
             }
@@ -789,6 +813,7 @@ mod animation_gate_tests {
                 height: 740.0,
             },
             52.0,
+            None,
         );
         assert!(should_request_animation_frame(Some(&tx), None, false, now));
         assert!(!should_request_animation_frame(

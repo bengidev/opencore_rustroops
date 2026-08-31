@@ -10,7 +10,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::app::gpui_callbacks::WindowAppHandler;
+use crate::app::gpui_callbacks::{BrandLayoutTracker, WindowAppHandler};
 use crate::app::hero::{
     opencore_brand_image, responsive_brand_height, show_off_brand_height,
     WELCOME_ACTION_SPACER, WELCOME_EDGE_INSET_BOTTOM, WELCOME_EDGE_INSET_H,
@@ -105,6 +105,7 @@ pub fn welcome_screen(
     viewport: WindowViewport,
     content_opacity: f32,
     hide_brand: bool,
+    track_brand_layout: Option<BrandLayoutTracker>,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
     let hero_height = responsive_brand_height(viewport);
@@ -128,6 +129,7 @@ pub fn welcome_screen(
                     chrome_opacity,
                     reveal_progress,
                     hide_brand,
+                    track_brand_layout,
                 )),
         )
 }
@@ -150,6 +152,7 @@ fn main_column(
     chrome_opacity: f32,
     reveal_progress: f32,
     hide_brand: bool,
+    track_brand_layout: Option<BrandLayoutTracker>,
 ) -> impl IntoElement {
     let brand_height = lerp(show_off_height, hero_height, reveal_progress);
     let brand_opacity = if hide_brand { 0.0 } else { 1.0 };
@@ -161,7 +164,12 @@ fn main_column(
         .flex_col()
         .items_center()
         .justify_center()
-        .child(hero_brand_standalone(theme, brand_height, brand_opacity))
+        .child(hero_brand_standalone(
+            theme,
+            brand_height,
+            brand_opacity,
+            track_brand_layout,
+        ))
         .child(hero_copy(theme, chrome_opacity));
 
     if let Some(message) = persistence_error {
@@ -250,7 +258,31 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         ])
 }
 
-fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32, opacity: f32) -> impl IntoElement {
+fn hero_brand_standalone(
+    theme: OpenCoreTheme,
+    hero_height: f32,
+    opacity: f32,
+    track_brand_layout: Option<BrandLayoutTracker>,
+) -> impl IntoElement {
+    let brand_image = opencore_brand_image(theme, hero_height, 1.0);
+    let tracked_brand = if let Some(track) = track_brand_layout {
+        div()
+            .on_children_prepainted(move |children_bounds, _window, cx| {
+                if let Some(bounds) = children_bounds.first() {
+                    let center = bounds.center();
+                    track(
+                        center.x.as_f32(),
+                        center.y.as_f32(),
+                        bounds.size.height.as_f32(),
+                        cx,
+                    );
+                }
+            })
+            .child(brand_image)
+    } else {
+        div().child(brand_image)
+    };
+
     div()
         .relative()
         .w_full()
@@ -260,7 +292,7 @@ fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32, opacity: f32) -
         .justify_center()
         .opacity(opacity)
         .child(hero_glow(theme))
-        .child(opencore_brand_image(theme, hero_height, 1.0))
+        .child(tracked_brand)
 }
 
 fn hero_copy(theme: OpenCoreTheme, chrome_opacity: f32) -> impl IntoElement {
