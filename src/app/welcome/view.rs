@@ -104,6 +104,7 @@ pub fn welcome_screen(
     persistence_error: Option<&str>,
     viewport: WindowViewport,
     content_opacity: f32,
+    hide_brand: bool,
 ) -> impl IntoElement {
     let background = theme.surface(BackgroundToken::Primary);
     let hero_height = responsive_brand_height(viewport);
@@ -126,6 +127,7 @@ pub fn welcome_screen(
                     show_off_height,
                     chrome_opacity,
                     reveal_progress,
+                    hide_brand,
                 )),
         )
 }
@@ -147,8 +149,10 @@ fn main_column(
     show_off_height: f32,
     chrome_opacity: f32,
     reveal_progress: f32,
+    hide_brand: bool,
 ) -> impl IntoElement {
     let brand_height = lerp(show_off_height, hero_height, reveal_progress);
+    let brand_opacity = if hide_brand { 0.0 } else { 1.0 };
 
     let mut centered_content = div()
         .w_full()
@@ -157,7 +161,7 @@ fn main_column(
         .flex_col()
         .items_center()
         .justify_center()
-        .child(hero_brand_standalone(theme, brand_height))
+        .child(hero_brand_standalone(theme, brand_height, brand_opacity))
         .child(hero_copy(theme, chrome_opacity));
 
     if let Some(message) = persistence_error {
@@ -246,7 +250,7 @@ fn hero_glow(theme: OpenCoreTheme) -> impl IntoElement {
         ])
 }
 
-fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32) -> impl IntoElement {
+fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32, opacity: f32) -> impl IntoElement {
     div()
         .relative()
         .w_full()
@@ -254,6 +258,7 @@ fn hero_brand_standalone(theme: OpenCoreTheme, hero_height: f32) -> impl IntoEle
         .flex()
         .items_center()
         .justify_center()
+        .opacity(opacity)
         .child(hero_glow(theme))
         .child(opencore_brand_image(theme, hero_height, 1.0))
 }

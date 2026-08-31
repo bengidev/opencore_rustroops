@@ -301,7 +301,6 @@ impl OpenCoreApp {
         match self.state.persist_welcome_completion(self.store.as_ref()) {
             Ok(()) => {
                 self.persistence_error = None;
-                self.finish_screen_transition(window, cx);
                 let viewport = WindowViewport::from_window(window);
                 let now = Instant::now();
                 let hero_height = responsive_brand_height(viewport);
@@ -546,6 +545,7 @@ impl Render for OpenCoreApp {
         let now = Instant::now();
         self.settle_theme_transition(now);
         if self.settle_hero_transition(now) {
+            self.finish_screen_transition(window, cx);
             cx.notify();
         }
         let theme = self.visual_theme(now);
@@ -582,6 +582,10 @@ impl Render for OpenCoreApp {
                 let ui = self.welcome_ui.get_or_insert_with(WelcomeUiState::new);
                 ui.ensure_initial_focus(window, &self.focus_handle, cx);
                 let accepts_enter = ui.accepts_enter(now);
+                let hide_welcome_brand = self
+                    .hero_transition
+                    .as_ref()
+                    .is_some_and(|tx| tx.is_active(now));
                 let callbacks = WelcomeCallbacks::from_app(cx.entity().downgrade());
                 let persistence_error = self.persistence_error.as_deref();
                 let on_enter = callbacks.on_enter.clone();
@@ -602,6 +606,7 @@ impl Render for OpenCoreApp {
                             persistence_error,
                             WindowViewport::from_window(window),
                             welcome_content_opacity,
+                            hide_welcome_brand,
                         ),
                     ))
             }
