@@ -25,7 +25,9 @@ use crate::shared::theme::{
 use super::theme_toggle::theme_toggle_button;
 use super::ui_state::WelcomeUiState;
 
-const HERO_MAX_WIDTH: f32 = 680.0;
+const HERO_TAGLINE: &str = "Your local AI command workspace";
+/// Single-line tagline width at [`TypeRole::DisplayMd`] in Space Grotesk.
+const HERO_TAGLINE_COLUMN_WIDTH: f32 = 596.0;
 const HERO_GLOW_INSET_H: f32 = 44.0;
 const HERO_GLOW_INSET_TOP: f32 = 46.0;
 const HERO_GLOW_INSET_BOTTOM: f32 = 34.0;
@@ -142,7 +144,7 @@ fn main_column(
         .flex_1()
         .flex()
         .flex_col()
-        .items_center()
+        .items_stretch()
         .justify_center()
         .child(hero_brand_standalone(theme, brand_height))
         .child(hero_copy(theme, reveal_progress));
@@ -256,28 +258,22 @@ fn hero_copy(theme: OpenCoreTheme, reveal_progress: f32) -> impl IntoElement {
         .flex()
         .justify_center()
         .child(
-            div()
-                .w_full()
-                .max_w(px(HERO_MAX_WIDTH))
-                .flex()
-                .flex_col()
-                .items_stretch()
-                .opacity(reveal_progress)
+            hero_copy_column(reveal_progress)
                 .child(div().h(px(spacing.lg as f32)))
                 .child(
                     div()
                         .w_full()
+                        .whitespace_nowrap()
                         .text_center()
                         .text_size(px(TypeRole::DisplayMd.size()))
                         .font_family(grotesk.clone())
                         .text_color(primary)
-                        .child("Your local AI command workspace"),
+                        .child(HERO_TAGLINE),
                 )
                 .child(div().h(px(spacing.sm as f32)))
                 .child(
                     div()
                         .w_full()
-                        .max_w(px(HERO_MAX_WIDTH))
                         .text_left()
                         .text_size(px(TypeRole::MonoSm.size()))
                         .line_height(relative(TypeRole::MonoSm.line_height()))
@@ -286,6 +282,16 @@ fn hero_copy(theme: OpenCoreTheme, reveal_progress: f32) -> impl IntoElement {
                         .child("OpenCore combines chat, terminal, editing, and Rust-native performance in one permissioned desktop environment. To leave the crowded cloud, polluted by leaks and unconsciousness, to return to a workspace that stays on your machine."),
                 ),
         )
+}
+
+fn hero_copy_column(reveal_progress: f32) -> gpui::Div {
+    div()
+        .w(px(HERO_TAGLINE_COLUMN_WIDTH))
+        .max_w_full()
+        .flex()
+        .flex_col()
+        .items_stretch()
+        .opacity(reveal_progress)
 }
 
 fn action_row(
@@ -341,8 +347,32 @@ mod tests {
 
     #[test]
     fn welcome_hero_layout_constants() {
-        assert_eq!(HERO_MAX_WIDTH, 680.0);
+        assert_eq!(HERO_TAGLINE_COLUMN_WIDTH, 596.0);
         assert_eq!(HERO_GLOW_INSET_H, 44.0);
         assert_eq!(WELCOME_ENTER_BUTTON_HEIGHT, 48.0);
+    }
+
+    #[gpui::test]
+    fn hero_tagline_column_width_matches_measured_tagline(cx: &mut gpui::TestAppContext) {
+        use crate::shared::assets::AppAssets;
+        use crate::shared::theme::TypeRole;
+        use gpui::{font, px};
+
+        cx.update(|app| AppAssets.load_fonts(app).unwrap());
+
+        let measured = cx.update(|app| {
+            let text_system = app.text_system();
+            let font_id = text_system.resolve_font(&font("Space Grotesk"));
+            let font_size = px(TypeRole::DisplayMd.size());
+            HERO_TAGLINE
+                .chars()
+                .map(|ch| text_system.layout_width(font_id, font_size, ch).as_f32())
+                .sum::<f32>()
+        });
+
+        assert!(
+            (measured - HERO_TAGLINE_COLUMN_WIDTH).abs() < 2.0,
+            "update HERO_TAGLINE_COLUMN_WIDTH to {measured}",
+        );
     }
 }
