@@ -295,11 +295,19 @@ impl OpenCoreApp {
     }
 
     fn begin_hero_transition(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let viewport = WindowViewport::from_window(window);
-        match self.start_hero_transition(viewport) {
+        if self.hero_transition.is_some() {
+            return;
+        }
+        match self.state.persist_welcome_completion(self.store.as_ref()) {
             Ok(()) => {
                 self.persistence_error = None;
                 self.finish_screen_transition(window, cx);
+                let viewport = WindowViewport::from_window(window);
+                let now = Instant::now();
+                let hero_height = responsive_brand_height(viewport);
+                self.hero_transition =
+                    Some(HeroTransition::start(now, viewport, hero_height));
+                cx.notify();
             }
             Err(error) => {
                 self.hero_transition = None;
