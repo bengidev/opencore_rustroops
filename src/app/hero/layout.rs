@@ -117,4 +117,28 @@ mod tests {
         assert!(width <= viewport.width - WELCOME_EDGE_INSET_H * 2.0 + 1.0);
         assert!(height >= responsive_brand_height(viewport));
     }
+
+    #[test]
+    fn show_off_brand_fits_narrow_viewport() {
+        let viewport = WindowViewport {
+            width: 440.0,
+            height: 360.0,
+        };
+        let height = show_off_brand_height(viewport);
+        let width = brand_width(height);
+        assert!(width <= viewport.width - WELCOME_EDGE_INSET_H * 2.0 + 1.0);
+        assert!(height >= responsive_brand_height(viewport));
+    }
+
+    #[test]
+    fn show_off_brand_settles_to_resting_height() {
+        let viewport = WindowViewport {
+            width: 960.0,
+            height: 740.0,
+        };
+        let hero = responsive_brand_height(viewport);
+        let show_off = show_off_brand_height(viewport);
+        let settled = show_off + (hero - show_off);
+        assert!((settled - hero).abs() < 1e-3);
+    }
 }

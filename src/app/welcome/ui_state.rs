@@ -99,4 +99,24 @@ mod tests {
         assert!(ui.intro_animating(start));
         assert!(!ui.intro_animating(start + CHROME_REVEAL_DURATION));
     }
+
+    #[test]
+    fn intro_clock_starts_on_first_tick() {
+        let start = Instant::now();
+        let mut ui = WelcomeUiState::new();
+        assert!((ui.reveal_progress(start) - 0.0).abs() < 1e-3);
+        ui.tick(start);
+        assert!((ui.reveal_progress(start) - 0.0).abs() < 1e-3);
+        assert!((ui.reveal_progress(start + CHROME_REVEAL_DURATION) - 1.0).abs() < 1e-2);
+    }
+
+    #[test]
+    fn accepts_enter_blocked_until_reveal_finishes() {
+        let start = Instant::now();
+        let mut ui = WelcomeUiState::new();
+        assert!(!ui.accepts_enter(start));
+        ui.tick(start);
+        assert!(!ui.accepts_enter(start));
+        assert!(ui.accepts_enter(start + CHROME_REVEAL_DURATION));
+    }
 }
