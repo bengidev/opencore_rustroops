@@ -2,14 +2,15 @@
 
 use gpui::{
     App, AppContext, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px, relative,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div, px,
+    relative,
 };
 use gpui_component::{
     IconName, Sizable,
     button::{Button, ButtonRounded, ButtonVariants as _},
     dock::{Panel, PanelEvent},
     h_flex,
-    input::{Input, InputState},
+    input::{Input, InputEvent, InputState},
     v_flex,
 };
 
@@ -29,6 +30,7 @@ pub struct MainWorkspacePanel {
     focus_handle: FocusHandle,
     theme: WorkspaceTheme,
     input: gpui::Entity<InputState>,
+    _input_subscription: Subscription,
 }
 
 const COMPOSER_MIN_ROWS: usize = 1;
@@ -42,11 +44,34 @@ impl MainWorkspacePanel {
                 .submit_on_enter(true)
                 .placeholder(COMPOSER_PLACEHOLDER)
         });
+        let _input_subscription = cx.subscribe_in(
+            &input,
+            window,
+            |this, _, event, window, cx| match event {
+                InputEvent::PressEnter { shift: false, .. } => {
+                    this.submit_composer(window, cx);
+                }
+                _ => {}
+            },
+        );
         Self {
             focus_handle: cx.focus_handle(),
             theme,
             input,
+            _input_subscription,
         }
+    }
+
+    fn submit_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.input.read(cx).value().trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+
+        self.input.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+        });
+        cx.notify();
     }
 }
 
@@ -84,7 +109,7 @@ impl Panel for MainWorkspacePanel {
 }
 
 impl Render for MainWorkspacePanel {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.get();
         let page = theme.surface(BackgroundToken::Primary);
         let surface = theme.surface(BackgroundToken::Secondary);
@@ -126,7 +151,7 @@ impl Render for MainWorkspacePanel {
                     ))
                     .child(quick_actions_row(tertiary, border, primary)),
             )
-            .child(composer_bar(&self.input, &theme, mono, pad))
+            .child(composer_bar(cx, &self.input, &theme, mono, pad))
     }
 }
 
@@ -206,6 +231,7 @@ fn quick_actions_row(
 }
 
 fn composer_bar(
+    cx: &mut Context<MainWorkspacePanel>,
     input: &gpui::Entity<InputState>,
     theme: &OpenCoreTheme,
     mono: SharedString,
@@ -234,27 +260,39 @@ fn composer_bar(
                 .gap(px(SpacingToken::S1.value()))
                 .items_end()
                 .child(
-                    div().flex_1().min_w_0().child(
-                        Input::new(input)
-                            .large()
-                            .w_full()
-                            .text_size(px(COMPOSER_TEXT))
-                            .bordered(true)
-                            .appearance(true)
-                            .cleanable(false),
-                    ),
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .min_h(px(COMPOSER_MIN_HEIGHT))
+                        .child(
+                            Input::new(input)
+                                .large()
+                                .w_full()
+                                .text_size(px(COMPOSER_TEXT))
+                                .bordered(true)
+                                .appearance(true)
+                                .cleanable(false),
+                        ),
                 )
                 .child(
-                    Button::new("workspace-send")
-                        .ghost()
-                        .rounded(ButtonRounded::None)
-                        .icon(IconName::ArrowUp)
-                        .h(px(COMPOSER_MIN_HEIGHT))
-                        .w(px(COMPOSER_MIN_HEIGHT))
-                        .text_color(primary)
-                        .border_1()
-                        .border_color(border_strong)
-                        .bg(surface),
+                    div()
+                        .id("workspace-composer-send")
+                        .debug_selector(|| "workspace-composer-send".to_string())
+                        .child(
+                        Button::new("workspace-send")
+                            .ghost()
+                            .rounded(ButtonRounded::None)
+                            .icon(IconName::ArrowUp)
+                            .h(px(COMPOSER_MIN_HEIGHT))
+                            .w(px(COMPOSER_MIN_HEIGHT))
+                            .text_color(primary)
+                            .border_1()
+                            .border_color(border_strong)
+                            .bg(surface)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.submit_composer(window, cx);
+                            })),
+                    ),
                 ),
         )
         .child(
@@ -273,3 +311,4 @@ fn mono_family() -> SharedString {
 fn sans_family() -> SharedString {
     SharedString::from("Space Grotesk")
 }
+
