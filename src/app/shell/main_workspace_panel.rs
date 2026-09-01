@@ -31,9 +31,17 @@ pub struct MainWorkspacePanel {
     input: gpui::Entity<InputState>,
 }
 
+const COMPOSER_MIN_ROWS: usize = 1;
+const COMPOSER_MAX_ROWS: usize = 6;
+
 impl MainWorkspacePanel {
     pub fn new(window: &mut Window, theme: WorkspaceTheme, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder(COMPOSER_PLACEHOLDER));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .auto_grow(COMPOSER_MIN_ROWS, COMPOSER_MAX_ROWS)
+                .submit_on_enter(true)
+                .placeholder(COMPOSER_PLACEHOLDER)
+        });
         Self {
             focus_handle: cx.focus_handle(),
             theme,
