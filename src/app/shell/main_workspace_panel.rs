@@ -312,3 +312,128 @@ fn sans_family() -> SharedString {
     SharedString::from("Space Grotesk")
 }
 
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui::{Entity, Modifiers, TestAppContext, VisualContext, VisualTestContext};
+    use gpui_component::Root;
+
+    use super::super::workspace_theme::WorkspaceTheme;
+    use super::*;
+
+    fn init_composer_test(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+    }
+
+    macro_rules! mount_composer_panel {
+        ($cx:ident, $panel:ident) => {
+            let panel_cell = Rc::new(RefCell::new(None));
+            let panel_cell_capture = panel_cell.clone();
+            let (_, $cx) = $cx.add_window_view(|window, cx| {
+                let panel =
+                    cx.new(|cx| MainWorkspacePanel::new(window, WorkspaceTheme::default(), cx));
+                panel_cell_capture.borrow_mut().replace(panel.clone());
+                Root::new(panel, window, cx)
+            });
+            let $panel = panel_cell.borrow().clone().expect("composer panel entity");
+        };
+    }
+
+    fn set_composer_value(
+        panel: &Entity<MainWorkspacePanel>,
+        value: &str,
+        cx: &mut VisualTestContext,
+    ) {
+        cx.update_window_entity(panel, |panel, window, cx| {
+            panel.input.update(cx, |input, cx| {
+                input.set_value(value, window, cx);
+            });
+        });
+    }
+
+    fn focus_composer_at_end(panel: &Entity<MainWorkspacePanel>, cx: &mut VisualTestContext) {
+        cx.update_window_entity(panel, |panel, window, cx| {
+            panel.input.update(cx, |input, cx| {
+                let value = input.value();
+                let line_count = value.lines().count().max(1);
+                let last_line = value.lines().last().unwrap_or("");
+                input.set_cursor_position(
+                    gpui_component::input::Position::new(
+                        (line_count - 1) as u32,
+                        last_line.chars().count() as u32,
+                    ),
+                    window,
+                    cx,
+                );
+            });
+        });
+    }
+
+    fn composer_value(panel: &Entity<MainWorkspacePanel>, cx: &mut VisualTestContext) -> String {
+        cx.read_entity(panel, |panel, cx| panel.input.read(cx).value().to_string())
+    }
+
+    #[gpui::test]
+    fn composer_enter_submits_non_empty_text(cx: &mut TestAppContext) {
+        init_composer_test(cx);
+        mount_composer_panel!(cx, panel);
+
+        set_composer_value(&panel, "hello", cx);
+        focus_composer_at_end(&panel, cx);
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+
+        assert_eq!(composer_value(&panel, cx), "");
+    }
+
+    #[gpui::test]
+    fn composer_submit_ignores_whitespace_only(cx: &mut TestAppContext) {
+        init_composer_test(cx);
+        mount_composer_panel!(cx, panel);
+
+        set_composer_value(&panel, "   ", cx);
+        cx.update_window_entity(&panel, |panel, window, cx| {
+            panel.submit_composer(window, cx);
+        });
+
+        assert_eq!(composer_value(&panel, cx), "   ");
+    }
+
+    #[gpui::test]
+    fn composer_send_button_submits_non_empty_text(cx: &mut TestAppContext) {
+        init_composer_test(cx);
+        mount_composer_panel!(cx, panel);
+
+        set_composer_value(&panel, "hello", cx);
+        cx.run_until_parked();
+
+        let button_bounds = cx
+            .debug_bounds("workspace-composer-send")
+            .expect("workspace send button should be visible");
+        cx.simulate_click(button_bounds.center(), Modifiers::none());
+        cx.run_until_parked();
+
+        assert_eq!(composer_value(&panel, cx), "");
+    }
+
+    #[gpui::test]
+    fn composer_shift_enter_inserts_newline(cx: &mut TestAppContext) {
+        init_composer_test(cx);
+        mount_composer_panel!(cx, panel);
+
+        set_composer_value(&panel, "line one", cx);
+        focus_composer_at_end(&panel, cx);
+        cx.simulate_keystrokes("shift-enter");
+        cx.run_until_parked();
+
+        assert_eq!(composer_value(&panel, cx), "line one\n");
+    }
+
+    #[test]
+    fn composer_row_limits_match_spec() {
+        assert_eq!(COMPOSER_MIN_ROWS, 1);
+        assert_eq!(COMPOSER_MAX_ROWS, 6);
+    }
+}
