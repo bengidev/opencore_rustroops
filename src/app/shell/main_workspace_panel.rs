@@ -2,14 +2,15 @@
 
 use gpui::{
     App, AppContext, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px, relative,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div, px,
+    relative,
 };
 use gpui_component::{
     IconName, Sizable,
     button::{Button, ButtonRounded, ButtonVariants as _},
     dock::{Panel, PanelEvent},
     h_flex,
-    input::{Input, InputState},
+    input::{Input, InputEvent, InputState},
     v_flex,
 };
 
@@ -29,16 +30,43 @@ pub struct MainWorkspacePanel {
     focus_handle: FocusHandle,
     theme: WorkspaceTheme,
     input: gpui::Entity<InputState>,
+    _input_subscription: Subscription,
 }
+
+const COMPOSER_MIN_ROWS: usize = 1;
+const COMPOSER_MAX_ROWS: usize = 6;
 
 impl MainWorkspacePanel {
     pub fn new(window: &mut Window, theme: WorkspaceTheme, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder(COMPOSER_PLACEHOLDER));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .auto_grow(COMPOSER_MIN_ROWS, COMPOSER_MAX_ROWS)
+                .submit_on_enter(true)
+                .placeholder(COMPOSER_PLACEHOLDER)
+        });
+        let _input_subscription = cx.subscribe_in(&input, window, |this, _, event, window, cx| {
+            if let InputEvent::PressEnter { shift: false, .. } = event {
+                this.submit_composer(window, cx);
+            }
+        });
         Self {
             focus_handle: cx.focus_handle(),
             theme,
             input,
+            _input_subscription,
         }
+    }
+
+    fn submit_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.input.read(cx).value().trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+
+        self.input.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+        });
+        cx.notify();
     }
 }
 
@@ -76,7 +104,7 @@ impl Panel for MainWorkspacePanel {
 }
 
 impl Render for MainWorkspacePanel {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.get();
         let page = theme.surface(BackgroundToken::Primary);
         let surface = theme.surface(BackgroundToken::Secondary);
@@ -118,7 +146,7 @@ impl Render for MainWorkspacePanel {
                     ))
                     .child(quick_actions_row(tertiary, border, primary)),
             )
-            .child(composer_bar(&self.input, &theme, mono, pad))
+            .child(composer_bar(cx, &self.input, &theme, mono, pad))
     }
 }
 
@@ -198,12 +226,13 @@ fn quick_actions_row(
 }
 
 fn composer_bar(
+    cx: &mut Context<MainWorkspacePanel>,
     input: &gpui::Entity<InputState>,
     theme: &OpenCoreTheme,
     mono: SharedString,
     pad: f32,
 ) -> impl IntoElement {
-    const COMPOSER_HEIGHT: f32 = 56.;
+    const COMPOSER_MIN_HEIGHT: f32 = 56.;
     const COMPOSER_TEXT: f32 = 16.;
 
     let surface = theme.surface(BackgroundToken::Secondary);
@@ -224,30 +253,41 @@ fn composer_bar(
             h_flex()
                 .w_full()
                 .gap(px(SpacingToken::S1.value()))
-                .items_center()
+                .items_end()
                 .child(
-                    div().flex_1().min_w_0().child(
-                        Input::new(input)
-                            .large()
-                            .w_full()
-                            .h(px(COMPOSER_HEIGHT))
-                            .text_size(px(COMPOSER_TEXT))
-                            .bordered(true)
-                            .appearance(true)
-                            .cleanable(false),
-                    ),
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .min_h(px(COMPOSER_MIN_HEIGHT))
+                        .child(
+                            Input::new(input)
+                                .large()
+                                .w_full()
+                                .text_size(px(COMPOSER_TEXT))
+                                .bordered(true)
+                                .appearance(true)
+                                .cleanable(false),
+                        ),
                 )
                 .child(
-                    Button::new("workspace-send")
-                        .ghost()
-                        .rounded(ButtonRounded::None)
-                        .icon(IconName::ArrowUp)
-                        .h(px(COMPOSER_HEIGHT))
-                        .w(px(COMPOSER_HEIGHT))
-                        .text_color(primary)
-                        .border_1()
-                        .border_color(border_strong)
-                        .bg(surface),
+                    div()
+                        .id("workspace-composer-send")
+                        .debug_selector(|| "workspace-composer-send".to_string())
+                        .child(
+                            Button::new("workspace-send")
+                                .ghost()
+                                .rounded(ButtonRounded::None)
+                                .icon(IconName::ArrowUp)
+                                .h(px(COMPOSER_MIN_HEIGHT))
+                                .w(px(COMPOSER_MIN_HEIGHT))
+                                .text_color(primary)
+                                .border_1()
+                                .border_color(border_strong)
+                                .bg(surface)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.submit_composer(window, cx);
+                                })),
+                        ),
                 ),
         )
         .child(
@@ -255,7 +295,7 @@ fn composer_bar(
                 .font_family(mono)
                 .text_size(px(TypeRole::MonoSm.size()))
                 .text_color(muted)
-                .child("Enter to send · ⌘K for commands"),
+                .child("Enter to send · Shift+Enter for newline · ⌘K for commands"),
         )
 }
 
@@ -265,4 +305,130 @@ fn mono_family() -> SharedString {
 
 fn sans_family() -> SharedString {
     SharedString::from("Space Grotesk")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui::{Entity, Modifiers, TestAppContext, VisualContext, VisualTestContext};
+    use gpui_component::Root;
+
+    use super::super::workspace_theme::WorkspaceTheme;
+    use super::*;
+
+    fn init_composer_test(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+    }
+
+    macro_rules! mount_composer_panel {
+        ($cx:ident, $panel:ident) => {
+            let panel_cell = Rc::new(RefCell::new(None));
+            let panel_cell_capture = panel_cell.clone();
+            let (_, $cx) = $cx.add_window_view(|window, cx| {
+                let panel =
+                    cx.new(|cx| MainWorkspacePanel::new(window, WorkspaceTheme::default(), cx));
+                panel_cell_capture.borrow_mut().replace(panel.clone());
+                Root::new(panel, window, cx)
+            });
+            let $panel = panel_cell.borrow().clone().expect("composer panel entity");
+        };
+    }
+
+    fn set_composer_value(
+        panel: &Entity<MainWorkspacePanel>,
+        value: &str,
+        cx: &mut VisualTestContext,
+    ) {
+        cx.update_window_entity(panel, |panel, window, cx| {
+            panel.input.update(cx, |input, cx| {
+                input.set_value(value, window, cx);
+            });
+        });
+    }
+
+    fn focus_composer_at_end(panel: &Entity<MainWorkspacePanel>, cx: &mut VisualTestContext) {
+        cx.update_window_entity(panel, |panel, window, cx| {
+            panel.input.update(cx, |input, cx| {
+                let value = input.value();
+                let line_count = value.lines().count().max(1);
+                let last_line = value.lines().last().unwrap_or("");
+                input.set_cursor_position(
+                    gpui_component::input::Position::new(
+                        (line_count - 1) as u32,
+                        last_line.chars().count() as u32,
+                    ),
+                    window,
+                    cx,
+                );
+            });
+        });
+    }
+
+    fn composer_value(panel: &Entity<MainWorkspacePanel>, cx: &mut VisualTestContext) -> String {
+        cx.read_entity(panel, |panel, cx| panel.input.read(cx).value().to_string())
+    }
+
+    #[gpui::test]
+    fn composer_enter_submits_non_empty_text(cx: &mut TestAppContext) {
+        init_composer_test(cx);
+        mount_composer_panel!(cx, panel);
+
+        set_composer_value(&panel, "hello", cx);
+        focus_composer_at_end(&panel, cx);
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+
+        assert_eq!(composer_value(&panel, cx), "");
+    }
+
+    #[gpui::test]
+    fn composer_submit_ignores_whitespace_only(cx: &mut TestAppContext) {
+        init_composer_test(cx);
+        mount_composer_panel!(cx, panel);
+
+        set_composer_value(&panel, "   ", cx);
+        cx.update_window_entity(&panel, |panel, window, cx| {
+            panel.submit_composer(window, cx);
+        });
+
+        assert_eq!(composer_value(&panel, cx), "   ");
+    }
+
+    #[gpui::test]
+    fn composer_send_button_submits_non_empty_text(cx: &mut TestAppContext) {
+        init_composer_test(cx);
+        mount_composer_panel!(cx, panel);
+
+        set_composer_value(&panel, "hello", cx);
+        cx.run_until_parked();
+
+        let button_bounds = cx
+            .debug_bounds("workspace-composer-send")
+            .expect("workspace send button should be visible");
+        cx.simulate_click(button_bounds.center(), Modifiers::none());
+        cx.run_until_parked();
+
+        assert_eq!(composer_value(&panel, cx), "");
+    }
+
+    #[gpui::test]
+    fn composer_shift_enter_inserts_newline(cx: &mut TestAppContext) {
+        init_composer_test(cx);
+        mount_composer_panel!(cx, panel);
+
+        set_composer_value(&panel, "line one", cx);
+        focus_composer_at_end(&panel, cx);
+        cx.simulate_keystrokes("shift-enter");
+        cx.run_until_parked();
+
+        assert_eq!(composer_value(&panel, cx), "line one\n");
+    }
+
+    #[test]
+    fn composer_row_limits_match_spec() {
+        assert_eq!(COMPOSER_MIN_ROWS, 1);
+        assert_eq!(COMPOSER_MAX_ROWS, 6);
+    }
 }
