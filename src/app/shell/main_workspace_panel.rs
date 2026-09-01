@@ -44,16 +44,11 @@ impl MainWorkspacePanel {
                 .submit_on_enter(true)
                 .placeholder(COMPOSER_PLACEHOLDER)
         });
-        let _input_subscription = cx.subscribe_in(
-            &input,
-            window,
-            |this, _, event, window, cx| match event {
-                InputEvent::PressEnter { shift: false, .. } => {
-                    this.submit_composer(window, cx);
-                }
-                _ => {}
-            },
-        );
+        let _input_subscription = cx.subscribe_in(&input, window, |this, _, event, window, cx| {
+            if let InputEvent::PressEnter { shift: false, .. } = event {
+                this.submit_composer(window, cx);
+            }
+        });
         Self {
             focus_handle: cx.focus_handle(),
             theme,
@@ -279,20 +274,20 @@ fn composer_bar(
                         .id("workspace-composer-send")
                         .debug_selector(|| "workspace-composer-send".to_string())
                         .child(
-                        Button::new("workspace-send")
-                            .ghost()
-                            .rounded(ButtonRounded::None)
-                            .icon(IconName::ArrowUp)
-                            .h(px(COMPOSER_MIN_HEIGHT))
-                            .w(px(COMPOSER_MIN_HEIGHT))
-                            .text_color(primary)
-                            .border_1()
-                            .border_color(border_strong)
-                            .bg(surface)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.submit_composer(window, cx);
-                            })),
-                    ),
+                            Button::new("workspace-send")
+                                .ghost()
+                                .rounded(ButtonRounded::None)
+                                .icon(IconName::ArrowUp)
+                                .h(px(COMPOSER_MIN_HEIGHT))
+                                .w(px(COMPOSER_MIN_HEIGHT))
+                                .text_color(primary)
+                                .border_1()
+                                .border_color(border_strong)
+                                .bg(surface)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.submit_composer(window, cx);
+                                })),
+                        ),
                 ),
         )
         .child(
