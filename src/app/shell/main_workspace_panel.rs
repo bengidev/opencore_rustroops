@@ -211,7 +211,7 @@ fn composer_bar(
     mono: SharedString,
     pad: f32,
 ) -> impl IntoElement {
-    const COMPOSER_HEIGHT: f32 = 56.;
+    const COMPOSER_MIN_HEIGHT: f32 = 56.;
     const COMPOSER_TEXT: f32 = 16.;
 
     let surface = theme.surface(BackgroundToken::Secondary);
@@ -232,13 +232,12 @@ fn composer_bar(
             h_flex()
                 .w_full()
                 .gap(px(SpacingToken::S1.value()))
-                .items_center()
+                .items_end()
                 .child(
                     div().flex_1().min_w_0().child(
                         Input::new(input)
                             .large()
                             .w_full()
-                            .h(px(COMPOSER_HEIGHT))
                             .text_size(px(COMPOSER_TEXT))
                             .bordered(true)
                             .appearance(true)
@@ -250,8 +249,8 @@ fn composer_bar(
                         .ghost()
                         .rounded(ButtonRounded::None)
                         .icon(IconName::ArrowUp)
-                        .h(px(COMPOSER_HEIGHT))
-                        .w(px(COMPOSER_HEIGHT))
+                        .h(px(COMPOSER_MIN_HEIGHT))
+                        .w(px(COMPOSER_MIN_HEIGHT))
                         .text_color(primary)
                         .border_1()
                         .border_color(border_strong)
