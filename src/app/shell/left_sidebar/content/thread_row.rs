@@ -17,8 +17,8 @@ use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme, Type
 use super::super::demo_data::{DEMO_PROJECTS, DemoThread, ThreadShelf, ThreadStatus};
 use super::super::state::SidebarViewModel;
 use super::super::surfaces::{
-    pr_open_color, project_favicon_color, row_active_bg, row_hover_bg, row_selected_bg,
-    status_color,
+    drop_line_color, pr_open_color, project_favicon_color, row_active_bg, row_hover_bg,
+    row_selected_bg, status_color,
 };
 use super::super::tokens::{
     FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD, ROW_HEIGHT_SLIM, ROW_RADIUS,
@@ -158,7 +158,6 @@ fn row_surface(
         ThreadDragScope::from_thread(thread.id, view.effective_shelf(thread), is_archived);
     let menu_title = view.display_title(thread);
     let row_drag = pinned_drag.unwrap_or_default();
-    let drop_line_color: gpui::Hsla = gpui::rgb(0x3B82F6).into();
     let drag_hover_bg = row_hover_bg(theme);
 
     let is_card = variant_key == "card";
@@ -187,7 +186,7 @@ fn row_surface(
                     .left(px(0.))
                     .right(px(0.))
                     .h(px(2.))
-                    .bg(drop_line_color),
+                    .bg(drop_line_color(theme)),
             )
         })
         .when(row_drag.drop_below, |row| {
@@ -198,7 +197,7 @@ fn row_surface(
                     .left(px(0.))
                     .right(px(0.))
                     .h(px(2.))
-                    .bg(drop_line_color),
+                    .bg(drop_line_color(theme)),
             )
         })
         .when(!is_active && !is_selected, |row| {

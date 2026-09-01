@@ -14,7 +14,8 @@ use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme, Type
 
 use super::super::demo_data::{DEMO_PROJECTS, DemoDraft};
 use super::super::surfaces::{
-    draft_bg, draft_bg_hover, project_favicon_color, row_active_bg, row_hover_bg, row_selected_bg,
+    draft_bg, draft_bg_hover, drop_line_color, project_favicon_color, row_active_bg, row_hover_bg,
+    row_selected_bg,
 };
 use super::super::tokens::{FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD};
 use super::callbacks::{ThreadDragOverCallback, ThreadDropCallback, ThreadIdCallback};
@@ -58,7 +59,6 @@ pub fn sidebar_draft_row(
     let draft_id = draft.id.to_string();
     let preview = draft.preview;
     let project_title = draft.project_title;
-    let drop_line_color: gpui::Hsla = gpui::rgb(0x3B82F6).into();
     let drag_hover_bg = row_hover_bg(theme);
     let on_drag_start = drag_actions.on_drag_start.clone();
     let on_drag_over = drag_actions.on_drag_over.clone();
@@ -85,7 +85,7 @@ pub fn sidebar_draft_row(
                     .left(px(0.))
                     .right(px(0.))
                     .h(px(2.))
-                    .bg(drop_line_color),
+                    .bg(drop_line_color(theme)),
             )
         })
         .when(row_drag.drop_below, |row| {
@@ -96,7 +96,7 @@ pub fn sidebar_draft_row(
                     .left(px(0.))
                     .right(px(0.))
                     .h(px(2.))
-                    .bg(drop_line_color),
+                    .bg(drop_line_color(theme)),
             )
         })
         .when(!is_active && !is_selected, |row| {
