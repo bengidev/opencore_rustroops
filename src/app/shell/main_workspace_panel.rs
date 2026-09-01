@@ -262,7 +262,7 @@ fn composer_bar(
                 .font_family(mono)
                 .text_size(px(TypeRole::MonoSm.size()))
                 .text_color(muted)
-                .child("Enter to send · ⌘K for commands"),
+                .child("Enter to send · Shift+Enter for newline · ⌘K for commands"),
         )
 }
 
