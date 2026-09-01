@@ -20,6 +20,10 @@ pub fn row_selected_bg(theme: &OpenCoreTheme) -> Hsla {
     theme.surface(BackgroundToken::Secondary)
 }
 
+pub fn drop_line_color(theme: &OpenCoreTheme) -> Hsla {
+    theme.foreground(ForegroundToken::Primary)
+}
+
 pub fn draft_bg(_theme: &OpenCoreTheme) -> Hsla {
     let color: Hsla = gpui::rgb(WARNING_AMBER).into();
     color.alpha(0.06)
