@@ -3,19 +3,21 @@
 use gpui::{
     App, AppContext, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div, px,
-    relative,
+    prelude::FluentBuilder, relative,
 };
 use gpui_component::{
-    IconName, Sizable,
+    Icon, IconName, Sizable,
     button::{Button, ButtonRounded, ButtonVariants as _},
     dock::{Panel, PanelEvent},
     h_flex,
     input::{Input, InputEvent, InputState},
+    menu::{DropdownMenu as _, PopupMenu, PopupMenuItem},
     v_flex,
 };
 
 use crate::shared::theme::{
-    BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
+    ActionToken, BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken,
+    TypeRole,
 };
 
 use super::workspace_theme::WorkspaceTheme;
@@ -30,11 +32,46 @@ pub struct MainWorkspacePanel {
     focus_handle: FocusHandle,
     theme: WorkspaceTheme,
     input: gpui::Entity<InputState>,
+    composer: ComposerToolbarState,
+    context_percent: u32,
     _input_subscription: Subscription,
 }
 
 const COMPOSER_MIN_ROWS: usize = 1;
 const COMPOSER_MAX_ROWS: usize = 6;
+
+const MODEL_OPTIONS: &[&str] = &["Claude Opus 4.5", "Claude Sonnet 4", "GPT-5"];
+const PRIORITY_OPTIONS: &[&str] = &["High", "Normal"];
+const MODE_OPTIONS: &[&str] = &["Build", "Plan", "Ask"];
+const ACCESS_OPTIONS: &[&str] = &["Full access", "Read only", "Ask before edits"];
+const DEFAULT_CONTEXT_PERCENT: u32 = 85;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ComposerToolbarState {
+    model: String,
+    priority: String,
+    mode: String,
+    access: String,
+}
+
+impl Default for ComposerToolbarState {
+    fn default() -> Self {
+        Self {
+            model: MODEL_OPTIONS[0].to_string(),
+            priority: PRIORITY_OPTIONS[0].to_string(),
+            mode: MODE_OPTIONS[0].to_string(),
+            access: ACCESS_OPTIONS[0].to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ComposerField {
+    Model,
+    Priority,
+    Mode,
+    Access,
+}
 
 impl MainWorkspacePanel {
     pub fn new(window: &mut Window, theme: WorkspaceTheme, cx: &mut Context<Self>) -> Self {
@@ -53,8 +90,20 @@ impl MainWorkspacePanel {
             focus_handle: cx.focus_handle(),
             theme,
             input,
+            composer: ComposerToolbarState::default(),
+            context_percent: DEFAULT_CONTEXT_PERCENT,
             _input_subscription,
         }
+    }
+
+    fn select_composer_option(&mut self, field: ComposerField, value: String, cx: &mut Context<Self>) {
+        match field {
+            ComposerField::Model => self.composer.model = value,
+            ComposerField::Priority => self.composer.priority = value,
+            ComposerField::Mode => self.composer.mode = value,
+            ComposerField::Access => self.composer.access = value,
+        }
+        cx.notify();
     }
 
     fn submit_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -146,7 +195,7 @@ impl Render for MainWorkspacePanel {
                     ))
                     .child(quick_actions_row(tertiary, border, primary)),
             )
-            .child(composer_bar(cx, &self.input, &theme, mono, pad))
+            .child(composer_bar(self, cx, &self.input, &theme, mono, pad))
     }
 }
 
@@ -226,20 +275,31 @@ fn quick_actions_row(
 }
 
 fn composer_bar(
+    panel: &MainWorkspacePanel,
     cx: &mut Context<MainWorkspacePanel>,
     input: &gpui::Entity<InputState>,
     theme: &OpenCoreTheme,
     mono: SharedString,
     pad: f32,
 ) -> impl IntoElement {
-    const COMPOSER_MIN_HEIGHT: f32 = 56.;
+    const COMPOSER_MIN_HEIGHT: f32 = 72.;
     const COMPOSER_TEXT: f32 = 16.;
+    const TOOLBAR_HEIGHT: f32 = 40.;
+    const TOOLBAR_BUTTON_HEIGHT: f32 = 32.;
+    const TOOLBAR_BUTTON_PX: f32 = 8.;
+    const CONTROL_HEIGHT: f32 = 32.;
+    const CONTEXT_WIDTH: f32 = 36.;
 
     let surface = theme.surface(BackgroundToken::Secondary);
     let border = theme.border_token(BorderToken::Default);
     let border_strong = theme.border_token(BorderToken::Strong);
     let primary = theme.foreground(ForegroundToken::Primary);
+    let secondary = theme.foreground(ForegroundToken::Secondary);
     let muted = theme.foreground(ForegroundToken::Muted);
+    let action_bg = theme.action(ActionToken::Strong);
+    let action_fg = theme.action(ActionToken::StrongText);
+    let sans = sans_family();
+    let panel_entity = cx.entity().clone();
 
     v_flex()
         .w_full()
@@ -250,43 +310,104 @@ fn composer_bar(
         .border_t_1()
         .border_color(border)
         .child(
-            h_flex()
+            v_flex()
                 .w_full()
-                .gap(px(SpacingToken::S1.value()))
-                .items_end()
+                .border_1()
+                .border_color(border)
+                .bg(surface)
                 .child(
                     div()
-                        .flex_1()
-                        .min_w_0()
+                        .w_full()
                         .min_h(px(COMPOSER_MIN_HEIGHT))
+                        .px(px(SpacingToken::S3.value()))
+                        .pt(px(SpacingToken::S3.value()))
+                        .pb(px(SpacingToken::S1.value()))
                         .child(
                             Input::new(input)
                                 .large()
                                 .w_full()
                                 .text_size(px(COMPOSER_TEXT))
-                                .bordered(true)
-                                .appearance(true)
+                                .bordered(false)
+                                .appearance(false)
                                 .cleanable(false),
                         ),
                 )
+                .child(div().w_full().h(px(1.)).bg(border))
                 .child(
-                    div()
-                        .id("workspace-composer-send")
-                        .debug_selector(|| "workspace-composer-send".to_string())
+                    h_flex()
+                        .w_full()
+                        .h(px(TOOLBAR_HEIGHT))
+                        .px(px(SpacingToken::S3.value()))
+                        .py(px(2.))
+                        .items_center()
+                        .gap(px(2.))
+                        .child(composer_model_menu(
+                            &panel.composer.model,
+                            panel_entity.clone(),
+                            primary,
+                            secondary,
+                            sans.clone(),
+                            TOOLBAR_BUTTON_HEIGHT,
+                            TOOLBAR_BUTTON_PX,
+                        ))
+                        .child(composer_toolbar_divider(border))
+                        .child(composer_priority_menu(
+                            &panel.composer.priority,
+                            panel_entity.clone(),
+                            primary,
+                            sans.clone(),
+                            TOOLBAR_BUTTON_HEIGHT,
+                            TOOLBAR_BUTTON_PX,
+                        ))
+                        .child(composer_toolbar_divider(border))
+                        .child(composer_build_menu(
+                            &panel.composer.mode,
+                            panel_entity.clone(),
+                            primary,
+                            secondary,
+                            sans.clone(),
+                            TOOLBAR_BUTTON_HEIGHT,
+                            TOOLBAR_BUTTON_PX,
+                        ))
+                        .child(composer_toolbar_divider(border))
+                        .child(composer_access_menu(
+                            &panel.composer.access,
+                            panel_entity.clone(),
+                            primary,
+                            secondary,
+                            sans,
+                            TOOLBAR_BUTTON_HEIGHT,
+                            TOOLBAR_BUTTON_PX,
+                        ))
+                        .child(div().flex_1().min_w(px(8.)))
+                        .child(composer_context_badge(
+                            primary,
+                            surface,
+                            border_strong,
+                            mono.clone(),
+                            CONTROL_HEIGHT,
+                            CONTEXT_WIDTH,
+                            panel.context_percent,
+                        ))
                         .child(
-                            Button::new("workspace-send")
-                                .ghost()
-                                .rounded(ButtonRounded::None)
-                                .icon(IconName::ArrowUp)
-                                .h(px(COMPOSER_MIN_HEIGHT))
-                                .w(px(COMPOSER_MIN_HEIGHT))
-                                .text_color(primary)
-                                .border_1()
-                                .border_color(border_strong)
-                                .bg(surface)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.submit_composer(window, cx);
-                                })),
+                            div()
+                                .id("workspace-composer-send")
+                                .debug_selector(|| "workspace-composer-send".to_string())
+                                .ml(px(SpacingToken::S1.value()))
+                                .child(
+                                    Button::new("workspace-send")
+                                        .ghost()
+                                        .rounded(ButtonRounded::None)
+                                        .icon(Icon::new(IconName::ArrowUp).text_color(action_fg))
+                                        .h(px(CONTROL_HEIGHT))
+                                        .w(px(CONTROL_HEIGHT))
+                                        .border_1()
+                                        .border_color(border_strong)
+                                        .bg(action_bg)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.submit_composer(window, cx);
+                                        })),
+                                ),
                         ),
                 ),
         )
@@ -296,6 +417,225 @@ fn composer_bar(
                 .text_size(px(TypeRole::MonoSm.size()))
                 .text_color(muted)
                 .child("Enter to send atom · Shift+Enter for newline · ⌘K for commands"),
+        )
+}
+
+fn composer_toolbar_divider(color: gpui::Hsla) -> impl IntoElement {
+    div()
+        .mx(px(SpacingToken::S1.value()))
+        .w(px(1.))
+        .h(px(18.))
+        .flex_shrink_0()
+        .bg(color.alpha(0.75))
+}
+
+fn composer_toolbar_label(
+    label: impl Into<SharedString>,
+    primary: gpui::Hsla,
+    sans: SharedString,
+) -> impl IntoElement {
+    div()
+        .flex_shrink_0()
+        .mr(px(2.))
+        .font_family(sans)
+        .text_size(px(TypeRole::LabelMd.size()))
+        .line_height(relative(TypeRole::LabelMd.line_height()))
+        .text_color(primary)
+        .child(label.into())
+}
+
+fn composer_section_menu(
+    menu: PopupMenu,
+    section: impl Into<SharedString>,
+    options: &[&'static str],
+    selected: &str,
+    field: ComposerField,
+    panel: gpui::Entity<MainWorkspacePanel>,
+) -> PopupMenu {
+    let mut menu = menu.label(section).separator();
+    for option in options {
+        let option = (*option).to_string();
+        let panel = panel.clone();
+        let checked = option == selected;
+        menu = menu.item(
+            PopupMenuItem::new(option.clone())
+                .checked(checked)
+                .on_click(move |_, _, cx| {
+                    panel.update(cx, |panel, cx| {
+                        panel.select_composer_option(field, option.clone(), cx);
+                    });
+                }),
+        );
+    }
+    menu
+}
+
+fn composer_dropdown_button(
+    id: &'static str,
+    label: &str,
+    selected: &str,
+    panel: gpui::Entity<MainWorkspacePanel>,
+    primary: gpui::Hsla,
+    icon: Option<(IconName, gpui::Hsla)>,
+    sans: SharedString,
+    button_height: f32,
+    button_px: f32,
+    section: &'static str,
+    options: &'static [&'static str],
+    field: ComposerField,
+) -> impl IntoElement {
+    let selected = selected.to_string();
+    let panel_for_menu = panel.clone();
+    Button::new(id)
+        .ghost()
+        .compact()
+        .rounded(ButtonRounded::None)
+        .h(px(button_height))
+        .px(px(button_px))
+        .gap(px(6.))
+        .text_color(primary)
+        .when_some(icon, |this, (icon, color)| {
+            this.icon(Icon::new(icon).text_color(color).small())
+        })
+        .child(composer_toolbar_label(label, primary, sans))
+        .dropdown_caret(true)
+        .dropdown_menu(move |menu, _, _| {
+            composer_section_menu(
+                menu,
+                section,
+                options,
+                &selected,
+                field,
+                panel_for_menu.clone(),
+            )
+        })
+}
+
+fn composer_model_menu(
+    selected: &str,
+    panel: gpui::Entity<MainWorkspacePanel>,
+    primary: gpui::Hsla,
+    secondary: gpui::Hsla,
+    sans: SharedString,
+    button_height: f32,
+    button_px: f32,
+) -> impl IntoElement {
+    composer_dropdown_button(
+        "workspace-composer-model",
+        selected,
+        selected,
+        panel,
+        primary,
+        Some((IconName::Cpu, secondary)),
+        sans,
+        button_height,
+        button_px,
+        "Model",
+        MODEL_OPTIONS,
+        ComposerField::Model,
+    )
+}
+
+fn composer_priority_menu(
+    selected: &str,
+    panel: gpui::Entity<MainWorkspacePanel>,
+    primary: gpui::Hsla,
+    sans: SharedString,
+    button_height: f32,
+    button_px: f32,
+) -> impl IntoElement {
+    composer_dropdown_button(
+        "workspace-composer-priority",
+        selected,
+        selected,
+        panel,
+        primary,
+        None,
+        sans,
+        button_height,
+        button_px,
+        "Priority",
+        PRIORITY_OPTIONS,
+        ComposerField::Priority,
+    )
+}
+
+fn composer_build_menu(
+    selected: &str,
+    panel: gpui::Entity<MainWorkspacePanel>,
+    primary: gpui::Hsla,
+    secondary: gpui::Hsla,
+    sans: SharedString,
+    button_height: f32,
+    button_px: f32,
+) -> impl IntoElement {
+    composer_dropdown_button(
+        "workspace-composer-build",
+        selected,
+        selected,
+        panel,
+        primary,
+        Some((IconName::Bot, secondary)),
+        sans,
+        button_height,
+        button_px,
+        "Mode",
+        MODE_OPTIONS,
+        ComposerField::Mode,
+    )
+}
+
+fn composer_access_menu(
+    selected: &str,
+    panel: gpui::Entity<MainWorkspacePanel>,
+    primary: gpui::Hsla,
+    secondary: gpui::Hsla,
+    sans: SharedString,
+    button_height: f32,
+    button_px: f32,
+) -> impl IntoElement {
+    composer_dropdown_button(
+        "workspace-composer-access",
+        selected,
+        selected,
+        panel,
+        primary,
+        Some((IconName::Eye, secondary)),
+        sans,
+        button_height,
+        button_px,
+        "Access",
+        ACCESS_OPTIONS,
+        ComposerField::Access,
+    )
+}
+
+fn composer_context_badge(
+    primary: gpui::Hsla,
+    surface: gpui::Hsla,
+    border: gpui::Hsla,
+    mono: SharedString,
+    height: f32,
+    width: f32,
+    percent: u32,
+) -> impl IntoElement {
+    div()
+        .id("workspace-composer-context")
+        .w(px(width))
+        .h(px(height))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .border_1()
+        .border_color(border)
+        .bg(surface)
+        .child(
+            div()
+                .font_family(mono)
+                .text_size(px(TypeRole::MonoSm.size()))
+                .text_color(primary)
+                .child(format!("{percent}")),
         )
 }
 
