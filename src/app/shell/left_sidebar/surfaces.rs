@@ -1,4 +1,4 @@
-//! Row surface colors for sidebar thread rows.
+//! Row surface colors for sidebar atom rows.
 
 use gpui::Hsla;
 
@@ -6,7 +6,7 @@ use crate::shared::theme::{
     BackgroundToken, ForegroundToken, OpenCoreTheme, SUCCESS_GREEN, WARNING_AMBER,
 };
 
-use super::demo_data::ThreadStatus;
+use super::demo_data::AtomStatus;
 
 pub fn row_hover_bg(theme: &OpenCoreTheme) -> Hsla {
     theme.surface(BackgroundToken::Secondary).alpha(0.55)
@@ -34,15 +34,15 @@ pub fn draft_bg_hover(_theme: &OpenCoreTheme) -> Hsla {
     color.alpha(0.12)
 }
 
-pub fn status_color(status: ThreadStatus, theme: &OpenCoreTheme, dimmed: bool) -> Hsla {
+pub fn status_color(status: AtomStatus, theme: &OpenCoreTheme, dimmed: bool) -> Hsla {
     let hsla = match status {
-        ThreadStatus::Working | ThreadStatus::Monitoring => gpui::rgb(0x0E_A5_E9).into(),
-        ThreadStatus::Approval | ThreadStatus::Woke => gpui::rgb(WARNING_AMBER).into(),
-        ThreadStatus::Input => gpui::rgb(0x63_66_F1).into(),
-        ThreadStatus::Failed => theme.foreground(ForegroundToken::Accent),
-        ThreadStatus::Ready => theme.foreground(ForegroundToken::Muted),
+        AtomStatus::Working | AtomStatus::Monitoring => gpui::rgb(0x0E_A5_E9).into(),
+        AtomStatus::Approval | AtomStatus::Woke => gpui::rgb(WARNING_AMBER).into(),
+        AtomStatus::Input => gpui::rgb(0x63_66_F1).into(),
+        AtomStatus::Failed => theme.foreground(ForegroundToken::Accent),
+        AtomStatus::Ready => theme.foreground(ForegroundToken::Muted),
     };
-    if dimmed && matches!(status, ThreadStatus::Working | ThreadStatus::Monitoring) {
+    if dimmed && matches!(status, AtomStatus::Working | AtomStatus::Monitoring) {
         hsla.alpha(0.75)
     } else {
         hsla

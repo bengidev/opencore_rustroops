@@ -1,14 +1,14 @@
 //! Static demo projections for left-sidebar interface scaffolding.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ThreadShelf {
+pub enum AtomShelf {
     Pinned,
     Active,
     Settled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ThreadStatus {
+pub enum AtomStatus {
     Working,
     Monitoring,
     Approval,
@@ -18,7 +18,7 @@ pub enum ThreadStatus {
     Woke,
 }
 
-impl ThreadStatus {
+impl AtomStatus {
     pub fn label(self) -> Option<&'static str> {
         match self {
             Self::Working => Some("Working"),
@@ -48,15 +48,15 @@ pub struct DemoDraft {
 }
 
 #[derive(Clone, Debug)]
-pub struct DemoThread {
+pub struct DemoAtom {
     pub id: &'static str,
     pub title: &'static str,
     pub project_key: &'static str,
     pub project_title: &'static str,
     pub branch: Option<&'static str>,
-    pub shelf: ThreadShelf,
+    pub shelf: AtomShelf,
     pub time_label: &'static str,
-    pub status: ThreadStatus,
+    pub status: AtomStatus,
     pub pr_number: Option<u32>,
     pub diff_insertions: Option<u32>,
     pub diff_deletions: Option<u32>,
@@ -65,7 +65,7 @@ pub struct DemoThread {
     pub terminal_process_count: u32,
 }
 
-pub const ALL_PROJECTS_LABEL: &str = "All projects";
+pub const ALL_ATOMS_LABEL: &str = "All atoms";
 
 pub const DEMO_PROJECTS: [DemoProject; 2] = [
     DemoProject {
@@ -84,19 +84,19 @@ pub const DEMO_DRAFT: DemoDraft = DemoDraft {
     id: "draft-1",
     project_key: "opencore",
     project_title: "opencore_rustroops",
-    preview: "New thread draft…",
+    preview: "New atom draft…",
 };
 
-pub const DEMO_THREADS: [DemoThread; 15] = [
-    DemoThread {
+pub const DEMO_ATOMS: [DemoAtom; 15] = [
+    DemoAtom {
         id: "pinned-1",
         title: "Fix dock layout persistence",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("feat/shell-dock"),
-        shelf: ThreadShelf::Pinned,
+        shelf: AtomShelf::Pinned,
         time_label: "2h",
-        status: ThreadStatus::Working,
+        status: AtomStatus::Working,
         pr_number: Some(42),
         diff_insertions: Some(128),
         diff_deletions: Some(24),
@@ -104,15 +104,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 1,
     },
-    DemoThread {
+    DemoAtom {
         id: "pinned-2",
-        title: "Pinned thread drag reorder",
+        title: "Pinned atom drag reorder",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("feat/left-sidebar"),
-        shelf: ThreadShelf::Pinned,
+        shelf: AtomShelf::Pinned,
         time_label: "45m",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
@@ -120,15 +120,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "active-1",
         title: "Implement left sidebar UI",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("feat/left-sidebar"),
-        shelf: ThreadShelf::Active,
+        shelf: AtomShelf::Active,
         time_label: "now",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
@@ -136,15 +136,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "active-2",
         title: "Theme transition polish",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("main"),
-        shelf: ThreadShelf::Active,
+        shelf: AtomShelf::Active,
         time_label: "18m",
-        status: ThreadStatus::Monitoring,
+        status: AtomStatus::Monitoring,
         pr_number: None,
         diff_insertions: Some(12),
         diff_deletions: Some(3),
@@ -152,15 +152,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "active-3",
         title: "Approval gate on deploy",
         project_key: "sample_app",
         project_title: "sample_app",
         branch: Some("feat/deploy"),
-        shelf: ThreadShelf::Active,
+        shelf: AtomShelf::Active,
         time_label: "45m",
-        status: ThreadStatus::Approval,
+        status: AtomStatus::Approval,
         pr_number: Some(17),
         diff_insertions: None,
         diff_deletions: None,
@@ -168,15 +168,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "active-4",
         title: "Review gpui-component dock APIs",
         project_key: "sample_app",
         project_title: "sample_app",
         branch: Some("research/dock"),
-        shelf: ThreadShelf::Active,
+        shelf: AtomShelf::Active,
         time_label: "2h",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
@@ -184,15 +184,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-1",
         title: "Welcome view port",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("main"),
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "1d",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: Some(38),
         diff_insertions: None,
         diff_deletions: None,
@@ -200,15 +200,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-2",
         title: "Shell workspace title bar",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("feat/shell"),
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "3d",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
@@ -216,15 +216,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-3",
         title: "Preferences persistence",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: None,
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "1w",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
@@ -232,15 +232,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-4",
         title: "Dock animation tween",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("feat/dock-tween"),
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "2w",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: Some(12),
         diff_insertions: None,
         diff_deletions: None,
@@ -248,15 +248,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-5",
         title: "Native menu bridge",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("main"),
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "2w",
-        status: ThreadStatus::Failed,
+        status: AtomStatus::Failed,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
@@ -264,15 +264,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-6",
-        title: "Thread sidebar search",
+        title: "atom sidebar search",
         project_key: "sample_app",
         project_title: "sample_app",
         branch: Some("feat/search"),
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "3w",
-        status: ThreadStatus::Woke,
+        status: AtomStatus::Woke,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
@@ -280,15 +280,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: true,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-7",
         title: "Composer placeholder text",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("main"),
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "4w",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
@@ -296,15 +296,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-8",
         title: "Right panel file tree",
         project_key: "sample_app",
         project_title: "sample_app",
         branch: Some("feat/files"),
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "5w",
-        status: ThreadStatus::Ready,
+        status: AtomStatus::Ready,
         pr_number: Some(9),
         diff_insertions: None,
         diff_deletions: None,
@@ -312,15 +312,15 @@ pub const DEMO_THREADS: [DemoThread; 15] = [
         is_woke: false,
         terminal_process_count: 0,
     },
-    DemoThread {
+    DemoAtom {
         id: "settled-9",
         title: "Keyboard shortcut map",
         project_key: "opencore",
         project_title: "opencore_rustroops",
         branch: Some("main"),
-        shelf: ThreadShelf::Settled,
+        shelf: AtomShelf::Settled,
         time_label: "6w",
-        status: ThreadStatus::Input,
+        status: AtomStatus::Input,
         pr_number: None,
         diff_insertions: None,
         diff_deletions: None,
