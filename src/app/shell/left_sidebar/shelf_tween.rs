@@ -1,4 +1,4 @@
-//! Manual height tweens for collapsible thread shelves (pinned / settled / archived).
+//! Manual height tweens for collapsible atom shelves (pinned / settled / archived).
 //!
 //! GPUI has no CSS transitions. Clip height is eased over 200ms with the same
 //! resize ease-out as dock panel toggles, evaluated each render.

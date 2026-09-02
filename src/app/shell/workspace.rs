@@ -393,7 +393,7 @@ mod tests {
             );
             assert!(
                 dock_item_panel_count(panel) >= 1,
-                "left dock expected threads-only panel"
+                "left dock expected atoms-only panel"
             );
         }
 

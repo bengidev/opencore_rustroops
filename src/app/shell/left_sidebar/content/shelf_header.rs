@@ -1,4 +1,4 @@
-//! Collapsible shelf headers and static section labels for thread list shelves.
+//! Collapsible shelf headers and static section labels for atom list shelves.
 
 use gpui::{
     App, InteractiveElement, IntoElement, MouseButton, ParentElement, Radians, SharedString,

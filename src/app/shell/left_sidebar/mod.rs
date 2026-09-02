@@ -1,4 +1,4 @@
-//! Thread sidebar — interface components for the left dock.
+//! atom sidebar — interface components for the left dock.
 
 #![allow(clippy::too_many_arguments)]
 

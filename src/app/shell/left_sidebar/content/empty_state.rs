@@ -1,4 +1,4 @@
-//! Empty states for zero-project and zero-thread shelves.
+//! Empty states for zero-project and zero-atom shelves.
 
 use gpui::{IntoElement, ParentElement, SharedString, Styled, div, px, relative};
 use gpui_component::{

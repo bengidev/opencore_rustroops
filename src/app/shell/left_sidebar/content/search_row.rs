@@ -1,4 +1,4 @@
-//! Search row with clear affordance and new-thread action.
+//! Search row with clear affordance and new-atom action.
 
 use gpui::{App, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div, px};
 use gpui_component::{
@@ -19,7 +19,7 @@ pub fn sidebar_search_row(
     query: &str,
     theme: &OpenCoreTheme,
     on_clear: impl Fn(&mut Window, &mut App) + 'static,
-    on_new_thread: impl Fn(&mut Window, &mut App) + 'static,
+    on_new_atom: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let surface = theme.surface(BackgroundToken::Secondary);
     let border = theme.border_token(BorderToken::Default);
@@ -78,10 +78,10 @@ pub fn sidebar_search_row(
                 }),
         )
         .child(
-            Button::new("left-sidebar-new-thread")
+            Button::new("left-sidebar-new-atom")
                 .ghost()
                 .rounded(ButtonRounded::None)
-                .tooltip("New thread")
+                .tooltip("New atom")
                 .icon(Icon::new(IconName::File).text_color(primary))
                 .h(px(ICON_BUTTON_SIZE))
                 .w(px(ICON_BUTTON_SIZE))
@@ -89,6 +89,6 @@ pub fn sidebar_search_row(
                 .border_1()
                 .border_color(border)
                 .bg(surface)
-                .on_click(move |_, window, cx| on_new_thread(window, cx)),
+                .on_click(move |_, window, cx| on_new_atom(window, cx)),
         )
 }

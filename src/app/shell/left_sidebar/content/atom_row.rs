@@ -1,4 +1,4 @@
-//! Thread row surfaces: card layout for inbox/pinned, slim layout for history.
+//! atom row surfaces: card layout for inbox/pinned, slim layout for history.
 
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Entity, InteractiveElement, IntoElement,
@@ -14,7 +14,7 @@ use gpui_component::{
 
 use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme, TypeRole};
 
-use super::super::demo_data::{DEMO_PROJECTS, DemoThread, ThreadShelf, ThreadStatus};
+use super::super::demo_data::{DEMO_PROJECTS, DemoAtom, AtomShelf, AtomStatus};
 use super::super::state::SidebarViewModel;
 use super::super::surfaces::{
     drop_line_color, pr_open_color, project_favicon_color, row_active_bg, row_hover_bg,
@@ -24,48 +24,48 @@ use super::super::tokens::{
     FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD, ROW_HEIGHT_SLIM, ROW_RADIUS,
 };
 use super::callbacks::{
-    ThreadDragOverCallback, ThreadDropCallback, ThreadHoverCallback, ThreadIdCallback,
-    ThreadMoveCallback, ThreadSelectCallback,
+    AtomDragOverCallback, AtomDropCallback, AtomHoverCallback, AtomIdCallback,
+    AtomMoveCallback, AtomSelectCallback,
 };
-use super::pinned_drag::{PinnedRowDragUi, PinnedThreadDrag, ThreadDragScope};
+use super::pinned_drag::{PinnedRowDragUi, PinnedAtomDrag, AtomDragScope};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ThreadRowVariant {
+pub enum AtomRowVariant {
     Card,
     Slim,
 }
 
 #[derive(Clone)]
-pub struct ThreadRowActions {
-    pub on_activate: ThreadIdCallback,
-    pub on_select: ThreadSelectCallback,
-    pub on_hover: ThreadHoverCallback,
-    pub on_move_thread: ThreadMoveCallback,
-    pub on_pin: ThreadIdCallback,
-    pub on_unpin: ThreadIdCallback,
-    pub on_settle: ThreadIdCallback,
-    pub on_unsettle: ThreadIdCallback,
-    pub on_rename: ThreadIdCallback,
-    pub on_archive: ThreadIdCallback,
-    pub on_unarchive: ThreadIdCallback,
-    pub on_pinned_drag_start: ThreadIdCallback,
-    pub on_pinned_drag_over: ThreadDragOverCallback,
-    pub on_pinned_drop: ThreadDropCallback,
+pub struct AtomRowActions {
+    pub on_activate: AtomIdCallback,
+    pub on_select: AtomSelectCallback,
+    pub on_hover: AtomHoverCallback,
+    pub on_move_atom: AtomMoveCallback,
+    pub on_pin: AtomIdCallback,
+    pub on_unpin: AtomIdCallback,
+    pub on_settle: AtomIdCallback,
+    pub on_unsettle: AtomIdCallback,
+    pub on_rename: AtomIdCallback,
+    pub on_archive: AtomIdCallback,
+    pub on_unarchive: AtomIdCallback,
+    pub on_pinned_drag_start: AtomIdCallback,
+    pub on_pinned_drag_over: AtomDragOverCallback,
+    pub on_pinned_drop: AtomDropCallback,
 }
 
-pub fn sidebar_thread_row(
-    thread: &DemoThread,
-    variant: ThreadRowVariant,
+pub fn sidebar_atom_row(
+    atom: &DemoAtom,
+    variant: AtomRowVariant,
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
-    actions: &ThreadRowActions,
+    actions: &AtomRowActions,
     rename_input: Option<&Entity<InputState>>,
     pinned_drag: Option<PinnedRowDragUi>,
     scroll_anchor: Option<gpui::ScrollAnchor>,
 ) -> AnyElement {
     match variant {
-        ThreadRowVariant::Card => card_row(
-            thread,
+        AtomRowVariant::Card => card_row(
+            atom,
             view,
             theme,
             actions,
@@ -74,8 +74,8 @@ pub fn sidebar_thread_row(
             scroll_anchor,
         )
         .into_any_element(),
-        ThreadRowVariant::Slim => slim_row(
-            thread,
+        AtomRowVariant::Slim => slim_row(
+            atom,
             view,
             theme,
             actions,
@@ -109,19 +109,19 @@ pub fn sidebar_show_more_button(
 }
 
 fn row_surface(
-    thread: &DemoThread,
+    atom: &DemoAtom,
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
     height: f32,
     variant_key: &str,
-    actions: &ThreadRowActions,
+    actions: &AtomRowActions,
     pinned_drag: Option<PinnedRowDragUi>,
     scroll_anchor: Option<gpui::ScrollAnchor>,
     content: impl IntoElement,
 ) -> impl IntoElement {
-    let is_active = view.is_active(thread);
-    let is_selected = view.is_selected(thread);
-    let recede = view.should_recede(thread);
+    let is_active = view.is_active(atom);
+    let is_selected = view.is_selected(atom);
+    let recede = view.should_recede(atom);
 
     let (bg, text) = if is_active {
         (
@@ -144,26 +144,26 @@ fn row_surface(
         )
     };
 
-    let thread_id = thread.id.to_string();
+    let atom_id = atom.id.to_string();
     let on_select = actions.on_select.clone();
     let on_activate = actions.on_activate.clone();
     let on_hover = actions.on_hover.clone();
     let on_pinned_drag_start = actions.on_pinned_drag_start.clone();
     let on_pinned_drag_over = actions.on_pinned_drag_over.clone();
     let on_pinned_drop = actions.on_pinned_drop.clone();
-    let is_pinned = view.effective_shelf(thread) == ThreadShelf::Pinned;
-    let is_settled = view.effective_shelf(thread) == ThreadShelf::Settled;
-    let is_archived = view.is_archived(thread);
+    let is_pinned = view.effective_shelf(atom) == AtomShelf::Pinned;
+    let is_settled = view.effective_shelf(atom) == AtomShelf::Settled;
+    let is_archived = view.is_archived(atom);
     let drag_scope =
-        ThreadDragScope::from_thread(thread.id, view.effective_shelf(thread), is_archived);
-    let menu_title = view.display_title(thread);
+        AtomDragScope::from_atom(atom.id, view.effective_shelf(atom), is_archived);
+    let menu_title = view.display_title(atom);
     let row_drag = pinned_drag.unwrap_or_default();
     let drag_hover_bg = row_hover_bg(theme);
 
     let is_card = variant_key == "card";
 
     div()
-        .id(format!("left-sidebar-thread-{variant_key}-{}", thread.id))
+        .id(format!("left-sidebar-atom-{variant_key}-{}", atom.id))
         .anchor_scroll(scroll_anchor)
         .w_full()
         .min_w_0()
@@ -208,8 +208,8 @@ fn row_surface(
         })
         .when(row_drag.is_source, |row| row.opacity(0.45))
         .on_drag(
-            PinnedThreadDrag {
-                thread_id: thread_id.clone(),
+            PinnedAtomDrag {
+                atom_id: atom_id.clone(),
                 scope: drag_scope,
                 title: menu_title.clone().into(),
                 preview_bg: theme.surface(BackgroundToken::Secondary),
@@ -219,7 +219,7 @@ fn row_surface(
                 let on_pinned_drag_start = on_pinned_drag_start.clone();
                 move |drag, _, window, cx| {
                     cx.stop_propagation();
-                    on_pinned_drag_start(drag.thread_id.clone(), window, cx);
+                    on_pinned_drag_start(drag.atom_id.clone(), window, cx);
                     cx.new(|_| PinnedDragPreview {
                         title: drag.title.clone(),
                         bg: drag.preview_bg,
@@ -229,33 +229,33 @@ fn row_surface(
             },
         )
         .can_drop({
-            let self_id = thread_id.clone();
+            let self_id = atom_id.clone();
             let self_scope = drag_scope;
             move |value, _, _| {
                 value
-                    .downcast_ref::<PinnedThreadDrag>()
+                    .downcast_ref::<PinnedAtomDrag>()
                     .is_some_and(|drag| {
-                        drag.thread_id != self_id && drag.scope.allows_drop(self_scope)
+                        drag.atom_id != self_id && drag.scope.allows_drop(self_scope)
                     })
             }
         })
-        .drag_over::<PinnedThreadDrag>({
-            let self_id = thread_id.clone();
+        .drag_over::<PinnedAtomDrag>({
+            let self_id = atom_id.clone();
             let self_scope = drag_scope;
             move |style, drag, _, _| {
-                if drag.thread_id == self_id || !drag.scope.allows_drop(self_scope) {
+                if drag.atom_id == self_id || !drag.scope.allows_drop(self_scope) {
                     return style;
                 }
                 style.bg(drag_hover_bg)
             }
         })
-        .on_drag_move::<PinnedThreadDrag>({
-            let target_id = thread_id.clone();
+        .on_drag_move::<PinnedAtomDrag>({
+            let target_id = atom_id.clone();
             let self_scope = drag_scope;
             let on_pinned_drag_over = on_pinned_drag_over.clone();
             move |event, window, cx| {
                 let drag = event.drag(cx);
-                if drag.thread_id == target_id || !drag.scope.allows_drop(self_scope) {
+                if drag.atom_id == target_id || !drag.scope.allows_drop(self_scope) {
                     return;
                 }
                 let pointer = event.event.position;
@@ -274,19 +274,19 @@ fn row_surface(
             }
         })
         .on_drop({
-            let target_id = thread_id.clone();
+            let target_id = atom_id.clone();
             let self_scope = drag_scope;
             let on_pinned_drop = on_pinned_drop.clone();
-            move |drag: &PinnedThreadDrag, window, cx| {
-                if drag.thread_id == target_id || !drag.scope.allows_drop(self_scope) {
+            move |drag: &PinnedAtomDrag, window, cx| {
+                if drag.atom_id == target_id || !drag.scope.allows_drop(self_scope) {
                     return;
                 }
-                on_pinned_drop(drag.thread_id.clone(), target_id.clone(), window, cx);
+                on_pinned_drop(drag.atom_id.clone(), target_id.clone(), window, cx);
             }
         })
         .on_hover({
             let on_hover = on_hover.clone();
-            let hover_id = thread_id.clone();
+            let hover_id = atom_id.clone();
             move |hovered, window, cx| {
                 on_hover(
                     if *hovered {
@@ -302,7 +302,7 @@ fn row_surface(
         .on_click({
             let on_select = on_select.clone();
             let on_activate = on_activate.clone();
-            let click_id = thread_id.clone();
+            let click_id = atom_id.clone();
             move |event: &ClickEvent, window, cx| {
                 if event.click_count() >= 2 {
                     return;
@@ -316,17 +316,17 @@ fn row_surface(
         })
         .context_menu({
             let actions = actions.clone();
-            let menu_id = thread_id.clone();
+            let menu_id = atom_id.clone();
             let menu_title = menu_title.clone();
-            let menu_state = ThreadContextMenuState {
+            let menu_state = AtomContextMenuState {
                 is_pinned,
                 is_settled,
                 is_archived,
-                can_move_up: view.can_move_thread(&thread_id, -1),
-                can_move_down: view.can_move_thread(&thread_id, 1),
+                can_move_up: view.can_move_atom(&atom_id, -1),
+                can_move_down: view.can_move_atom(&atom_id, 1),
             };
             move |menu, window, cx| {
-                build_thread_context_menu(
+                build_atom_context_menu(
                     menu,
                     menu_id.clone(),
                     menu_title.clone(),
@@ -341,7 +341,7 @@ fn row_surface(
 }
 
 #[derive(Clone, Copy)]
-struct ThreadContextMenuState {
+struct AtomContextMenuState {
     is_pinned: bool,
     is_settled: bool,
     is_archived: bool,
@@ -349,16 +349,16 @@ struct ThreadContextMenuState {
     can_move_down: bool,
 }
 
-fn build_thread_context_menu(
+fn build_atom_context_menu(
     mut menu: gpui_component::menu::PopupMenu,
     menu_id: String,
     menu_title: String,
-    state: ThreadContextMenuState,
-    actions: &ThreadRowActions,
+    state: AtomContextMenuState,
+    actions: &AtomRowActions,
     _window: &mut Window,
     _cx: &mut Context<gpui_component::menu::PopupMenu>,
 ) -> gpui_component::menu::PopupMenu {
-    let ThreadContextMenuState {
+    let AtomContextMenuState {
         is_pinned,
         is_settled,
         is_archived,
@@ -369,7 +369,7 @@ fn build_thread_context_menu(
 
     if can_move_up {
         let up_id = menu_id.clone();
-        let on_move_up = actions.on_move_thread.clone();
+        let on_move_up = actions.on_move_atom.clone();
         menu = menu.item(
             PopupMenuItem::new("Move up").on_click(move |_, window, cx| {
                 on_move_up(up_id.clone(), -1, window, cx);
@@ -378,7 +378,7 @@ fn build_thread_context_menu(
     }
     if can_move_down {
         let down_id = menu_id.clone();
-        let on_move_down = actions.on_move_thread.clone();
+        let on_move_down = actions.on_move_atom.clone();
         menu = menu.item(
             PopupMenuItem::new("Move down").on_click(move |_, window, cx| {
                 on_move_down(down_id.clone(), 1, window, cx);
@@ -449,26 +449,26 @@ fn build_thread_context_menu(
 }
 
 fn card_row(
-    thread: &DemoThread,
+    atom: &DemoAtom,
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
-    actions: &ThreadRowActions,
+    actions: &AtomRowActions,
     rename_input: Option<&Entity<InputState>>,
     pinned_drag: Option<PinnedRowDragUi>,
     scroll_anchor: Option<gpui::ScrollAnchor>,
 ) -> impl IntoElement {
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let mono = mono_family();
-    let recede = view.should_recede(thread);
-    let title = view.display_title(thread);
+    let recede = view.should_recede(atom);
+    let title = view.display_title(atom);
     let favicon_hue = DEMO_PROJECTS
         .iter()
-        .find(|p| p.key == thread.project_key)
+        .find(|p| p.key == atom.project_key)
         .map(|p| p.favicon_hue)
         .unwrap_or(0x888888);
 
     row_surface(
-        thread,
+        atom,
         view,
         theme,
         ROW_HEIGHT_CARD,
@@ -507,12 +507,12 @@ fn card_row(
                                     } else {
                                         secondary
                                     })
-                                    .child(thread.project_title),
+                                    .child(atom.project_title),
                             )
-                            .child(status_or_time(thread, view, theme, true)),
+                            .child(status_or_time(atom, view, theme, true)),
                     )
                     .child(title_row(
-                        thread,
+                        atom,
                         view,
                         &title,
                         rename_input,
@@ -523,26 +523,26 @@ fn card_row(
                             theme.foreground(ForegroundToken::Primary).alpha(0.9)
                         },
                     ))
-                    .child(branch_meta_row(thread, theme)),
+                    .child(branch_meta_row(atom, theme)),
             ),
     )
 }
 
 fn slim_row(
-    thread: &DemoThread,
+    atom: &DemoAtom,
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
-    actions: &ThreadRowActions,
+    actions: &AtomRowActions,
     rename_input: Option<&Entity<InputState>>,
     pinned_drag: Option<PinnedRowDragUi>,
     scroll_anchor: Option<gpui::ScrollAnchor>,
 ) -> impl IntoElement {
     let muted = theme.foreground(ForegroundToken::Muted);
-    let recede = view.should_recede(thread);
-    let title = view.display_title(thread);
+    let recede = view.should_recede(atom);
+    let title = view.display_title(atom);
 
     row_surface(
-        thread,
+        atom,
         view,
         theme,
         ROW_HEIGHT_SLIM,
@@ -565,7 +565,7 @@ fn slim_row(
                     .flex_shrink_0(),
             )
             .child(title_row(
-                thread,
+                atom,
                 view,
                 &title,
                 rename_input,
@@ -576,12 +576,12 @@ fn slim_row(
                     theme.foreground(ForegroundToken::Primary)
                 },
             ))
-            .child(status_or_time(thread, view, theme, false)),
+            .child(status_or_time(atom, view, theme, false)),
     )
 }
 
 fn title_row(
-    thread: &DemoThread,
+    atom: &DemoAtom,
     view: &SidebarViewModel,
     title: &str,
     rename_input: Option<&Entity<InputState>>,
@@ -590,7 +590,7 @@ fn title_row(
 ) -> gpui::AnyElement {
     let mono = mono_family();
     let title = title.to_string();
-    if view.is_renaming(thread)
+    if view.is_renaming(atom)
         && let Some(rename_input) = rename_input
     {
         return div()
@@ -635,22 +635,22 @@ fn project_favicon(hue: u32) -> impl IntoElement {
 }
 
 fn status_or_time(
-    thread: &DemoThread,
+    atom: &DemoAtom,
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
     show_status: bool,
 ) -> impl IntoElement {
     let muted = theme.foreground(ForegroundToken::Muted);
     let mono = mono_family();
-    let dimmed = view.should_recede(thread) && !view.is_active(thread);
+    let dimmed = view.should_recede(atom) && !view.is_active(atom);
 
-    if show_status && let Some(label) = thread.status.label() {
-        let color = status_color(thread.status, theme, dimmed);
+    if show_status && let Some(label) = atom.status.label() {
+        let color = status_color(atom.status, theme, dimmed);
         return h_flex()
             .flex_shrink_0()
             .gap(px(4.))
             .items_center()
-            .children(status_icon(thread.status, color))
+            .children(status_icon(atom.status, color))
             .child(
                 div()
                     .font_family(mono)
@@ -666,20 +666,20 @@ fn status_or_time(
         .font_family(mono)
         .text_size(px(TypeRole::LabelMd.size()))
         .text_color(muted)
-        .child(thread.time_label)
+        .child(atom.time_label)
         .into_any_element()
 }
 
-fn status_icon(status: ThreadStatus, color: gpui::Hsla) -> Option<gpui::AnyElement> {
+fn status_icon(status: AtomStatus, color: gpui::Hsla) -> Option<gpui::AnyElement> {
     match status {
-        ThreadStatus::Working => Some(
+        AtomStatus::Working => Some(
             Icon::new(IconName::LoaderCircle)
                 .text_color(color)
                 .small()
                 .flex_shrink_0()
                 .into_any_element(),
         ),
-        ThreadStatus::Woke => Some(
+        AtomStatus::Woke => Some(
             Icon::new(IconName::Bell)
                 .text_color(color)
                 .small()
@@ -690,7 +690,7 @@ fn status_icon(status: ThreadStatus, color: gpui::Hsla) -> Option<gpui::AnyEleme
     }
 }
 
-fn branch_meta_row(thread: &DemoThread, theme: &OpenCoreTheme) -> impl IntoElement {
+fn branch_meta_row(atom: &DemoAtom, theme: &OpenCoreTheme) -> impl IntoElement {
     let muted = theme.foreground(ForegroundToken::Muted);
     let green = pr_open_color();
     let red = theme.foreground(ForegroundToken::Accent);
@@ -703,7 +703,7 @@ fn branch_meta_row(thread: &DemoThread, theme: &OpenCoreTheme) -> impl IntoEleme
         .gap(px(6.))
         .overflow_hidden()
         .text_size(px(TypeRole::LabelMd.size()))
-        .child(thread.branch.map_or_else(
+        .child(atom.branch.map_or_else(
             || div().flex_1().min_w_0().into_any_element(),
             |branch| {
                 div()
@@ -717,13 +717,13 @@ fn branch_meta_row(thread: &DemoThread, theme: &OpenCoreTheme) -> impl IntoEleme
                     .into_any_element()
             },
         ))
-        .children(terminal_indicator(thread, muted))
-        .children(pr_badge(thread, muted, mono.clone()))
-        .children(diff_stats(thread, green, red, mono))
+        .children(terminal_indicator(atom, muted))
+        .children(pr_badge(atom, muted, mono.clone()))
+        .children(diff_stats(atom, green, red, mono))
 }
 
-fn terminal_indicator(thread: &DemoThread, muted: gpui::Hsla) -> Vec<gpui::AnyElement> {
-    if thread.terminal_process_count == 0 {
+fn terminal_indicator(atom: &DemoAtom, muted: gpui::Hsla) -> Vec<gpui::AnyElement> {
+    if atom.terminal_process_count == 0 {
         return Vec::new();
     }
     vec![
@@ -735,8 +735,8 @@ fn terminal_indicator(thread: &DemoThread, muted: gpui::Hsla) -> Vec<gpui::AnyEl
     ]
 }
 
-fn pr_badge(thread: &DemoThread, color: gpui::Hsla, mono: SharedString) -> Vec<gpui::AnyElement> {
-    thread
+fn pr_badge(atom: &DemoAtom, color: gpui::Hsla, mono: SharedString) -> Vec<gpui::AnyElement> {
+    atom
         .pr_number
         .map(|number| {
             div()
@@ -751,17 +751,17 @@ fn pr_badge(thread: &DemoThread, color: gpui::Hsla, mono: SharedString) -> Vec<g
 }
 
 fn diff_stats(
-    thread: &DemoThread,
+    atom: &DemoAtom,
     green: gpui::Hsla,
     red: gpui::Hsla,
     mono: SharedString,
 ) -> Vec<gpui::AnyElement> {
-    if thread.diff_insertions.is_none() && thread.diff_deletions.is_none() {
+    if atom.diff_insertions.is_none() && atom.diff_deletions.is_none() {
         return Vec::new();
     }
 
     let mut elements = Vec::new();
-    if let Some(n) = thread.diff_insertions {
+    if let Some(n) = atom.diff_insertions {
         elements.push(
             div()
                 .flex_shrink_0()
@@ -771,7 +771,7 @@ fn diff_stats(
                 .into_any_element(),
         );
     }
-    if let Some(n) = thread.diff_deletions {
+    if let Some(n) = atom.diff_deletions {
         elements.push(
             div()
                 .flex_shrink_0()
