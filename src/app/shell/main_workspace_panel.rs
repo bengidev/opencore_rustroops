@@ -2,8 +2,8 @@
 
 use gpui::{
     App, AppContext, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div, px,
-    prelude::FluentBuilder, relative,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div,
+    prelude::FluentBuilder, px, relative,
 };
 use gpui_component::{
     Icon, IconName, Sizable,
@@ -73,6 +73,20 @@ enum ComposerField {
     Access,
 }
 
+struct ComposerDropdownSpec<'a> {
+    id: &'static str,
+    label: &'a str,
+    panel: gpui::Entity<MainWorkspacePanel>,
+    primary: gpui::Hsla,
+    icon: Option<(IconName, gpui::Hsla)>,
+    sans: SharedString,
+    button_height: f32,
+    button_px: f32,
+    section: &'static str,
+    options: &'static [&'static str],
+    field: ComposerField,
+}
+
 impl MainWorkspacePanel {
     pub fn new(window: &mut Window, theme: WorkspaceTheme, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
@@ -96,7 +110,12 @@ impl MainWorkspacePanel {
         }
     }
 
-    fn select_composer_option(&mut self, field: ComposerField, value: String, cx: &mut Context<Self>) {
+    fn select_composer_option(
+        &mut self,
+        field: ComposerField,
+        value: String,
+        cx: &mut Context<Self>,
+    ) {
         match field {
             ComposerField::Model => self.composer.model = value,
             ComposerField::Priority => self.composer.priority = value,
@@ -341,44 +360,61 @@ fn composer_bar(
                         .py(px(2.))
                         .items_center()
                         .gap(px(2.))
-                        .child(composer_model_menu(
-                            &panel.composer.model,
-                            panel_entity.clone(),
+                        .child(composer_dropdown_button(ComposerDropdownSpec {
+                            id: "workspace-composer-model",
+                            label: &panel.composer.model,
+                            panel: panel_entity.clone(),
                             primary,
-                            secondary,
-                            sans.clone(),
-                            TOOLBAR_BUTTON_HEIGHT,
-                            TOOLBAR_BUTTON_PX,
-                        ))
+                            icon: Some((IconName::Cpu, secondary)),
+                            sans: sans.clone(),
+                            button_height: TOOLBAR_BUTTON_HEIGHT,
+                            button_px: TOOLBAR_BUTTON_PX,
+                            section: "Model",
+                            options: MODEL_OPTIONS,
+                            field: ComposerField::Model,
+                        }))
                         .child(composer_toolbar_divider(border))
-                        .child(composer_priority_menu(
-                            &panel.composer.priority,
-                            panel_entity.clone(),
+                        .child(composer_dropdown_button(ComposerDropdownSpec {
+                            id: "workspace-composer-priority",
+                            label: &panel.composer.priority,
+                            panel: panel_entity.clone(),
                             primary,
-                            sans.clone(),
-                            TOOLBAR_BUTTON_HEIGHT,
-                            TOOLBAR_BUTTON_PX,
-                        ))
+                            icon: None,
+                            sans: sans.clone(),
+                            button_height: TOOLBAR_BUTTON_HEIGHT,
+                            button_px: TOOLBAR_BUTTON_PX,
+                            section: "Priority",
+                            options: PRIORITY_OPTIONS,
+                            field: ComposerField::Priority,
+                        }))
                         .child(composer_toolbar_divider(border))
-                        .child(composer_build_menu(
-                            &panel.composer.mode,
-                            panel_entity.clone(),
+                        .child(composer_dropdown_button(ComposerDropdownSpec {
+                            id: "workspace-composer-build",
+                            label: &panel.composer.mode,
+                            panel: panel_entity.clone(),
                             primary,
-                            secondary,
-                            sans.clone(),
-                            TOOLBAR_BUTTON_HEIGHT,
-                            TOOLBAR_BUTTON_PX,
-                        ))
+                            icon: Some((IconName::Bot, secondary)),
+                            sans: sans.clone(),
+                            button_height: TOOLBAR_BUTTON_HEIGHT,
+                            button_px: TOOLBAR_BUTTON_PX,
+                            section: "Mode",
+                            options: MODE_OPTIONS,
+                            field: ComposerField::Mode,
+                        }))
                         .child(composer_toolbar_divider(border))
-                        .child(composer_access_menu(
-                            &panel.composer.access,
-                            panel_entity.clone(),
+                        .child(composer_dropdown_button(ComposerDropdownSpec {
+                            id: "workspace-composer-access",
+                            label: &panel.composer.access,
+                            panel: panel_entity.clone(),
                             primary,
-                            secondary,
+                            icon: Some((IconName::Eye, secondary)),
                             sans,
-                            TOOLBAR_BUTTON_HEIGHT,
-                            TOOLBAR_BUTTON_PX,
-                        ))
+                            button_height: TOOLBAR_BUTTON_HEIGHT,
+                            button_px: TOOLBAR_BUTTON_PX,
+                            section: "Access",
+                            options: ACCESS_OPTIONS,
+                            field: ComposerField::Access,
+                        }))
                         .child(div().flex_1().min_w(px(8.)))
                         .child(composer_context_badge(
                             primary,
@@ -470,144 +506,32 @@ fn composer_section_menu(
     menu
 }
 
-fn composer_dropdown_button(
-    id: &'static str,
-    label: &str,
-    selected: &str,
-    panel: gpui::Entity<MainWorkspacePanel>,
-    primary: gpui::Hsla,
-    icon: Option<(IconName, gpui::Hsla)>,
-    sans: SharedString,
-    button_height: f32,
-    button_px: f32,
-    section: &'static str,
-    options: &'static [&'static str],
-    field: ComposerField,
-) -> impl IntoElement {
-    let selected = selected.to_string();
-    let panel_for_menu = panel.clone();
-    Button::new(id)
+fn composer_dropdown_button(spec: ComposerDropdownSpec<'_>) -> impl IntoElement {
+    let selected = spec.label.to_string();
+    let panel_for_menu = spec.panel.clone();
+    Button::new(spec.id)
         .ghost()
         .compact()
         .rounded(ButtonRounded::None)
-        .h(px(button_height))
-        .px(px(button_px))
+        .h(px(spec.button_height))
+        .px(px(spec.button_px))
         .gap(px(6.))
-        .text_color(primary)
-        .when_some(icon, |this, (icon, color)| {
+        .text_color(spec.primary)
+        .when_some(spec.icon, |this, (icon, color)| {
             this.icon(Icon::new(icon).text_color(color).small())
         })
-        .child(composer_toolbar_label(label, primary, sans))
+        .child(composer_toolbar_label(spec.label, spec.primary, spec.sans))
         .dropdown_caret(true)
         .dropdown_menu(move |menu, _, _| {
             composer_section_menu(
                 menu,
-                section,
-                options,
+                spec.section,
+                spec.options,
                 &selected,
-                field,
+                spec.field,
                 panel_for_menu.clone(),
             )
         })
-}
-
-fn composer_model_menu(
-    selected: &str,
-    panel: gpui::Entity<MainWorkspacePanel>,
-    primary: gpui::Hsla,
-    secondary: gpui::Hsla,
-    sans: SharedString,
-    button_height: f32,
-    button_px: f32,
-) -> impl IntoElement {
-    composer_dropdown_button(
-        "workspace-composer-model",
-        selected,
-        selected,
-        panel,
-        primary,
-        Some((IconName::Cpu, secondary)),
-        sans,
-        button_height,
-        button_px,
-        "Model",
-        MODEL_OPTIONS,
-        ComposerField::Model,
-    )
-}
-
-fn composer_priority_menu(
-    selected: &str,
-    panel: gpui::Entity<MainWorkspacePanel>,
-    primary: gpui::Hsla,
-    sans: SharedString,
-    button_height: f32,
-    button_px: f32,
-) -> impl IntoElement {
-    composer_dropdown_button(
-        "workspace-composer-priority",
-        selected,
-        selected,
-        panel,
-        primary,
-        None,
-        sans,
-        button_height,
-        button_px,
-        "Priority",
-        PRIORITY_OPTIONS,
-        ComposerField::Priority,
-    )
-}
-
-fn composer_build_menu(
-    selected: &str,
-    panel: gpui::Entity<MainWorkspacePanel>,
-    primary: gpui::Hsla,
-    secondary: gpui::Hsla,
-    sans: SharedString,
-    button_height: f32,
-    button_px: f32,
-) -> impl IntoElement {
-    composer_dropdown_button(
-        "workspace-composer-build",
-        selected,
-        selected,
-        panel,
-        primary,
-        Some((IconName::Bot, secondary)),
-        sans,
-        button_height,
-        button_px,
-        "Mode",
-        MODE_OPTIONS,
-        ComposerField::Mode,
-    )
-}
-
-fn composer_access_menu(
-    selected: &str,
-    panel: gpui::Entity<MainWorkspacePanel>,
-    primary: gpui::Hsla,
-    secondary: gpui::Hsla,
-    sans: SharedString,
-    button_height: f32,
-    button_px: f32,
-) -> impl IntoElement {
-    composer_dropdown_button(
-        "workspace-composer-access",
-        selected,
-        selected,
-        panel,
-        primary,
-        Some((IconName::Eye, secondary)),
-        sans,
-        button_height,
-        button_px,
-        "Access",
-        ACCESS_OPTIONS,
-        ComposerField::Access,
-    )
 }
 
 fn composer_context_badge(
