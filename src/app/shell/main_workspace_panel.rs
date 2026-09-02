@@ -21,7 +21,7 @@ use crate::shared::theme::{
 use super::workspace_theme::WorkspaceTheme;
 
 const PANEL_TITLE: &str = "WORKSPACE";
-const EMPTY_HEADLINE: &str = "Start a new session";
+const EMPTY_HEADLINE: &str = "Start a new atom";
 const EMPTY_BODY: &str =
     "Ask questions, run commands, and edit files without leaving your machine.";
 const COMPOSER_PLACEHOLDER: &str = "Ask anything…";
@@ -206,7 +206,7 @@ fn quick_actions_row(
     border: gpui::Hsla,
     primary: gpui::Hsla,
 ) -> impl IntoElement {
-    let actions = ["New session", "Run command", "Open file"];
+    let actions = ["New atom", "Run command", "Open file"];
     h_flex()
         .gap(px(SpacingToken::S1.value()))
         .flex_wrap()
@@ -295,7 +295,7 @@ fn composer_bar(
                 .font_family(mono)
                 .text_size(px(TypeRole::MonoSm.size()))
                 .text_color(muted)
-                .child("Enter to send · Shift+Enter for newline · ⌘K for commands"),
+                .child("Enter to send atom · Shift+Enter for newline · ⌘K for commands"),
         )
 }
 
