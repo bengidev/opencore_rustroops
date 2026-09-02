@@ -63,7 +63,7 @@ pub fn sidebar_project_scope_row(
                 .dropdown_menu({
                     let on_scope = on_scope.clone();
                     move |menu, _window, _cx| {
-                        let mut menu = menu.label("Projects");
+                        let mut menu = menu.label("Scope");
                         let on_all = on_scope.clone();
                         menu = menu.item(PopupMenuItem::new(ALL_ATOMS_LABEL).on_click(
                             move |_, window, cx| {

@@ -1,4 +1,4 @@
-//! atom row surfaces: card layout for inbox/pinned, slim layout for history.
+//! Atom row surfaces: card layout for inbox/pinned, slim layout for history.
 
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Entity, InteractiveElement, IntoElement,

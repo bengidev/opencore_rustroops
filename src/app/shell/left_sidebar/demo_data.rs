@@ -266,7 +266,7 @@ pub const DEMO_ATOMS: [DemoAtom; 15] = [
     },
     DemoAtom {
         id: "settled-6",
-        title: "atom sidebar search",
+        title: "Atom sidebar search",
         project_key: "sample_app",
         project_title: "sample_app",
         branch: Some("feat/search"),

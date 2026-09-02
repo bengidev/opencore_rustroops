@@ -3,7 +3,8 @@
 use std::collections::{HashMap, HashSet};
 
 use super::demo_data::{
-    ALL_ATOMS_LABEL, DEMO_DRAFT, DEMO_ATOMS, DemoDraft, DemoAtom, AtomShelf, AtomStatus,
+    ALL_ATOMS_LABEL, DEMO_DRAFT, DEMO_ATOMS, DEMO_PROJECTS, DemoDraft, DemoAtom, AtomShelf,
+    AtomStatus,
 };
 
 pub const SETTLED_PAGE_INITIAL: usize = 10;
@@ -127,10 +128,10 @@ impl SidebarViewModel {
     pub fn scoped_label(&self) -> &str {
         match &self.project_scope {
             None => ALL_ATOMS_LABEL,
-            Some(key) => DEMO_ATOMS
+            Some(key) => DEMO_PROJECTS
                 .iter()
-                .find(|t| t.project_key == key)
-                .map(|t| t.project_title)
+                .find(|project| project.key == key)
+                .map(|project| project.display_name)
                 .unwrap_or(ALL_ATOMS_LABEL),
         }
     }
