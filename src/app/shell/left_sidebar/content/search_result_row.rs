@@ -8,26 +8,26 @@ use gpui_component::{h_flex, v_flex};
 
 use crate::shared::theme::{ForegroundToken, OpenCoreTheme, TypeRole};
 
-use super::super::demo_data::{DEMO_PROJECTS, DemoThread};
+use super::super::demo_data::{DEMO_PROJECTS, DemoAtom};
 use super::super::state::SidebarViewModel;
 use super::super::surfaces::{project_favicon_color, row_active_bg, row_hover_bg};
 use super::super::tokens::{FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_SLIM, ROW_RADIUS};
 
 pub fn sidebar_search_result_row(
-    thread: &DemoThread,
+    atom: &DemoAtom,
     view: &SidebarViewModel,
     theme: &OpenCoreTheme,
     on_activate: impl Fn(String, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let is_active = view.is_active(thread);
-    let title = view.display_title(thread);
+    let is_active = view.is_active(atom);
+    let title = view.display_title(atom);
     let primary = theme.foreground(ForegroundToken::Primary);
     let secondary = theme.foreground(ForegroundToken::Secondary);
     let muted = theme.foreground(ForegroundToken::Muted);
     let mono = mono_family();
     let favicon_hue = DEMO_PROJECTS
         .iter()
-        .find(|p| p.key == thread.project_key)
+        .find(|p| p.key == atom.project_key)
         .map(|p| p.favicon_hue)
         .unwrap_or(0x888888);
 
@@ -37,10 +37,10 @@ pub fn sidebar_search_result_row(
         theme.surface(crate::shared::theme::BackgroundToken::Primary)
     };
 
-    let thread_id = thread.id.to_string();
+    let atom_id = atom.id.to_string();
 
     div()
-        .id(format!("left-sidebar-search-{}", thread.id))
+        .id(format!("left-sidebar-search-{}", atom.id))
         .w_full()
         .min_w_0()
         .h(px(ROW_HEIGHT_SLIM))
@@ -50,7 +50,7 @@ pub fn sidebar_search_result_row(
         .bg(bg)
         .cursor_pointer()
         .hover(|style| style.bg(row_hover_bg(theme)))
-        .on_click(move |_: &ClickEvent, window, cx| on_activate(thread_id.clone(), window, cx))
+        .on_click(move |_: &ClickEvent, window, cx| on_activate(atom_id.clone(), window, cx))
         .child(
             h_flex()
                 .w_full()
@@ -83,7 +83,7 @@ pub fn sidebar_search_result_row(
                                 .font_family(mono)
                                 .text_size(px(TypeRole::MonoSm.size()))
                                 .text_color(secondary.alpha(0.8))
-                                .child(thread.project_title),
+                                .child(atom.project_title),
                         ),
                 )
                 .child(
@@ -92,7 +92,7 @@ pub fn sidebar_search_result_row(
                         .font_family(mono_family())
                         .text_size(px(TypeRole::LabelMd.size()))
                         .text_color(muted)
-                        .child(thread.time_label),
+                        .child(atom.time_label),
                 ),
         )
 }

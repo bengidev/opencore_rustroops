@@ -1,4 +1,4 @@
-//! Draft row for unsent composer sessions — matches active card row interaction.
+//! Draft row for unsent composer content in a new atom — matches active card row interaction.
 
 use gpui::{
     App, AppContext, ClickEvent, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -18,13 +18,13 @@ use super::super::surfaces::{
     row_selected_bg,
 };
 use super::super::tokens::{FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD};
-use super::callbacks::{ThreadDragOverCallback, ThreadDropCallback, ThreadIdCallback};
-use super::pinned_drag::{PinnedRowDragUi, PinnedThreadDrag, ThreadDragScope};
+use super::callbacks::{AtomDragOverCallback, AtomDropCallback, AtomIdCallback};
+use super::pinned_drag::{AtomDragScope, PinnedAtomDrag, PinnedRowDragUi};
 
 pub struct DraftRowDragActions {
-    pub on_drag_start: ThreadIdCallback,
-    pub on_drag_over: ThreadDragOverCallback,
-    pub on_drop: ThreadDropCallback,
+    pub on_drag_start: AtomIdCallback,
+    pub on_drag_over: AtomDragOverCallback,
+    pub on_drop: AtomDropCallback,
 }
 
 pub fn sidebar_draft_row(
@@ -63,7 +63,7 @@ pub fn sidebar_draft_row(
     let on_drag_start = drag_actions.on_drag_start.clone();
     let on_drag_over = drag_actions.on_drag_over.clone();
     let on_drop = drag_actions.on_drop.clone();
-    let drag_scope = ThreadDragScope::Active;
+    let drag_scope = AtomDragScope::Active;
 
     div()
         .id(format!("left-sidebar-draft-{}", draft.id))
@@ -104,8 +104,8 @@ pub fn sidebar_draft_row(
         })
         .when(row_drag.is_source, |row| row.opacity(0.45))
         .on_drag(
-            PinnedThreadDrag {
-                thread_id: draft_id.clone(),
+            PinnedAtomDrag {
+                atom_id: draft_id.clone(),
                 scope: drag_scope,
                 title: preview.into(),
                 preview_bg: theme.surface(BackgroundToken::Secondary),
@@ -115,7 +115,7 @@ pub fn sidebar_draft_row(
                 let on_drag_start = on_drag_start.clone();
                 move |drag, _, window, cx| {
                     cx.stop_propagation();
-                    on_drag_start(drag.thread_id.clone(), window, cx);
+                    on_drag_start(drag.atom_id.clone(), window, cx);
                     cx.new(|_| DraftDragPreview {
                         title: drag.title.clone(),
                         bg: drag.preview_bg,
@@ -127,28 +127,26 @@ pub fn sidebar_draft_row(
         .can_drop({
             let self_id = draft_id.clone();
             move |value, _, _| {
-                value
-                    .downcast_ref::<PinnedThreadDrag>()
-                    .is_some_and(|drag| {
-                        drag.thread_id != self_id && drag.scope.allows_drop(drag_scope)
-                    })
+                value.downcast_ref::<PinnedAtomDrag>().is_some_and(|drag| {
+                    drag.atom_id != self_id && drag.scope.allows_drop(drag_scope)
+                })
             }
         })
-        .drag_over::<PinnedThreadDrag>({
+        .drag_over::<PinnedAtomDrag>({
             let self_id = draft_id.clone();
             move |style, drag, _, _| {
-                if drag.thread_id == self_id || !drag.scope.allows_drop(drag_scope) {
+                if drag.atom_id == self_id || !drag.scope.allows_drop(drag_scope) {
                     return style;
                 }
                 style.bg(drag_hover_bg)
             }
         })
-        .on_drag_move::<PinnedThreadDrag>({
+        .on_drag_move::<PinnedAtomDrag>({
             let target_id = draft_id.clone();
             let on_drag_over = on_drag_over.clone();
             move |event, window, cx| {
                 let drag = event.drag(cx);
-                if drag.thread_id == target_id || !drag.scope.allows_drop(drag_scope) {
+                if drag.atom_id == target_id || !drag.scope.allows_drop(drag_scope) {
                     return;
                 }
                 let pointer = event.event.position;
@@ -169,11 +167,11 @@ pub fn sidebar_draft_row(
         .on_drop({
             let target_id = draft_id.clone();
             let on_drop = on_drop.clone();
-            move |drag: &PinnedThreadDrag, window, cx| {
-                if drag.thread_id == target_id || !drag.scope.allows_drop(drag_scope) {
+            move |drag: &PinnedAtomDrag, window, cx| {
+                if drag.atom_id == target_id || !drag.scope.allows_drop(drag_scope) {
                     return;
                 }
-                on_drop(drag.thread_id.clone(), target_id.clone(), window, cx);
+                on_drop(drag.atom_id.clone(), target_id.clone(), window, cx);
             }
         })
         .on_click({

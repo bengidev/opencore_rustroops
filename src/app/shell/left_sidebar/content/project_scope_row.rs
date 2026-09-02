@@ -15,7 +15,7 @@ use crate::shared::theme::{
     BackgroundToken, BorderToken, ForegroundToken, OpenCoreTheme, SpacingToken, TypeRole,
 };
 
-use super::super::demo_data::{ALL_PROJECTS_LABEL, DEMO_PROJECTS};
+use super::super::demo_data::{ALL_ATOMS_LABEL, DEMO_PROJECTS};
 use super::super::tokens::ICON_BUTTON_SIZE;
 
 pub fn sidebar_project_scope_row(
@@ -63,9 +63,9 @@ pub fn sidebar_project_scope_row(
                 .dropdown_menu({
                     let on_scope = on_scope.clone();
                     move |menu, _window, _cx| {
-                        let mut menu = menu.label("Projects");
+                        let mut menu = menu.label("Scope");
                         let on_all = on_scope.clone();
-                        menu = menu.item(PopupMenuItem::new(ALL_PROJECTS_LABEL).on_click(
+                        menu = menu.item(PopupMenuItem::new(ALL_ATOMS_LABEL).on_click(
                             move |_, window, cx| {
                                 on_all(None, window, cx);
                             },

@@ -40,7 +40,7 @@ pub fn install_workspace_theme(theme: WorkspaceTheme) -> WorkspaceTheme {
     })
 }
 
-/// Returns the installed workspace theme for the current thread.
+/// Returns the installed workspace theme for the current atom.
 pub fn workspace_theme() -> WorkspaceTheme {
     WORKSPACE_THEME.with(|theme| theme.clone())
 }

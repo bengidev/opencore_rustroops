@@ -1,4 +1,4 @@
-//! Animated clip wrapper for collapsible shelf thread rows.
+//! Animated clip wrapper for collapsible shelf atom rows.
 
 use gpui::{InteractiveElement, IntoElement, ParentElement, Styled, div, px};
 use gpui_component::v_flex;
