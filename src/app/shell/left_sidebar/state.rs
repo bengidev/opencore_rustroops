@@ -3,8 +3,8 @@
 use std::collections::{HashMap, HashSet};
 
 use super::demo_data::{
-    ALL_ATOMS_LABEL, DEMO_DRAFT, DEMO_ATOMS, DEMO_PROJECTS, DemoDraft, DemoAtom, AtomShelf,
-    AtomStatus,
+    ALL_ATOMS_LABEL, AtomShelf, AtomStatus, DEMO_ATOMS, DEMO_DRAFT, DEMO_PROJECTS, DemoAtom,
+    DemoDraft,
 };
 
 pub const SETTLED_PAGE_INITIAL: usize = 10;
@@ -368,8 +368,7 @@ impl SidebarViewModel {
         if dragged_id == target_id {
             return false;
         }
-        if self.archived_atom_ids.contains(dragged_id)
-            && self.archived_atom_ids.contains(target_id)
+        if self.archived_atom_ids.contains(dragged_id) && self.archived_atom_ids.contains(target_id)
         {
             return true;
         }
@@ -380,8 +379,7 @@ impl SidebarViewModel {
         if dragged_id == target_id {
             return;
         }
-        if self.archived_atom_ids.contains(dragged_id)
-            && self.archived_atom_ids.contains(target_id)
+        if self.archived_atom_ids.contains(dragged_id) && self.archived_atom_ids.contains(target_id)
         {
             reorder_ids(
                 &mut self.archived_order,
@@ -486,11 +484,7 @@ impl SidebarViewModel {
 
     fn reveal_settled_atom(&mut self, atom_id: &str) {
         let settled_len = self.settled_atoms().len();
-        if let Some(pos) = self
-            .settled_atoms()
-            .iter()
-            .position(|t| t.id == atom_id)
-        {
+        if let Some(pos) = self.settled_atoms().iter().position(|t| t.id == atom_id) {
             let needed = pos + 1;
             if self.settled_visible_limit < needed {
                 while self.settled_visible_limit < needed && self.settled_has_more() {
@@ -553,8 +547,7 @@ impl SidebarViewModel {
 
     fn move_atom_to_shelf(&mut self, atom_id: &str, shelf: AtomShelf) {
         self.remove_from_shelf_orders(atom_id);
-        self.atom_shelf_overrides
-            .insert(atom_id.to_string(), shelf);
+        self.atom_shelf_overrides.insert(atom_id.to_string(), shelf);
         self.append_to_shelf_order(atom_id, shelf);
     }
 

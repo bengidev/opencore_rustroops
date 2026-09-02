@@ -19,7 +19,7 @@ use super::super::surfaces::{
 };
 use super::super::tokens::{FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD};
 use super::callbacks::{AtomDragOverCallback, AtomDropCallback, AtomIdCallback};
-use super::pinned_drag::{PinnedRowDragUi, PinnedAtomDrag, AtomDragScope};
+use super::pinned_drag::{AtomDragScope, PinnedAtomDrag, PinnedRowDragUi};
 
 pub struct DraftRowDragActions {
     pub on_drag_start: AtomIdCallback,
@@ -127,11 +127,9 @@ pub fn sidebar_draft_row(
         .can_drop({
             let self_id = draft_id.clone();
             move |value, _, _| {
-                value
-                    .downcast_ref::<PinnedAtomDrag>()
-                    .is_some_and(|drag| {
-                        drag.atom_id != self_id && drag.scope.allows_drop(drag_scope)
-                    })
+                value.downcast_ref::<PinnedAtomDrag>().is_some_and(|drag| {
+                    drag.atom_id != self_id && drag.scope.allows_drop(drag_scope)
+                })
             }
         })
         .drag_over::<PinnedAtomDrag>({

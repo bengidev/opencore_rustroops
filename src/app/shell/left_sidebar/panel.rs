@@ -20,13 +20,12 @@ use crate::shared::theme::{BackgroundToken, BorderToken, OpenCoreTheme, SpacingT
 
 use super::chrome::sidebar_chrome_footer;
 use super::content::{
-    DraftRowDragActions, PinnedDragState, PinnedRowDragUi, ShelfTone, AtomRowActions,
-    AtomRowVariant, sidebar_add_project_button, sidebar_draft_row, sidebar_empty_state,
-    sidebar_project_scope_row, sidebar_search_result_row, sidebar_search_row,
+    AtomRowActions, AtomRowVariant, DraftRowDragActions, PinnedDragState, PinnedRowDragUi,
+    ShelfTone, sidebar_add_project_button, sidebar_atom_row, sidebar_draft_row,
+    sidebar_empty_state, sidebar_project_scope_row, sidebar_search_result_row, sidebar_search_row,
     sidebar_section_header, sidebar_shelf_body, sidebar_shelf_header, sidebar_show_more_button,
-    sidebar_atom_row,
 };
-use super::demo_data::{DEMO_DRAFT, DEMO_ATOMS};
+use super::demo_data::{DEMO_ATOMS, DEMO_DRAFT};
 use super::shelf_tween::{
     ShelfHeightTween, eval_shelf_tween, shelf_content_height_card, shelf_content_height_slim,
     shelf_expand_progress,
@@ -548,12 +547,7 @@ impl LeftSidebarPanel {
         }
     }
 
-    fn begin_rename_atom(
-        &mut self,
-        atom_id: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn begin_rename_atom(&mut self, atom_id: &str, window: &mut Window, cx: &mut Context<Self>) {
         let atom = super::demo_data::DEMO_ATOMS
             .iter()
             .find(|t| t.id == atom_id);

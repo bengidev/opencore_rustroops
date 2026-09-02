@@ -14,7 +14,7 @@ use gpui_component::{
 
 use crate::shared::theme::{BackgroundToken, ForegroundToken, OpenCoreTheme, TypeRole};
 
-use super::super::demo_data::{DEMO_PROJECTS, DemoAtom, AtomShelf, AtomStatus};
+use super::super::demo_data::{AtomShelf, AtomStatus, DEMO_PROJECTS, DemoAtom};
 use super::super::state::SidebarViewModel;
 use super::super::surfaces::{
     drop_line_color, pr_open_color, project_favicon_color, row_active_bg, row_hover_bg,
@@ -24,10 +24,10 @@ use super::super::tokens::{
     FAVICON_SIZE, ROW_CONTENT_INSET, ROW_HEIGHT_CARD, ROW_HEIGHT_SLIM, ROW_RADIUS,
 };
 use super::callbacks::{
-    AtomDragOverCallback, AtomDropCallback, AtomHoverCallback, AtomIdCallback,
-    AtomMoveCallback, AtomSelectCallback,
+    AtomDragOverCallback, AtomDropCallback, AtomHoverCallback, AtomIdCallback, AtomMoveCallback,
+    AtomSelectCallback,
 };
-use super::pinned_drag::{PinnedRowDragUi, PinnedAtomDrag, AtomDragScope};
+use super::pinned_drag::{AtomDragScope, PinnedAtomDrag, PinnedRowDragUi};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AtomRowVariant {
@@ -154,8 +154,7 @@ fn row_surface(
     let is_pinned = view.effective_shelf(atom) == AtomShelf::Pinned;
     let is_settled = view.effective_shelf(atom) == AtomShelf::Settled;
     let is_archived = view.is_archived(atom);
-    let drag_scope =
-        AtomDragScope::from_atom(atom.id, view.effective_shelf(atom), is_archived);
+    let drag_scope = AtomDragScope::from_atom(atom.id, view.effective_shelf(atom), is_archived);
     let menu_title = view.display_title(atom);
     let row_drag = pinned_drag.unwrap_or_default();
     let drag_hover_bg = row_hover_bg(theme);
@@ -232,11 +231,9 @@ fn row_surface(
             let self_id = atom_id.clone();
             let self_scope = drag_scope;
             move |value, _, _| {
-                value
-                    .downcast_ref::<PinnedAtomDrag>()
-                    .is_some_and(|drag| {
-                        drag.atom_id != self_id && drag.scope.allows_drop(self_scope)
-                    })
+                value.downcast_ref::<PinnedAtomDrag>().is_some_and(|drag| {
+                    drag.atom_id != self_id && drag.scope.allows_drop(self_scope)
+                })
             }
         })
         .drag_over::<PinnedAtomDrag>({
@@ -736,8 +733,7 @@ fn terminal_indicator(atom: &DemoAtom, muted: gpui::Hsla) -> Vec<gpui::AnyElemen
 }
 
 fn pr_badge(atom: &DemoAtom, color: gpui::Hsla, mono: SharedString) -> Vec<gpui::AnyElement> {
-    atom
-        .pr_number
+    atom.pr_number
         .map(|number| {
             div()
                 .flex_shrink_0()
